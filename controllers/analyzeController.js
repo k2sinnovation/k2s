@@ -1,4 +1,4 @@
-const openaiService = require("./openaiService");
+const openaiService = require("../controllers/openaiService");
 const Prompt = require("../promts/prompt");
 
 exports.analyze = async (req, res) => {
