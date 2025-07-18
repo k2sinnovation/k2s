@@ -1,15 +1,18 @@
 {
-  "name": "k2s-server",
+  "name": "K2S-server",
   "version": "1.0.0",
-  "description": "Serveur backend pour K2S",
+  "description": "Backend pour K2S avec OpenAI",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "dependencies": {
     "express": "^4.18.2",
-    "mongoose": "^7.6.1",
-    "dotenv": "^16.0.0",
+    "mongoose": "^7.3.4",
+    "dotenv": "^16.3.1",
     "openai": "^4.6.0"
   }
 }
