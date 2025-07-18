@@ -1,6 +1,6 @@
 const { getOpenAIResponse } = require('../services/openaiService');
 const {
-  buildAnswerPrompt,
+  buildSecondAnalysisPrompt,
   buildFinalDiagnosisPrompt
 } = require('../utils/promptBuilder');
 
@@ -19,7 +19,7 @@ exports.generateAnswer = async (req, res) => {
       prompt = buildFinalDiagnosisPrompt(resume, questions, answers, previousDiagnosis);
     } else {
       // 🟢 ou 🟠 analyse 1 ou 2 — Utiliser prompt2
-      prompt = buildAnswerPrompt(resume, questions, answers, previousDiagnosis);
+      prompt = buildSecondAnalysisPrompt(resume, questions, answers, previousDiagnosis);
     }
 
     const aiResponse = await getOpenAIResponse(prompt);
