@@ -4,7 +4,7 @@ const OpenAI = require("openai");
 
 const analyzeRoute = require("../routes/analyze");
 const answerRoute = require("../routes/answer");
-const subscribeRoute = require("./routes/subscribe");
+const subscribeRoute = require("../routes/subscribe");
 const userRoute = require("../models/usermodel");
 
 const app = express();
