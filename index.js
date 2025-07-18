@@ -2,17 +2,16 @@ const express = require('express');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-const { Configuration, OpenAIApi } = require("openai");
+const OpenAI = require("openai");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -35,15 +34,17 @@ app.get('/', (req, res) => {
 
 app.post('/ask', async (req, res) => {
   try {
-    const question = req.body.question;
-    if (!question) return res.status(400).json({ error: "Question manquante" });
+    const { question } = req.body;
+    if (!question || question.trim() === '') {
+      return res.status(400).json({ error: "Question manquante ou vide" });
+    }
 
-    const completion = await openai.createChatCompletion({
+    const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: question }],
     });
 
-    const answer = completion.data.choices[0].message.content;
+    const answer = completion.choices[0].message.content;
     res.json({ answer });
   } catch (error) {
     console.error('Erreur API OpenAI :', error);
