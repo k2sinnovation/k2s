@@ -12,7 +12,6 @@ app.use(express.json());
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
 const openai = new OpenAIApi(configuration);
 
 mongoose.connect(process.env.MONGO_URI, {
@@ -21,7 +20,6 @@ mongoose.connect(process.env.MONGO_URI, {
 })
 .then(() => {
   console.log('✅ Connexion MongoDB réussie');
-
   app.listen(PORT, () => {
     console.log(`Serveur lancé sur le port ${PORT}`);
   });
@@ -31,12 +29,10 @@ mongoose.connect(process.env.MONGO_URI, {
   process.exit(1);
 });
 
-// Route test simple
 app.get('/', (req, res) => {
   res.send('Serveur K2S opérationnel ✅');
 });
 
-// Exemple route POST pour interroger OpenAI
 app.post('/ask', async (req, res) => {
   try {
     const question = req.body.question;
