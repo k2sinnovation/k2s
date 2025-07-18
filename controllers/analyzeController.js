@@ -1,5 +1,5 @@
 const openaiService = require("../controllers/openaiService");
-const Prompt = require("../promts/prompt");
+const Prompt = require("../promts/prompt1");
 
 exports.analyze = async (req, res) => {
   const { user_id, text } = req.body;
