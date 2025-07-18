@@ -1,24 +1,26 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const OpenAI = require("openai");
+require('dotenv').config(); // Ajouté au cas où ce n’est pas fait ailleurs
 
-const analyzeRoute = require("../routes/analyze");
-const answerRoute = require("../routes/answer");
-const subscribeRoute = require("../routes/subscribe");
-const userRoute = require("../models/usermodel");
+// Routes et modèles
+const analyzeRoute = require("./routes/analyze");   // Corrigé le chemin (./ au lieu de ../)
+const answerRoute = require("./routes/answer");
+const subscribeRoute = require("./routes/subscribe");
+const userRoute = require("./routes/user");         // <-- À vérifier : usermodel = modèle, ici c’est une route ?
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// OpenAI instance accessible globalement
+// ✅ Instance OpenAI accessible globalement
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 app.locals.openai = openai;
 
-// Connexion à MongoDB
+// ✅ Connexion MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -34,18 +36,18 @@ mongoose.connect(process.env.MONGO_URI, {
   process.exit(1);
 });
 
-// Routes principales
+// ✅ Routes principales
 app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
 app.use("/api/subscribe", subscribeRoute);
-app.use("/api/user", userRoute);
+app.use("/api/user", userRoute); // ← Si userRoute est un modèle, ce n’est pas nécessaire ici
 
-// Test serveur
+// ✅ Route test GET
 app.get('/', (req, res) => {
   res.send('Serveur K2S opérationnel ✅');
 });
 
-// Route directe simple pour test Postman
+// ✅ Test direct OpenAI
 app.post('/ask', async (req, res) => {
   try {
     const { question } = req.body;
