@@ -5,7 +5,7 @@ const OpenAI = require("openai");
 const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
 const subscribeRoute = require("./routes/subscribe");
-const userRoute = require("./routes/user");
+const userRoute = require("./models/usermodel");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
