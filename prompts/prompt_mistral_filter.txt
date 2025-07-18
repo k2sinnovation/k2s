@@ -1,8 +1,0 @@
-Analyse cette demande utilisateur et indique si elle correspond à un cas de diagnostic technique ou de choix technique.
-
-Répond uniquement par :
-- "diagnostic" si c’est une panne à analyser
-- "choix_technique" si c’est une demande de sélection technique
-- "rejeté" si la demande ne correspond pas à un besoin technique ou est hors sujet
-
-Ensuite, résume la demande de façon concise mais complète, sous forme de mots-clés séparés par des virgules, en conservant tous les éléments importants mentionnés par l'utilisateur.
