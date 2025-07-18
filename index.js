@@ -2,10 +2,10 @@ const express = require('express');
 const mongoose = require('mongoose');
 const OpenAI = require("openai");
 
-const analyzeRoute = require("./routes/analyze");
-const answerRoute = require("./routes/answer");
+const analyzeRoute = require("../routes/analyze");
+const answerRoute = require("../routes/answer");
 const subscribeRoute = require("./routes/subscribe");
-const userRoute = require("./models/usermodel");
+const userRoute = require("../models/usermodel");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
