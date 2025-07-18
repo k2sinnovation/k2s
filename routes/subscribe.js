@@ -21,7 +21,7 @@ router.post("/upgrade", async (req, res) => {
 
     res.json({ message: `Abonnement mis à jour en ${new_level}` });
   } catch (err) {
-    console.error("Erreur lors de la mise à jour d'abonnement :", err);
+    console.error("Erreur upgrade abonnement :", err);
     res.status(500).json({ error: "Erreur serveur lors de la mise à jour." });
   }
 });
