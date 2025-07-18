@@ -65,3 +65,8 @@ Propose un dernier diagnostic avec 4 causes possibles maximum, sous ce format :
 Pas de commentaires, pas de répétition des questions. Réponds strictement en JSON.
 `;
 }
+module.exports = {
+  buildFirstAnalysisPrompt,
+  buildAnswerPrompt,
+  buildFinalDiagnosisPrompt
+};
