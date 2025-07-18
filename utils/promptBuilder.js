@@ -33,6 +33,33 @@ Réponds uniquement au format JSON suivant :
 module.exports = {
   buildFirstAnalysisPrompt
 };
+
+function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPrecedent = "") {
+  const qaFormatted = previousQA.map((item, idx) => 
+    `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`
+  ).join('\n\n');
+
+  return `
+Tu es LYDIA, une intelligence spécialisée en diagnostic terrain dans le domaine suivant : ${domaine}.
+
+Voici le résumé actuel de la demande utilisateur :
+"${resume}"
+
+${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
+
+Voici les questions posées et leurs réponses :
+${qaFormatted}
+
+Ta tâche est maintenant de fournir un **diagnostic structuré**, comprenant :
+1. Une **hypothèse principale** de la panne
+2. D'autres **causes possibles**
+3. Les **vérifications techniques** à faire (claires et simples)
+
+Écris de façon synthétique, structurée et facile à lire pour un technicien terrain.
+  `.trim();
+}
+
+
 function buildFinalDiagnosisPrompt(resume, questions, answers, previousDiagnosis) {
   return `
 Tu es Lydia, IA experte en diagnostic technique.
