@@ -11,9 +11,17 @@ router.post("/upgrade", async (req, res) => {
   }
 
   try {
-    await User.findByIdAndUpdate(user_id, { subscription_level: new_level });
+    const user = await User.findById(user_id);
+    if (!user) {
+      return res.status(404).json({ error: "Utilisateur non trouvé." });
+    }
+
+    user.subscription_level = new_level;
+    await user.save();
+
     res.json({ message: `Abonnement mis à jour en ${new_level}` });
   } catch (err) {
+    console.error("Erreur lors de la mise à jour d'abonnement :", err);
     res.status(500).json({ error: "Erreur serveur lors de la mise à jour." });
   }
 });
