@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { askOpenAI } = require("../controllers/openaiService");
 const { loadPrompt } = require("../utils/promptHelper");
-const User = require("../models/user");
+const User = require("../models/usermodel");
 
 router.post("/", async (req, res) => {
   try {
