@@ -96,5 +96,5 @@ Réponse structurée, directe et destinée à un technicien terrain.
 module.exports = {
   buildFirstAnalysisPrompt,
   buildSecondAnalysisPrompt,
-  buildFinalDiagnosisPrompt
+  buildFinalAnalysisPrompt
 };
