@@ -59,41 +59,42 @@ Ta tâche est maintenant de fournir un **diagnostic structuré**, comprenant :
   `.trim();
 }
 
+function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, questionsReponses) {
+  const qaFormatted = questionsReponses.map((item, idx) => 
+    `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`
+  ).join('\n\n');
 
-function buildFinalDiagnosisPrompt(resume, questions, answers, previousDiagnosis) {
   return `
-Tu es Lydia, IA experte en diagnostic technique.
+Tu es LYDIA, une intelligence de diagnostic spécialisée dans le domaine suivant : ${domaine}.
 
-Résumé global :
-"${resume}"
+🛑 Malgré les deux précédentes analyses, la panne n’est toujours pas résolue.
 
-Questions et réponses utilisateur :
-1. ${questions[0]} → ${answers[0]}
-2. ${questions[1]} → ${answers[1]}
-3. ${questions[2]} → ${answers[2]}
-4. ${questions[3]} → ${answers[3]}
-5. ${questions[4]} → ${answers[4]}
+Voici l'historique complet des échanges avec l'utilisateur :
+${fullHistory}
 
-Diagnostic précédent :
-${previousDiagnosis || 'Non spécifié'}
+Résumé du diagnostic précédent :
+${diagnosticPrecedent}
 
-⚠️ Malgré deux analyses, la panne persiste.
+Voici les questions déjà posées et leurs réponses :
+${qaFormatted}
 
-Propose un dernier diagnostic avec 4 causes possibles maximum, sous ce format :
+Maintenant, ta tâche est de proposer une **liste finale de 4 causes probables maximum**, claires et concises.
 
-{
-  "diagnostics": [
-    { "cause": "Cause possible 1", "verification": "Action à faire" },
-    ...
-  ],
-  "message": "Si vous n’avez toujours pas trouvé la solution, contactez le fabricant ou le fournisseur."
+Structure ta réponse comme suit :
+1. Cause probable 1 : ...
+2. Cause probable 2 : ...
+3. Cause probable 3 : ...
+4. Cause probable 4 : ...
+
+Conclue avec ce message :
+"Si vous n'avez toujours pas trouvé la solution, veuillez contacter le fabricant ou fournisseur."
+
+Réponse structurée, directe et destinée à un technicien terrain.
+`.trim();
 }
 
-Pas de commentaires, pas de répétition des questions. Réponds strictement en JSON.
-`;
-}
 module.exports = {
   buildFirstAnalysisPrompt,
-  buildAnswerPrompt,
+  buildSecondAnalysisPrompt,
   buildFinalDiagnosisPrompt
 };
