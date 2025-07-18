@@ -7,6 +7,7 @@ require('dotenv').config(); // Ajouté au cas où ce n’est pas fait ailleurs
 const analyzeRoute = require("./routes/analyze");   // Corrigé le chemin (./ au lieu de ../)
 const answerRoute = require("./routes/answer");
 const subscribeRoute = require("./routes/subscribe");
+const retryRoute = require("./routes/retry");
 const userRoute = require("./models/usermodel");         // <-- À vérifier : usermodel = modèle, ici c’est une route ?
 
 const app = express();
@@ -41,6 +42,7 @@ app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
 app.use("/api/subscribe", subscribeRoute);
 app.use("/api/user", userRoute); // ← Si userRoute est un modèle, ce n’est pas nécessaire ici
+app.use("/api/retry", retryRoute);
 
 // ✅ Route test GET
 app.get('/', (req, res) => {
