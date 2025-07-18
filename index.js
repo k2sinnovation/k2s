@@ -1,18 +1,24 @@
 const express = require('express');
 const mongoose = require('mongoose');
-require('dotenv').config();
-
 const OpenAI = require("openai");
+
+const analyzeRoute = require("./routes/analyze");
+const answerRoute = require("./routes/answer");
+const subscribeRoute = require("./routes/subscribe");
+const userRoute = require("./routes/user");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// OpenAI instance accessible globalement
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+app.locals.openai = openai;
 
+// Connexion à MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -20,7 +26,7 @@ mongoose.connect(process.env.MONGO_URI, {
 .then(() => {
   console.log('✅ Connexion MongoDB réussie');
   app.listen(PORT, () => {
-    console.log(`Serveur lancé sur le port ${PORT}`);
+    console.log(`🚀 Serveur lancé sur le port ${PORT}`);
   });
 })
 .catch((err) => {
@@ -28,10 +34,18 @@ mongoose.connect(process.env.MONGO_URI, {
   process.exit(1);
 });
 
+// Routes principales
+app.use("/api/analyze", analyzeRoute);
+app.use("/api/answer", answerRoute);
+app.use("/api/subscribe", subscribeRoute);
+app.use("/api/user", userRoute);
+
+// Test serveur
 app.get('/', (req, res) => {
   res.send('Serveur K2S opérationnel ✅');
 });
 
+// Route directe simple pour test Postman
 app.post('/ask', async (req, res) => {
   try {
     const { question } = req.body;
