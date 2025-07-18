@@ -1,47 +1,23 @@
-const openaiService = require("../controllers/openaiService");
-const User = require("../models/usermodel");
+// controllers/answerController.js
+const { getOpenAIResponse } = require('../services/openaiService');
+const { buildAnswerPrompt } = require('../utils/promptBuilder');
 
-exports.answer = async (req, res) => {
+exports.generateAnswer = async (req, res) => {
   try {
-    const { user_id, answers, history } = req.body; 
-    // answers : tableau des réponses utilisateur aux 5 questions
-    // history : historique complet pour analyse approfondie (optionnel)
+    const { resume, questions, answers } = req.body;
 
-    // 1. Vérifie et incrémente quota
-    const user = await User.findOne({ id: user_id });
-    if (!user) return res.status(404).json({ message: "Utilisateur non trouvé" });
-
-    // Reset quota journalier si nécessaire
-    const today = new Date().toISOString().slice(0, 10);
-    if (user.last_analysis_date !== today) {
-      user.analysis_count = 0;
-      user.last_analysis_date = today;
+    if (!resume || !questions || !answers || answers.length !== 5) {
+      return res.status(400).json({ error: 'Champs manquants ou invalides.' });
     }
 
-    if (user.analysis_count >= 3 && user.subscription_level === "basic") {
-      return res.status(403).json({ message: "Quota dépassé, passez en premium" });
-    }
+    const prompt = buildAnswerPrompt(resume, questions, answers);
+    const aiResponse = await getOpenAIResponse(prompt);
 
-    user.analysis_count += 1;
-    await user.save();
-
-    // 2. Prépare prompt final à envoyer à OpenAI
-    let prompt = "Tu es un expert en diagnostic technique. Voici les réponses de l'utilisateur :\n";
-    answers.forEach((answer, i) => {
-      prompt += `Q${i + 1}: ${answer}\n`;
-    });
-    if (history) {
-      prompt += `\nHistorique complet : ${history}\n`;
-    }
-
-    // 3. Appelle OpenAI pour générer diagnostic
-    const diagnostic = await openaiService.askOpenAI(prompt, "");
-
-    // 4. Envoie la réponse au client
-    res.json({ diagnostic });
+    const jsonData = JSON.parse(aiResponse);
+    return res.status(200).json(jsonData);
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Erreur serveur" });
+    console.error('Erreur dans /answer :', error.message);
+    return res.status(500).json({ error: 'Erreur lors du diagnostic.' });
   }
 };
