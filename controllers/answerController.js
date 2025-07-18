@@ -1,4 +1,4 @@
-const { getOpenAIResponse } = require('../services/openaiService');
+const { getOpenAIResponse } = require('../controllers/openaiService');
 const {
   buildSecondAnalysisPrompt,
   buildFinalDiagnosisPrompt
