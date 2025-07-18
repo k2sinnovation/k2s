@@ -2,20 +2,19 @@ const express = require('express');
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-const { Configuration, OpenAIApi } = require('openai');
+const { Configuration, OpenAIApi } = require("openai");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Init OpenAI avec ta clé d'environnement
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
 const openai = new OpenAIApi(configuration);
 
-// Connexion MongoDB avec démarrage du serveur après succès connexion
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -23,27 +22,35 @@ mongoose.connect(process.env.MONGO_URI, {
 .then(() => {
   console.log('✅ Connexion MongoDB réussie');
 
-  // Lancer le serveur seulement après connexion OK
   app.listen(PORT, () => {
     console.log(`Serveur lancé sur le port ${PORT}`);
   });
 })
 .catch((err) => {
   console.error('❌ Erreur de connexion MongoDB :', err);
-  process.exit(1);  // quitte le processus si pas de connexion
+  process.exit(1);
 });
 
-// Route de test simple
+// Route test simple
 app.get('/', (req, res) => {
   res.send('Serveur K2S opérationnel ✅');
 });
 
-// Endpoint pour tester la clé OpenAI
-app.get('/test-openai', async (req, res) => {
+// Exemple route POST pour interroger OpenAI
+app.post('/ask', async (req, res) => {
   try {
-    const response = await openai.listModels();
-    res.json({ success: true, models: response.data });
+    const question = req.body.question;
+    if (!question) return res.status(400).json({ error: "Question manquante" });
+
+    const completion = await openai.createChatCompletion({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: question }],
+    });
+
+    const answer = completion.data.choices[0].message.content;
+    res.json({ answer });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.response?.data || error.message });
+    console.error('Erreur API OpenAI :', error);
+    res.status(500).json({ error: "Erreur lors de l'appel à OpenAI" });
   }
 });
