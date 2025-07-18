@@ -33,3 +33,35 @@ Réponds uniquement au format JSON suivant :
 module.exports = {
   buildFirstAnalysisPrompt
 };
+function buildFinalDiagnosisPrompt(resume, questions, answers, previousDiagnosis) {
+  return `
+Tu es Lydia, IA experte en diagnostic technique.
+
+Résumé global :
+"${resume}"
+
+Questions et réponses utilisateur :
+1. ${questions[0]} → ${answers[0]}
+2. ${questions[1]} → ${answers[1]}
+3. ${questions[2]} → ${answers[2]}
+4. ${questions[3]} → ${answers[3]}
+5. ${questions[4]} → ${answers[4]}
+
+Diagnostic précédent :
+${previousDiagnosis || 'Non spécifié'}
+
+⚠️ Malgré deux analyses, la panne persiste.
+
+Propose un dernier diagnostic avec 4 causes possibles maximum, sous ce format :
+
+{
+  "diagnostics": [
+    { "cause": "Cause possible 1", "verification": "Action à faire" },
+    ...
+  ],
+  "message": "Si vous n’avez toujours pas trouvé la solution, contactez le fabricant ou le fournisseur."
+}
+
+Pas de commentaires, pas de répétition des questions. Réponds strictement en JSON.
+`;
+}
