@@ -44,7 +44,7 @@ app.use("/api/user", userRoute); // ← Si userRoute est un modèle, ce n’est 
 
 // ✅ Route test GET
 app.get('/', (req, res) => {
-  res.send('Serveur K2S opérationnel ✅');
+  res.send('Serveur K2S Innovation for IQ est opérationnel ✅');
 });
 
 // ✅ Test direct OpenAI
