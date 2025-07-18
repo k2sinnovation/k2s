@@ -1,4 +1,3 @@
-const mistralService = require("./mistralService");
 const openaiService = require("./openaiService");
 const Prompt = require("../promts/prompt");
 
