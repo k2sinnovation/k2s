@@ -1,34 +1,35 @@
-const { getOpenAIResponse } = require('../controllers/openaiService');
-const {
-  buildSecondAnalysisPrompt,
-  buildFinalDiagnosisPrompt
-} = require('../utils/promptBuilder');
+const { buildSecondAnalysisPrompt, buildFinalAnalysisPrompt } = require('../utils/promptBuilder');
 
-exports.generateAnswer = async (req, res) => {
+exports.processAnswer = async (req, res) => {
   try {
-    const { resume, questions, answers, index, previousDiagnosis } = req.body;
+    const { index, domaine, resume, previousQA, diagnostic_precedent } = req.body;
 
-    if (!resume || !questions || !answers || typeof index !== 'number') {
-      return res.status(400).json({ error: 'Champs requis manquants ou invalides.' });
+    if (!index || !domaine || !resume || !previousQA || previousQA.length === 0) {
+      return res.status(400).json({ error: "Champs requis manquants ou invalides" });
     }
 
-    let prompt = '';
+    const openai = req.app.locals.openai;
+    let prompt;
 
     if (index === 3) {
-      // 🔴 Dernière tentative — Utiliser prompt3
-      prompt = buildFinalDiagnosisPrompt(resume, questions, answers, previousDiagnosis);
+      if (!diagnostic_precedent) {
+        return res.status(400).json({ error: "Diagnostic précédent requis pour l'analyse finale" });
+      }
+      prompt = buildFinalAnalysisPrompt(domaine, resume, diagnostic_precedent, previousQA);
     } else {
-      // 🟢 ou 🟠 analyse 1 ou 2 — Utiliser prompt2
-      prompt = buildSecondAnalysisPrompt(resume, questions, answers, previousDiagnosis);
+      prompt = buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnostic_precedent);
     }
 
-    const aiResponse = await getOpenAIResponse(prompt);
-    const jsonData = JSON.parse(aiResponse);
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+    });
 
-    return res.status(200).json(jsonData);
+    const result = completion.choices[0].message.content;
+    return res.json({ diagnostic: result });
 
   } catch (error) {
-    console.error('Erreur dans /answer :', error.message);
-    return res.status(500).json({ error: 'Erreur lors du traitement du diagnostic.' });
+    console.error("Erreur dans processAnswer :", error);
+    return res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
