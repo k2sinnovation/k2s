@@ -1,5 +1,5 @@
 const openaiService = require("../controllers/openaiService");
-const User = require("../models/userModel");
+const User = require("../modèls/userModel");
 
 exports.answer = async (req, res) => {
   try {
