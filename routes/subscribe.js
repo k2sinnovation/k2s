@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const User = require("../models/user");
+const User = require("../models/usermodel");
 
 router.post("/upgrade", async (req, res) => {
   const { user_id, new_level } = req.body;
