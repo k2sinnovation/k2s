@@ -7,7 +7,7 @@ require('dotenv').config(); // Ajouté au cas où ce n’est pas fait ailleurs
 const analyzeRoute = require("./routes/analyze");   // Corrigé le chemin (./ au lieu de ../)
 const answerRoute = require("./routes/answer");
 const subscribeRoute = require("./routes/subscribe");
-const userRoute = require("./routes/user");         // <-- À vérifier : usermodel = modèle, ici c’est une route ?
+const userRoute = require("./modèls/usermodel");         // <-- À vérifier : usermodel = modèle, ici c’est une route ?
 
 const app = express();
 const PORT = process.env.PORT || 3000;
