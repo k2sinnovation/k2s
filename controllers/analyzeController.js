@@ -1,6 +1,6 @@
 const mistralService = require("./mistralService");
 const openaiService = require("./openaiService");
-const Prompt = require("../models/promptModel");
+const Prompt = require("../promts/prompt");
 
 exports.analyze = async (req, res) => {
   const { user_id, text } = req.body;
