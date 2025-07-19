@@ -2,20 +2,16 @@
 
 const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
 
-/**
- * Analyse initiale : génère 5 questions fermées à partir d'une description.
- */
 async function analyzeRequest(req, res) {
   try {
     const openai = req.app.locals.openai;
-
     const { description } = req.body;
 
     if (!description || description.trim().length < 5) {
       return res.status(400).json({ error: "Description trop courte ou absente." });
     }
 
-    // Générer le prompt pour GPT
+    // Construire le prompt
     const prompt = buildFirstAnalysisPrompt(description);
 
     // Appel OpenAI
@@ -23,32 +19,41 @@ async function analyzeRequest(req, res) {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.5,
+      max_tokens: 400,
+      // timeout: 30000 // option si supporté par ta lib OpenAI
     });
 
     const content = completion.choices[0].message.content;
 
-    // Essayer d'extraire et parser un JSON dans la réponse
-    const match = content.match(/\{[\s\S]*\}/);
-    if (!match) {
+    // Extraction robuste du JSON : on cherche la première accolade ouvrante et la dernière fermante
+    const jsonStart = content.indexOf('{');
+    const jsonEnd = content.lastIndexOf('}');
+    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
       throw new Error("Réponse non formatée en JSON");
     }
 
-    const json = JSON.parse(match[0]);
+    const jsonString = content.substring(jsonStart, jsonEnd + 1);
+
+    let json;
+    try {
+      json = JSON.parse(jsonString);
+    } catch (e) {
+      throw new Error("JSON invalide ou mal formé");
+    }
 
     if (!json.questions || !Array.isArray(json.questions)) {
       throw new Error("JSON mal structuré (questions manquantes)");
     }
 
-    // Formater les questions individuellement
     const structuredQuestions = json.questions.map((q, i) => ({
       id: i + 1,
-      text: q
+      text: q.trim()
     }));
 
     return res.json({
       success: true,
       resume: json.resume || "",
-      questions: structuredQuestions, // tableau [{id, text}]
+      questions: structuredQuestions,
     });
 
   } catch (error) {
@@ -59,7 +64,3 @@ async function analyzeRequest(req, res) {
     });
   }
 }
-
-module.exports = {
-  analyzeRequest
-};
