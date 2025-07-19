@@ -10,18 +10,13 @@ Ta mission est de :
 1. **Résumer** le problème en une seule phrase simple.
 2. **Générer 5 questions fermées** (réponse : Oui / Non / Je ne sais pas) pour affiner la recherche du problème.
 
-Réponds uniquement au format JSON suivant :
-
+Ne réponds que par un objet JSON strict, sans aucun texte avant ou après.
+Format exact :
 {
-  "resume": "Résumé clair du problème",
-  "questions": [
-    "Question 1 ?",
-    "Question 2 ?",
-    "Question 3 ?",
-    "Question 4 ?",
-    "Question 5 ?"
-  ]
+  "resume": "...",
+  "questions": ["...", "...", "...", "...", "..."]
 }
+
 
 - Ne donne aucune explication ni texte en dehors du JSON.
 - Chaque question doit être brève, pratique et adaptée à un technicien terrain.
