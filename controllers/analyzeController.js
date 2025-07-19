@@ -25,7 +25,6 @@ exports.askOpenAI = async (prompt, userText) => {
   }
 };
 
-analyzeController 
 // controllers/analyzeController.js
 
 const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
