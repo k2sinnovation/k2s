@@ -35,7 +35,7 @@ module.exports = {
 };
 
 function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPrecedent = "") {
-  const qaFormatted = previousQA.map((item, idx) => 
+  const qaFormatted = previousQA.map((item, idx) =>
     `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`
   ).join('\n\n');
 
@@ -60,7 +60,7 @@ Ta tâche est maintenant de fournir un **diagnostic structuré**, comprenant :
 }
 
 function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, questionsReponses) {
-  const qaFormatted = questionsReponses.map((item, idx) => 
+  const qaFormatted = questionsReponses.map((item, idx) =>
     `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`
   ).join('\n\n');
 
