@@ -1,93 +1,57 @@
-const axios = require("axios");
-
-exports.askOpenAI = async (prompt, userText) => {
-  try {
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-4o-mini", // plus rapide et économique
-        messages: [
-          { role: "system", content: prompt },
-          { role: "user", content: userText }
-        ]
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-        }
-      }
-    );
-
-    return response.data.choices[0].message.content;
-  } catch (error) {
-    console.error("Erreur appel OpenAI :", error.response?.data || error.message);
-    throw new Error("Erreur OpenAI");
-  }
-};
-
 // controllers/analyzeController.js
-
 const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
+const { askOpenAI } = require("./openaiService");
 
 async function analyzeRequest(req, res) {
   try {
-    const openai = req.app.locals.openai;
     const { description } = req.body;
 
     if (!description || description.trim().length < 5) {
       return res.status(400).json({ error: "Description trop courte ou absente." });
     }
 
-    // Construire le prompt
     const prompt = buildFirstAnalysisPrompt(description);
 
-    // Appel OpenAI
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
-      max_tokens: 400,
-      // timeout: 30000 // option si supporté par ta lib OpenAI
-    });
+    const aiResponse = await askOpenAI(prompt, description);
 
-    const content = completion.choices[0].message.content;
-
-    // Extraction robuste du JSON : on cherche la première accolade ouvrante et la dernière fermante
-    const jsonStart = content.indexOf('{');
-    const jsonEnd = content.lastIndexOf('}');
+    // Extraction JSON
+    const jsonStart = aiResponse.indexOf("{");
+    const jsonEnd = aiResponse.lastIndexOf("}");
     if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-      throw new Error("Réponse non formatée en JSON");
+      throw new Error("Réponse OpenAI non formatée en JSON.");
     }
 
-    const jsonString = content.substring(jsonStart, jsonEnd + 1);
-
-    let json;
+    const jsonString = aiResponse.substring(jsonStart, jsonEnd + 1);
+    let parsed;
     try {
-      json = JSON.parse(jsonString);
+      parsed = JSON.parse(jsonString);
     } catch (e) {
-      throw new Error("JSON invalide ou mal formé");
+      throw new Error("Impossible de parser le JSON retourné.");
     }
 
-    if (!json.questions || !Array.isArray(json.questions)) {
-      throw new Error("JSON mal structuré (questions manquantes)");
+    if (!parsed.questions || !Array.isArray(parsed.questions)) {
+      throw new Error("Champ 'questions' manquant ou invalide.");
     }
 
-    const structuredQuestions = json.questions.map((q, i) => ({
+    const structuredQuestions = parsed.questions.map((q, i) => ({
       id: i + 1,
-      text: q.trim()
+      text: q.trim(),
     }));
 
     return res.json({
       success: true,
-      resume: json.resume || "",
+      resume: parsed.resume || "",
       questions: structuredQuestions,
     });
 
   } catch (error) {
-    console.error("❌ Erreur dans analyzeController :", error);
+    console.error("❌ Erreur dans analyzeController:", error);
     return res.status(500).json({
-      error: "Erreur lors de l'analyse initiale.",
+      success: false,
+      error: "Erreur lors de l’analyse initiale.",
       details: error.message,
     });
   }
 }
+
+module.exports = { analyzeRequest };
