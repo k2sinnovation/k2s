@@ -2,9 +2,9 @@ const { buildSecondAnalysisPrompt, buildFinalAnalysisPrompt } = require('../util
 
 exports.processAnswer = async (req, res) => {
   try {
-    const { index, domaine, resume, previousQA, diagnostic_precedent } = req.body;
+    const { index, resume, previousQA, diagnostic_precedent } = req.body;
 
-    if (!index || !domaine || !resume || !previousQA || previousQA.length === 0) {
+    if (!index || !resume || !previousQA || previousQA.length === 0) {
       return res.status(400).json({ error: "Champs requis manquants ou invalides" });
     }
 
@@ -15,9 +15,9 @@ exports.processAnswer = async (req, res) => {
       if (!diagnostic_precedent) {
         return res.status(400).json({ error: "Diagnostic précédent requis pour l'analyse finale" });
       }
-      prompt = buildFinalAnalysisPrompt(domaine, resume, diagnostic_precedent, previousQA);
+      prompt = buildFinalAnalysisPrompt( resume, diagnostic_precedent, previousQA);
     } else {
-      prompt = buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnostic_precedent);
+      prompt = buildSecondAnalysisPrompt( resume, previousQA, diagnostic_precedent);
     }
 
     const completion = await openai.chat.completions.create({
