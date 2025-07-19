@@ -1,50 +1,49 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const OpenAI = require("openai");
-require('dotenv').config(); // Ajouté au cas où ce n’est pas fait ailleurs
+require('dotenv').config();
 
-// Routes et modèles
-const analyzeRoute = require("./routes/analyze");   // Corrigé le chemin (./ au lieu de ../)
+// ✅ Chargement des routes
+const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
-const subscribeRoute = require("./routes/subscribe");
 const retryRoute = require("./routes/retry");
-const userRoute = require("./models/usermodel");         // <-- À vérifier : usermodel = modèle, ici c’est une route ?
+const subscribeRoute = require("./routes/subscribe");
+
+// ⚠️ Ce n’est pas une route à utiliser comme tel, sauf si tu l’as défini dans /models comme un vrai routeur
+// const userRoute = require("./models/usermodel");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.use(express.json());
 
-// ✅ Instance OpenAI accessible globalement
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// ✅ OpenAI initialisé
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.locals.openai = openai;
 
 // ✅ Connexion MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
-})
-.then(() => {
+}).then(() => {
   console.log('✅ Connexion MongoDB réussie');
   app.listen(PORT, () => {
     console.log(`🚀 Serveur lancé sur le port ${PORT}`);
   });
-})
-.catch((err) => {
+}).catch((err) => {
   console.error('❌ Erreur de connexion MongoDB :', err);
   process.exit(1);
 });
 
-// ✅ Routes principales
+// ✅ Routes correctement montées avec "/api" !
 app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
-app.use("/api/subscribe", subscribeRoute);
-app.use("/api/user", userRoute); // ← Si userRoute est un modèle, ce n’est pas nécessaire ici
 app.use("/api/retry", retryRoute);
+app.use("/api/subscribe", subscribeRoute);
 
-// ✅ Route test GET
+// ❌ Retiré car usermodel n’est pas une route
+// app.use("/api/user", userRoute);
+
+// ✅ Test route GET
 app.get('/', (req, res) => {
   res.send('Serveur K2S Innovation for IQ est opérationnel ✅');
 });
