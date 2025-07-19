@@ -9,9 +9,9 @@ router.post("/", async (req, res) => {
     const { user_id, text } = req.body;
 
     // 1. Vérification minimum (optionnelle si déjà filtrée dans Flutter)
-    if (!text || text.length < 80) {
-      return res.status(400).json({ error: "Demande trop courte ou invalide." });
-    }
+    //if (!text || text.length < 80) {
+    //  return res.status(400).json({ error: "Demande trop courte ou invalide." });
+   // }
 
     // 2. Charger le prompt unique (à créer/fusionner)
     const promptText = await loadPrompt("prompt_technique_global"); // ex: prompts/prompt_technique_global.txt
