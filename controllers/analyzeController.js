@@ -1,5 +1,3 @@
-// controllers/analyzeController.js
-
 const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
 
 async function analyzeRequest(req, res) {
@@ -11,21 +9,18 @@ async function analyzeRequest(req, res) {
       return res.status(400).json({ error: "Description trop courte ou absente." });
     }
 
-    // Construire le prompt
     const prompt = buildFirstAnalysisPrompt(description);
 
-    // Appel OpenAI
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.5,
       max_tokens: 400,
-      // timeout: 30000 // option si supporté par ta lib OpenAI
     });
 
     const content = completion.choices[0].message.content;
 
-    // Extraction robuste du JSON : on cherche la première accolade ouvrante et la dernière fermante
+    // Extraction JSON robuste
     const jsonStart = content.indexOf('{');
     const jsonEnd = content.lastIndexOf('}');
     if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
@@ -47,7 +42,7 @@ async function analyzeRequest(req, res) {
 
     const structuredQuestions = json.questions.map((q, i) => ({
       id: i + 1,
-      text: q.trim()
+      text: q.trim(),
     }));
 
     return res.json({
@@ -55,7 +50,6 @@ async function analyzeRequest(req, res) {
       resume: json.resume || "",
       questions: structuredQuestions,
     });
-
   } catch (error) {
     console.error("❌ Erreur dans analyzeController :", error);
     return res.status(500).json({
@@ -64,3 +58,5 @@ async function analyzeRequest(req, res) {
     });
   }
 }
+
+module.exports = { analyzeRequest };
