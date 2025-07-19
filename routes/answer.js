@@ -1,8 +1,10 @@
-const express = require('express');
+// routes/answer.js
+
+const express = require("express");
 const router = express.Router();
+const { processAnswer } = require("../controllers/answerController");
 
-const answerController = require('../controllers/answerController');
-
-router.post('/', answerController.processAnswer);
+// POST /api/answer
+router.post("/", processAnswer);
 
 module.exports = router;
