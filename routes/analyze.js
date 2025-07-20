@@ -1,10 +1,24 @@
 const express = require("express");
 const router = express.Router();
-const { askOpenAI } = require("../controllers/openaiService"); // ✅ NE PAS SUPPRIMER
-const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder"); // ✅ NE PAS SUPPRIMER
-const analyzeController = require("../controllers/analyzeController"); // ✅ AJOUTÉ pour déléguer proprement
+const { askOpenAI } = require("../controllers/openaiService");
+const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
 
-// 🔄 MODIFICATION : Délégation de la route POST vers le contrôleur
-router.post("/", analyzeController.analyzeText);
+router.post("/", async (req, res) => {
+  try {
+    const { text } = req.body;
+
+    //if (!text || text.length < 80) {
+     // return res.status(400).json({ error: "Demande trop courte ou invalide." });
+    //}
+
+    const prompt = buildFirstAnalysisPrompt(text);
+    const response = await askOpenAI(prompt, text);
+
+    res.json({ questions: response });
+  } catch (error) {
+    console.error("Erreur analyse :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+});
 
 module.exports = router;
