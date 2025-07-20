@@ -1,57 +1,25 @@
-// controllers/analyzeController.js
-const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
-const { askOpenAI } = require("./openaiService");
+const { buildFirstAnalysisPrompt } = require('../utils/promptHelper');
+const { askOpenAI } = require('../openaiService');
 
-async function analyzeRequest(req, res) {
+exports.analyzeText = async (req, res) => {
   try {
-    const { description } = req.body;
+    const { text } = req.body;
 
-    if (!description || description.trim().length < 5) {
-      return res.status(400).json({ error: "Description trop courte ou absente." });
+    if (!text || text.trim() === '') {
+      return res.status(400).json({ error: 'Texte requis pour l’analyse.' }); // ✅ AJOUT : vérification entrée
     }
 
-    const prompt = buildFirstAnalysisPrompt(description);
+    const prompt = buildFirstAnalysisPrompt(text);
+    const response = await askOpenAI(prompt, text);
 
-    const aiResponse = await askOpenAI(prompt, description);
-
-    // Extraction JSON
-    const jsonStart = aiResponse.indexOf("{");
-    const jsonEnd = aiResponse.lastIndexOf("}");
-    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-      throw new Error("Réponse OpenAI non formatée en JSON.");
+    if (!Array.isArray(response)) {
+      return res.status(500).json({ error: 'Format inattendu depuis OpenAI (tableau requis).' }); // ✅ AJOUT : contrôle format
     }
 
-    const jsonString = aiResponse.substring(jsonStart, jsonEnd + 1);
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonString);
-    } catch (e) {
-      throw new Error("Impossible de parser le JSON retourné.");
-    }
-
-    if (!parsed.questions || !Array.isArray(parsed.questions)) {
-      throw new Error("Champ 'questions' manquant ou invalide.");
-    }
-
-    const structuredQuestions = parsed.questions.map((q, i) => ({
-      id: i + 1,
-      text: q.trim(),
-    }));
-
-    return res.json({
-      success: true,
-      resume: parsed.resume || "",
-      questions: structuredQuestions,
-    });
+    res.status(200).json({ questions: response }); // 🔄 MODIFICATION : ajout du statut + format clair Flutter
 
   } catch (error) {
-    console.error("❌ Erreur dans analyzeController:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Erreur lors de l’analyse initiale.",
-      details: error.message,
-    });
+    console.error("Erreur analyseText:", error); // 🔄 MODIFICATION : message plus précis
+    res.status(500).json({ error: "Erreur serveur" });
   }
-}
-
-module.exports = { analyzeRequest };
+};
