@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { askOpenAI } = require("../controllers/openaiService");
 const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
+const { buildSecondAnalysisPrompt } = require("../utils/promptBuilder");
 
 router.post('/', async (req, res) => {
   const { text, answers } = req.body;
