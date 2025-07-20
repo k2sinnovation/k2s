@@ -1,5 +1,5 @@
 const { buildFirstAnalysisPrompt } = require('../utils/promptHelper');
-const { askOpenAI } = require('../openaiService');
+const { askOpenAI } = require("../controllers/openaiService");
 
 exports.analyzeText = async (req, res) => {
   try {
