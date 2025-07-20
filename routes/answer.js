@@ -29,3 +29,4 @@ router.post('/', async (req, res) => {
     res.status(500).json({ error: "Erreur lors du traitement de la requête" });
   }
 });
+module.exports = router;
