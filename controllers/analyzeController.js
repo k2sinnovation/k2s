@@ -1,57 +1,32 @@
 // controllers/analyzeController.js
-const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
-const { askOpenAI } = require("./openaiService");
+const { getPromptFromText } = require('../utils/promptHelper');
+const { callOpenAI } = require('./openaiService');
 
-async function analyzeRequest(req, res) {
+exports.analyzeText = async (req, res) => {
   try {
-    const { description } = req.body;
+    const { text, user_id } = req.body;
 
-    if (!description || description.trim().length < 5) {
-      return res.status(400).json({ error: "Description trop courte ou absente." });
+    if (!text || text.trim().length < 10) {
+      return res.status(400).json({ error: "Texte trop court pour une analyse." });
     }
 
-    const prompt = buildFirstAnalysisPrompt(description);
+    const prompt = getPromptFromText(text);
+    const json = await callOpenAI(prompt);
 
-    const aiResponse = await askOpenAI(prompt, description);
-
-    // Extraction JSON
-    const jsonStart = aiResponse.indexOf("{");
-    const jsonEnd = aiResponse.lastIndexOf("}");
-    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-      throw new Error("Réponse OpenAI non formatée en JSON.");
+    if (!json || !json.questions || !Array.isArray(json.questions)) {
+      return res.status(500).json({ error: "Réponse IA invalide ou incomplète." });
     }
 
-    const jsonString = aiResponse.substring(jsonStart, jsonEnd + 1);
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonString);
-    } catch (e) {
-      throw new Error("Impossible de parser le JSON retourné.");
-    }
-
-    if (!parsed.questions || !Array.isArray(parsed.questions)) {
-      throw new Error("Champ 'questions' manquant ou invalide.");
-    }
-
-    const structuredQuestions = parsed.questions.map((q, i) => ({
-      id: i + 1,
-      text: q.trim(),
-    }));
+    // ✅ Format simple : liste de chaînes
+    const structuredQuestions = json.questions.map(q => q.trim());
 
     return res.json({
       success: true,
-      resume: parsed.resume || "",
+      resume: json.resume || "",
       questions: structuredQuestions,
     });
-
   } catch (error) {
-    console.error("❌ Erreur dans analyzeController:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Erreur lors de l’analyse initiale.",
-      details: error.message,
-    });
+    console.error("Erreur analyseText :", error);
+    return res.status(500).json({ error: "Erreur serveur lors de l’analyse." });
   }
-}
-
-module.exports = { analyzeRequest };
+};
