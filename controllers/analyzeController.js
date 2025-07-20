@@ -1,6 +1,24 @@
 const { buildFirstAnalysisPrompt } = require('../utils/promptHelper');
 const { askOpenAI } = require("../controllers/openaiService");
+const axios = require("axios");
 
+exports.askOpenAI = async (prompt, userText) => {
+  try {
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini", // plus rapide et économique
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: userText }
+        ]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        }
+      }
+    );
 exports.analyzeText = async (req, res) => {
   try {
     const { text } = req.body;
