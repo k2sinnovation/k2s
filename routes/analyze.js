@@ -1,8 +1,7 @@
-// routes/analyze.js
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const { analyzeRequest } = require("../controllers/analyzeController");
+const analyzeController = require('../controllers/analyzeController'); // ✅ Chemin correct
 
-router.post("/", analyzeRequest);
+router.post('/', analyzeController.analyzeText); // ✅ On appelle bien la fonction du contrôleur
 
 module.exports = router;
