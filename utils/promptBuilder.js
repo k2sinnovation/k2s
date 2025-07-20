@@ -6,7 +6,7 @@ function buildFirstAnalysisPrompt(userInput) {
 
     Ta mission est de :
     1. **Faire un résumé fidèle du problème** (garde l’essentiel sans reformuler excessivement).
-    2. **Générer jusqu’à 5 questions fermées sans choix** (réponses attendues : Oui / Non / Je ne sais pas)
+    2. **Générer jusqu’à 5 questions fermées sans choix ni qui as déja posé** (réponses attendues : Oui / Non / Je ne sais pas)
        pour **mieux cerner le contexte technique**.
 
     Règles obligatoires :
@@ -83,7 +83,7 @@ function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, que
     ${qaFormatted}
 
     Ta tâche est maintenant de proposer une **liste finale de 4 causes probables maximum**, claires et exploitables.
-    Pour chaque cause, associe immédiatement une **vérification terrain concrète**.
+    Pour chaque cause, associe immédiatement une **vérification terrain concrète** et la fin dire : "Si le problème persiste, vous pouvez relancer une seconde analyse et d’ajouter des informations complémentaires afin d'affiner le diagnostic.".
 
     Structure ta réponse ainsi :
 
