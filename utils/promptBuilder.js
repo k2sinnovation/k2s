@@ -35,7 +35,7 @@ function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPreced
   ).join('\n\n');
 
   return `
-Tu es, une intelligence spécialisée en diagnostic terrain.
+Tu es LYDIA, une intelligence spécialisée en diagnostic terrain dans le domaine suivant : ${domaine}.
 
 Voici le résumé actuel de la demande utilisateur :
 "${resume}"
@@ -45,26 +45,11 @@ ${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrece
 Voici les questions posées et leurs réponses :
 ${qaFormatted}
 
-Ta tâche est maintenant de fournir 4 cause avec ça verification structuré, comprenant :
-1. **Cause 1** 
-    "..."
-   **Vérification**
-     "..."
+Ta tâche est maintenant de fournir un **diagnostic structuré**, comprenant :
+1. Une **hypothèse principale** de la panne
+2. D'autres **causes possibles**
+3. Les **vérifications techniques** à faire (claires et simples)
 
-2. **Cause 1** 
-    "..."
-   **Vérification**
-     "..."
-
-3. **Cause 1** 
-    "..."
-   **Vérification**
-     "..."
-
-4. **Cause 1** 
-    "..."
-   **Vérification**
-     "..."
 
 Écris de façon synthétique, structurée et facile à lire pour un technicien terrain.
   `.trim();
