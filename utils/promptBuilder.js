@@ -48,7 +48,7 @@ function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPreced
     ${qaFormatted}
 
     Ta mission est de proposer **plusieurs causes probables (jusqu’à 4 maximum)** à la panne.
-    Pour **chaque cause**, associe immédiatement une **vérification terrain concrète et pertinente**.
+    Pour **chaque cause**, associe ç la ligne immédiatement une **vérification terrain concrète et pertinente** et la fin dire : "Si le problème persiste, vous pouvez relancer une seconde analyse et d’ajouter des informations complémentaires afin d'affiner le diagnostic.".
 
     Structure ta réponse comme ceci :
 
@@ -83,7 +83,7 @@ function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, que
     ${qaFormatted}
 
     Ta tâche est maintenant de proposer une **liste finale de 4 causes probables maximum**, claires et exploitables.
-    Pour chaque cause, associe immédiatement une **vérification terrain concrète** et la fin dire : "Si le problème persiste, vous pouvez relancer une seconde analyse et d’ajouter des informations complémentaires afin d'affiner le diagnostic.".
+    Pour chaque cause, associe immédiatement une **vérification terrain concrète**.
 
     Structure ta réponse ainsi :
 
