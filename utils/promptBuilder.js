@@ -1,4 +1,4 @@
-function buildFirstAnalysisPrompt(userInput) {
+function buildFirstAnalysisPrompt(userInput, qaFormatted) {
   return `
 Tu es une intelligence artificielle spécialisée en **diagnostic technique terrain**.
 Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
@@ -7,8 +7,8 @@ Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
 "${userInput}"
 
 Voici les questions posées et leurs réponses :
-${qaFormatted
-  
+${qaFormatted}
+
 Si cette demande est :
 - Trop vague ou incomplète,
 - Hors du cadre d’un problème technique sur un système (électrique, mécanique, automatisme, industriel…),
