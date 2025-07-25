@@ -1,5 +1,5 @@
 function buildFirstAnalysisPrompt(userInput, qaFormatted) {
-  return 
+  return `
 Tu es une intelligence artificielle spécialisée en **diagnostic technique terrain**.
 Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
 
@@ -52,17 +52,17 @@ Format attendu :
   "questions": ["...", "...", "...", "...", "..."]
 }
 \\\
-.trim();
+`.trim();
 }
 
 function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPrecedent = "", analyseIndex = 2) {
   const qaFormatted = previousQA
-    .map((item, idx) => Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse})
+    .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
     .join('\n\n');
 
   const causeStart = analyseIndex === 1 ? 1 : 5;
 
-  return 
+  return `
 Tu es une intelligence spécialisée dans le **diagnostic terrain**.
 Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
 Tu considères que l’équipement fonctionnait correctement avant l’apparition du problème, sauf indication contraire.
@@ -86,7 +86,7 @@ Règles obligatoires :
 - Ne pose une question sur la marque/modèle que si **vraiment pertinente pour avancer**.
 - Ne donne **aucune explication**, ne réponds que par un **objet JSON strict**.
 
-${diagnosticPrecedent ? Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n : ""}
+${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
 
 Voici les questions posées et leurs réponses :
 ${qaFormatted}
@@ -111,16 +111,16 @@ Ta réponse doit être **synthétique, structurée et directement exploitable**.
 Conclue avec ce message, sans rien ajouter :  
 "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse." 
 
-⚠️ Si cette analyse est la 3ᵉ (analyse finale), passe à l’analyse suivante sinon réponds normalement.
-.trim();
+`.trim();
 }
+
 
 function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, questionsReponses) {
   const qaFormatted = questionsReponses
-    .map((item, idx) => Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse})
+    .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
     .join('\n\n');
 
-  return 
+  return `
 Tu es une intelligence spécialisée dans le **diagnostic terrain**.  
 Les deux analyses précédentes n’ont pas permis de résoudre la panne.
 
@@ -170,7 +170,7 @@ Conclue avec ce message, sans rien ajouter :
 \\\json
 { "error": "Limite d’analyses atteinte. Veuillez contacter un expert terrain pour aller plus loin." }
 \\\
-.trim();
+`.trim();
 }
 
 module.exports = {
@@ -178,3 +178,4 @@ module.exports = {
   buildSecondAnalysisPrompt,
   buildFinalAnalysisPrompt
 };
+
