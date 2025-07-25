@@ -1,6 +1,5 @@
 function buildFirstAnalysisPrompt(userInput, qaFormatted) {
-return 
-  
+  return `
 Tu es une intelligence artificielle spécialisée en **diagnostic technique terrain**.
 Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
 
@@ -28,9 +27,9 @@ Si cette demande est :
 - De nature théorique, administrative, commerciale ou non liée à une panne/problème,
 
 Alors, **interromps immédiatement l’analyse** et réponds uniquement :
-\\\json
+\\\`\\\`\\\`json
 { "error": "Demande non reconnue comme problème technique terrain exploitable." }
-\\\
+\\\`\\\`\\\`
 
 ---
 
