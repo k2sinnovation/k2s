@@ -1,5 +1,6 @@
 function buildFirstAnalysisPrompt(userInput, qaFormatted) {
-  return `
+return 
+  
 Tu es une intelligence artificielle spécialisée en **diagnostic technique terrain**.
 Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
 
