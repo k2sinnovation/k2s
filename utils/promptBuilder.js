@@ -1,19 +1,7 @@
 function buildFirstAnalysisPrompt(userInput, qaFormatted) {
-  return `
+  return 
 Tu es une intelligence artificielle spécialisée en **diagnostic technique terrain**.
 Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
-
-Agis comme un expert technique spécialisé dans le domaine concerné (automatisme, variation, mécanique, électricité, etc.).
-Je vais te donner un symptôme ou un code défaut rencontré sur une machine, un système ou un composant.
-Tu dois me fournir une réponse technique, structurée et opérationnelle, avec les éléments suivants :
-
-1. Les causes possibles classées par priorité ou fréquence,
-2. Les vérifications concrètes à effectuer sur le terrain,
-3. Les paramètres techniques précis à contrôler ou ajuster (avec noms ou références si applicables),
-4. Des méthodes de test ou de diagnostic pour confirmer chaque cause,
-5. Et enfin des solutions correctives durables (pas juste un redémarrage).
-
-Si le problème est lié à un appareil programmable ou configurable (comme un variateur, un API ou une HMI), donne les paramètres ou menus à vérifier (ex. : p1120, paramètre FBD, etc.).
 
 ⚠️ Analyse d’abord la demande utilisateur :  
 "${userInput}"
@@ -27,9 +15,9 @@ Si cette demande est :
 - De nature théorique, administrative, commerciale ou non liée à une panne/problème,
 
 Alors, **interromps immédiatement l’analyse** et réponds uniquement :
-\\\`\\\`\\\`json
+\\\json
 { "error": "Demande non reconnue comme problème technique terrain exploitable." }
-\\\`\\\`\\\`
+\\\
 
 ---
 
@@ -58,38 +46,26 @@ Règles obligatoires :
 ---
 
 Format attendu :
-\`\`\`json
+\\\json
 {
   "resume": "...",
   "questions": ["...", "...", "...", "...", "..."]
 }
-\`\`\`
-`.trim();
+\\\
+.trim();
 }
 
 function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPrecedent = "", analyseIndex = 2) {
   const qaFormatted = previousQA
-    .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
+    .map((item, idx) => Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse})
     .join('\n\n');
 
   const causeStart = analyseIndex === 1 ? 1 : 5;
 
-  return `
+  return 
 Tu es une intelligence spécialisée dans le **diagnostic terrain**.
 Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
 Tu considères que l’équipement fonctionnait correctement avant l’apparition du problème, sauf indication contraire.
-
-Agis comme un expert technique spécialisé dans le domaine concerné (automatisme, variation, mécanique, électricité, etc.).
-Je vais te donner un symptôme ou un code défaut rencontré sur une machine, un système ou un composant.
-Tu dois me fournir une réponse technique, structurée et opérationnelle, avec les éléments suivants :
-
-1. Les causes possibles classées par priorité ou fréquence,
-2. Les vérifications concrètes à effectuer sur le terrain,
-3. Les paramètres techniques précis à contrôler ou ajuster (avec noms ou références si applicables),
-4. Des méthodes de test ou de diagnostic pour confirmer chaque cause,
-5. Et enfin des solutions correctives durables (pas juste un redémarrage).
-
-Si le problème est lié à un appareil programmable ou configurable (comme un variateur, un API ou une HMI), donne les paramètres ou menus à vérifier (ex. : p1120, paramètre FBD, etc.).
 
 Voici le résumé actuel de la demande utilisateur : "${resume}"
 
@@ -110,7 +86,7 @@ Règles obligatoires :
 - Ne pose une question sur la marque/modèle que si **vraiment pertinente pour avancer**.
 - Ne donne **aucune explication**, ne réponds que par un **objet JSON strict**.
 
-${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
+${diagnosticPrecedent ? Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n : ""}
 
 Voici les questions posées et leurs réponses :
 ${qaFormatted}
@@ -135,30 +111,18 @@ Ta réponse doit être **synthétique, structurée et directement exploitable**.
 Conclue avec ce message, sans rien ajouter :  
 "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse." 
 
-⚠️ Si analyseIndex=3; (analyse finale), passe à l’analyse suivante sinon réponds normalement.
-`.trim();
+⚠️ Si cette analyse est la 3ᵉ (analyse finale), passe à l’analyse suivante sinon réponds normalement.
+.trim();
 }
 
 function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, questionsReponses) {
   const qaFormatted = questionsReponses
-    .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
+    .map((item, idx) => Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse})
     .join('\n\n');
 
-  return `
+  return 
 Tu es une intelligence spécialisée dans le **diagnostic terrain**.  
 Les deux analyses précédentes n’ont pas permis de résoudre la panne.
-
-Agis comme un expert technique spécialisé dans le domaine concerné (automatisme, variation, mécanique, électricité, etc.).
-Je vais te donner un symptôme ou un code défaut rencontré sur une machine, un système ou un composant.
-Tu dois me fournir une réponse technique, structurée et opérationnelle, avec les éléments suivants :
-
-1. Les causes possibles classées par priorité ou fréquence,
-2. Les vérifications concrètes à effectuer sur le terrain,
-3. Les paramètres techniques précis à contrôler ou ajuster (avec noms ou références si applicables),
-4. Des méthodes de test ou de diagnostic pour confirmer chaque cause,
-5. Et enfin des solutions correctives durables (pas juste un redémarrage).
-
-Si le problème est lié à un appareil programmable ou configurable (comme un variateur, un API ou une HMI), donne les paramètres ou menus à vérifier (ex. : p1120, paramètre FBD, etc.).
 
 Voici l’historique complet des échanges avec l’utilisateur :  
 ${fullHistory}
@@ -196,10 +160,21 @@ Cause 10 : ... → Vérification : ...
 Cause 11 : ... → Vérification : ...  
 Cause 12 : ... → Vérification : ...
 
-Conclue par :  
-"Si le problème persiste, contactez un expert terrain ou le support technique spécialisé."
+⚠️ Sois précis, logique, et orienté technicien expérimenté.  
+Ne propose **aucune vérification trop évidente** ou déconnectée du contexte.
 
-⚠️ Ne réponds **pas en langage naturel**, ni en texte libre.  
-⚠️ Réponds uniquement par **un objet JSON** au format strict.  
-`.trim();
+Conclue avec ce message, sans rien ajouter :  
+"Si vous n'avez toujours pas trouvé la solution, veuillez contacter le fabricant ou fournisseur."
+
+⚠️ Si cette analyse est déjà la 4ᵉ (ou plus), alors répondre uniquement par :  
+\\\json
+{ "error": "Limite d’analyses atteinte. Veuillez contacter un expert terrain pour aller plus loin." }
+\\\
+.trim();
 }
+
+module.exports = {
+  buildFirstAnalysisPrompt,
+  buildSecondAnalysisPrompt,
+  buildFinalAnalysisPrompt
+};
