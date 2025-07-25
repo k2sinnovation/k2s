@@ -22,6 +22,17 @@ Si le problème est lié à un appareil programmable ou configurable (comme un v
 Voici les questions posées et leurs réponses :
 ${qaFormatted}
 
+Si cette demande est :
+- Trop vague ou incomplète,
+- Hors du cadre d’un problème technique sur un système (électrique, mécanique, automatisme, industriel…),
+- De nature théorique, administrative, commerciale ou non liée à une panne/problème,
+
+Alors, **interromps immédiatement l’analyse** et réponds uniquement :
+\\\json
+{ "error": "Demande non reconnue comme problème technique terrain exploitable." }
+\\\
+
+---
 
 Si la demande est exploitable, ta mission est alors de :
 1. **Faire un résumé fidèle du problème** (garde l’essentiel sans reformuler excessivement).
