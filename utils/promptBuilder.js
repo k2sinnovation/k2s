@@ -22,7 +22,6 @@ Voici les questions posées et leurs réponses :
 ${qaFormatted}
 
 Si cette demande est :
-- Trop vague ou incomplète,
 - Hors du cadre d’un problème technique sur un système (électrique, mécanique, automatisme, industriel…),
 - De nature théorique, administrative, commerciale ou non liée à une panne/problème,
 
