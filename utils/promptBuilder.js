@@ -72,6 +72,7 @@ Voici le résumé actuel de la demande utilisateur : "${resume}"
 Règles obligatoires :
 - L’utilisateur est **expérimenté**, ne propose **aucune question trop évidente ou simpliste**.
 - Chaque question doit être **courte, pratique, adaptée à un contexte terrain**.
+- Les causes possibles **classées par priorité ou fréquence**.
 - Vérifier si la **fréquence du défaut** est claire (intermittent, constant).
   SEULEMENT Si ce n’est pas déjà mentionné, **pose une question sur ce point**.
 - Tiens compte de **l’environnement d’apparition du problème**, des **codes erreur éventuels**,
@@ -82,8 +83,10 @@ Règles obligatoires :
   Envisager un élément voisin (câble, relais, capteur associé, communication), un facteur externe 
 - Supposer que l’équipement fonctionnait auparavant, sauf si l’utilisateur parle de mise en service ou modification récente
 - L’utilisateur peut mal nommer des éléments (ex. : interrupteur à la place de bouton).
+- Les paramètres techniques précis à contrôler ou ajuster (avec noms ou références si applicables),
   Interprète au mieux selon le contexte.
 - Ne pose une question sur la marque/modèle que si **vraiment pertinente pour avancer**.
+- Si le problème est lié à un appareil programmable ou configurable (comme un variateur, un API ou une HMI, ect), donne les paramètres ou menus à vérifier (ex. : p1120, paramètre FBD, etc.).
 - Ne donne **aucune explication**, ne réponds que par un **objet JSON strict**.
 
 ${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
