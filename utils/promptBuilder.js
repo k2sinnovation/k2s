@@ -62,17 +62,16 @@ ${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrece
 Voici les questions posées et leurs réponses :
 ${qaFormatted}
 
-Ta mission est de proposer **plusieurs causes probables (jusqu’à 4 maximum)** en prenant en compte les questions et en t’appuyant sur des bases solides (manuels, bases de données industrielles,
+Ta mission est de proposer **plusieurs causes probables (jusqu’à 4 maximum)** en prenant en compte les questions mais pas à 100% car l'utilisateur peu faire des erreur et en t’appuyant sur des bases solides (manuels, bases de données industrielles,
 documentation constructeur, expérience terrain)..
 Ton but est de fournir une réponse claire, utile et vérifiable, structurée en étapes logiques,
 avec des causes possibles, des solutions pratiques et, si nécessaire,
 une explication du fonctionnement sous-jacent.
 Pour **chaque cause**, associe la ligne immédiatement une **vérification terrain concrète et pertinente** et à la fin dire : "Si le problème persiste, vous pouvez relancer une seconde analyse et d’ajouter des informations complémentaires afin d'affiner le diagnostic.".
-Pour chaque vérification, mentionne **obligatoirement au moins un point mesurable, un paramètre consultable, un réglage ou une méthode précise**. 
 Aucune vérification vague ou générique n’est acceptée. Chaque action doit être réaliste, précise et orientée "résultat terrain".
 Structure ta réponse comme ceci :
 
-Cause ${causeStart} : [description courte et claire] → Vérification : [description précise de l’action à faire, solutions techniques, les differents paramètres à modifier, tests à faire]  
+Cause ${causeStart} : [description courte et claire] → Vérification : [description précise de l’action à faire, solutions techniques, les noms des differents paramètres à modifier si connus, tests à faire]  
 Cause ${causeStart + 1} : ... → Vérification : ... → Action : ... 
 Cause ${causeStart + 2} : ... → Vérification : ... → Action : ...
 Cause ${causeStart + 3} : ... → Vérification : ... → Action : ...
