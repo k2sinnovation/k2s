@@ -69,7 +69,7 @@ app.post('/ask', async (req, res) => {
     }
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1",
       messages: [{ role: "user", content: question }],
     });
 
