@@ -61,20 +61,23 @@ ${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrece
 Voici les questions posées et leurs réponses :
 ${qaFormatted}
 
-⚠️ Si un **code défaut constructeur** (ex : F30002 pour un variateur Siemens) ou une **référence technique spécifique** est présent dans la demande,
-tu dois **d'abord rechercher sa signification exacte dans les bases techniques connues (constructeurs, manuels, documentation fiable)**.
-Si une cause connue et validée existe, **propose-la en priorité** avec les paramètres ou réglages associés (ex : p1120/p1121 pour le temps de décélération).
-Ignore les réponses utilisateur si elles contredisent manifestement un diagnostic constructeur reconnu.
+⚠️ Si la demande contient un **composant reconnu** (variateur, moteur, capteur, API, disjoncteur, etc.),
+une **référence technique**, un **code défaut**, ou un **symptôme clairement documenté** (ex : "pompe qui cavite", "alarme E5 sur climatiseur", "code 52 sur onduleur", etc.),
+tu dois en priorité :
+1. Rechercher une **explication documentée officielle ou terrain** (constructeur, manuels, base de données fiables),
+2. Proposer une ou plusieurs **causes connues et validées**, 
+3. Associer à chaque cause une **vérification concrète** avec nom de paramètre, test ou réglage si applicable.
 
-Ta mission est de proposer **jusqu’à 4 causes probables** en recoupant les réponses mais sans en dépendre totalement,
-car l'utilisateur peut se tromper. Appuie-toi sur des sources techniques fiables (manuels, bases de données industrielles,
-documentation constructeur, expérience terrain).
+Ignore les réponses utilisateur si elles contredisent une explication constructeur connue ou un symptôme bien identifié.
 
-Ton objectif est de fournir une réponse claire, utile et directement exploitable,
-avec des causes possibles, des solutions pratiques et, si nécessaire,
-une explication du fonctionnement sous-jacent.
-Pour **chaque cause**, associe immédiatement une **vérification terrain concrète et précise**,
-mentionnant **au moins un paramètre, test, réglage, valeur mesurable**.
+Ta mission est de proposer **jusqu’à 4 causes probables** en recoupant les réponses, mais sans t’y limiter.
+Appuie-toi sur des bases techniques fiables (manuels, documentation constructeur, expérience terrain).
+Ton objectif est de fournir une réponse claire, utile et directement exploitable.
+
+Pour **chaque cause**, associe immédiatement une **vérification terrain concrète et précise** :
+- Paramètre à consulter ou modifier
+- Mesure à effectuer
+- Observation ou action à faire sur le système
 
 Structure ta réponse comme ceci :
 
@@ -84,15 +87,15 @@ Cause ${causeStart + 2} : ... → Vérification : ...
 Cause ${causeStart + 3} : ... → Vérification : ...
 
 ⚠️ Ne propose **aucune hypothèse théorique**.
-Les causes doivent être **logiques, vérifiables, compatibles avec les informations disponibles**.
-Évite toute généralité ou supposition hasardeuse.
-Les vérifications doivent être **réalistes**, faisables sur le terrain, directement par un technicien expérimenté.
-Tu peux inclure des **causes indirectes** si elles sont pertinentes (facteurs extérieurs, erreurs humaines, défaut de configuration…).
+Les causes doivent être **logiques, vérifiables, compatibles avec les informations fournies et la réalité terrain**.
+Les vérifications doivent être **réalistes**, faisables par un technicien qualifié.
+Tu peux inclure des **causes indirectes** (erreurs humaines, dérives de réglages, environnement) si elles sont crédibles.
 
 Conclue avec ce message, sans rien ajouter :
 "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse." 
 `.trim();
 }
+
 
 
 function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, questionsReponses) {
