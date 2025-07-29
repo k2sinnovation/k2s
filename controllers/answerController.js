@@ -1,4 +1,6 @@
 const { buildSecondAnalysisPrompt, buildFinalAnalysisPrompt } = require('../utils/promptBuilder');
+console.log("📤 Prompt envoyé à l'IA (prompt2):\n", prompt);
+
 
 exports.processAnswer = async (req, res) => {
   try {
@@ -16,8 +18,16 @@ exports.processAnswer = async (req, res) => {
         return res.status(400).json({ error: "Diagnostic précédent requis pour l'analyse finale" });
       }
       prompt = buildFinalAnalysisPrompt( resume, diagnostic_precedent, previousQA);
+      console.log("📌 Résumé :", resume);
+console.log("🛠️ Causes proposées :", causes);
+console.log("🧪 Vérifications recommandées :", verifications);
+
     } else {
       prompt = buildSecondAnalysisPrompt( resume, previousQA, diagnostic_precedent);
+      console.log("📌 Résumé :", resume);
+console.log("🛠️ Causes proposées :", causes);
+console.log("🧪 Vérifications recommandées :", verifications);
+
     }
 
     const completion = await openai.chat.completions.create({
@@ -27,6 +37,7 @@ exports.processAnswer = async (req, res) => {
 
     const result = completion.choices[0].message.content;
     return res.json({ diagnostic: result });
+    
 
   } catch (error) {
     console.error("Erreur dans processAnswer :", error);
