@@ -66,7 +66,6 @@ Termine par :
 
 module.exports = {
   buildFirstAnalysisPrompt,
-  buildSecondAnalysisPrompt,
-  buildFinalAnalysisPrompt
+  buildSecondAnalysisPrompt
 };
 
