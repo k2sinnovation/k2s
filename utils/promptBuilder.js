@@ -20,7 +20,6 @@ Sinon, fournis :
 Réponds ainsi :
 \\\json
 {
-
   "questions": ["...", "..."]
 }
 \\\
@@ -54,9 +53,12 @@ Ta mission :
 - Donner ensuite **jusqu’à 3 causes secondaires** si elles sont crédibles.
 - Chaque cause doit être accompagnée d’une **vérification terrain concrète et précise** : paramètre à consulter, mesure, réglage, action.
 
-⚠️ Si la demande mentionne un **code défaut**, un **symptôme technique reconnu**, une **référence constructeur** ou un **composant identifié** (API, variateur, capteur, etc.), tu dois :
-1. Rechercher une **explication technique officielle** (constructeur, manuel, expérience terrain),
-2. Prioriser la **cause documentée ou connue** en premier.
+⚠️ Si la demande mentionne un **code défaut**, une **référence constructeur**, un **symptôme reconnu** (ex: arrêt moteur, défaut de communication, etc.) ou un **composant identifié** (variateur, API, capteur...), tu dois impérativement :
+1. Rechercher une **cause officielle ou fréquente** dans la documentation constructeur ou les bases de données terrain.
+2. **Présenter cette cause documentée en premier, avant toute autre hypothèse.**
+3. Ne jamais proposer une cause secondaire tant que cette cause officielle ou reconnue n’a pas été clairement identifiée et vérifiée.
+
+❗ N’invente pas de causes improbables (ex : surchauffe ou poussière si ce n’est pas pertinent pour le code ou le matériel concerné). Reste strictement dans les causes reconnues ou fréquentes.
 
 Structure attendue :
 
@@ -80,7 +82,6 @@ Conclue uniquement avec :
 `.trim();
 }
 
-
 function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, questionsReponses) {
   const qaFormatted = questionsReponses
     .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
@@ -99,13 +100,18 @@ ${diagnosticPrecedent}
 Questions/réponses :  
 ${qaFormatted}
 
-Ta priorité est d’identifier **la cause principale la plus probable** et de la présenter en **premier**, de façon claire, vérifiable et orientée terrain.  
+Ta priorité est d’identifier **la cause constructeur documentée ou la plus connue terrain** et de la présenter en **premier**.  
+Si la demande inclut un code défaut, une référence machine ou un symptôme connu, **ne commence jamais par une hypothèse secondaire**.  
+Présente cette cause documentée ou fréquente en premier.
+
 Ensuite, tu peux proposer jusqu’à 3 causes secondaires (autres pistes).
 
 Pour chaque cause, associe une vérification précise :  
 - paramètre à vérifier ou régler  
 - mesure à effectuer  
 - action technique sur le système  
+
+❗ N’invente pas de causes improbables ou peu fiables. Reste strictement dans les causes reconnues ou fréquentes, utiles au terrain.
 
 Structure :
 
@@ -134,10 +140,8 @@ Conclue avec ce message uniquement :
 `.trim();
 }
 
-
 module.exports = {
   buildFirstAnalysisPrompt,
   buildSecondAnalysisPrompt,
   buildFinalAnalysisPrompt
 };
-
