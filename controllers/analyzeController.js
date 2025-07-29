@@ -9,6 +9,9 @@ async function analyzeRequest(req, res) {
       return res.status(400).json({ error: "Description trop courte ou absente." });
     }
 
+    // Log début d’analyse avec index
+    console.log(`--- Début analyse #${analyseIndex} ---`);
+
     let prompt;
 
     if (analyseIndex < 1) {
@@ -31,6 +34,30 @@ async function analyzeRequest(req, res) {
         analyseIndex
       );
     }
+
+    // Log prompt envoyé
+    console.log("Prompt envoyé :", prompt);
+
+    const content = await askOpenAI(prompt, description);
+
+    // Log réponse brute
+    console.log("Réponse IA :", content);
+
+    // Log fin d’analyse
+    console.log(`--- Fin analyse #${analyseIndex} ---`);
+
+    // Suite du traitement (parsing JSON, renvoi etc.)
+    // ...
+
+  } catch (error) {
+    console.error("❌ Erreur dans analyzeRequest :", error);
+    return res.status(500).json({
+      error: "Erreur lors de l'analyse.",
+      details: error.message,
+    });
+  }
+}
+
 
     console.log("📤 Prompt envoyé à l'IA :", prompt);
 
