@@ -14,7 +14,7 @@ async function analyzeRequest(req, res) {
 
     let prompt;
 
-    if (analyseIndex < 1) {
+    if (analyseIndex === 1) {
       // 1ère analyse : pose des questions
       const qaFormatted = previousQA
         .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
