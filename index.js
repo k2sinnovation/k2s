@@ -6,7 +6,6 @@ require('dotenv').config();
 // ✅ Chargement des routes
 const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
-const retryRoute = require("./routes/retry");
 const subscribeRoute = require("./routes/subscribe");
 
 // ⚠️ Ce n’est pas une route à utiliser comme tel, sauf si tu l’as défini dans /models comme un vrai routeur
