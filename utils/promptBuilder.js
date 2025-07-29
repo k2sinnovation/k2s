@@ -20,7 +20,7 @@ Sinon, fournis :
 Réponds ainsi :
 \\\json
 {
-  "resume": "...",
+
   "questions": ["...", "..."]
 }
 \\\
@@ -35,31 +35,48 @@ function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPreced
   const causeStart = analyseIndex === 1 ? 1 : 5;
 
   return `
-Tu es un assistant technique. Tu raisonnes comme un technicien terrain expérimenté, à partir de sources fiables (constructeurs, retours terrain, documentation).
+Tu es un assistant qui raisonne comme un **technicien expérimenté**. Tu t'appuies sur :
+- des manuels techniques, 
+- des bases de données industrielles, 
+- des documentations constructeur,
+- ton expérience terrain.
 
-Résumé de la demande :
+Voici le résumé de la demande utilisateur :  
 "${resume}"
 
-${diagnosticPrecedent ? `Diagnostic précédent :\n${diagnosticPrecedent}` : ""}
+${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
 
-Questions/réponses :
+Voici les questions posées et leurs réponses :  
 ${qaFormatted}
 
-Si un code défaut, un composant identifié, une référence ou un symptôme clair est présent, commence toujours par la **cause officielle ou connue**.
+Ta mission :
+- Identifier en **priorité la cause principale la plus probable**.
+- Donner ensuite **jusqu’à 3 causes secondaires** si elles sont crédibles.
+- Chaque cause doit être accompagnée d’une **vérification terrain concrète et précise** : paramètre à consulter, mesure, réglage, action.
 
-Propose ensuite jusqu’à 4 causes probables, claires et réalistes. Pour chaque cause, donne une vérification concrète, faisable sur le terrain (test, paramètre, mesure…).
+⚠️ Si la demande mentionne un **code défaut**, un **symptôme technique reconnu**, une **référence constructeur** ou un **composant identifié** (API, variateur, capteur, etc.), tu dois :
+1. Rechercher une **explication technique officielle** (constructeur, manuel, expérience terrain),
+2. Prioriser la **cause documentée ou connue** en premier.
 
-Réponse attendue :
+Structure attendue :
 
-Cause ${causeStart} : [description] → Vérification : [paramètre/test/action]  
-Cause ${causeStart + 1} : …  
-Cause ${causeStart + 2} : …  
-Cause ${causeStart + 3} : …
+Cause ${causeStart} (principale) : [description claire]  
+→ Vérification : [test, réglage ou paramètre concret]  
 
-Ne propose pas d’hypothèse vague ou théorique.
+Cause ${causeStart + 1} : ...  
+→ Vérification : ...  
 
-Conclue toujours par :  
-"Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
+Cause ${causeStart + 2} : ...  
+→ Vérification : ...  
+
+Cause ${causeStart + 3} : ...  
+→ Vérification : ...
+
+⚠️ Ne propose pas d’hypothèses vagues ou théoriques.  
+Sois précis, terrain, et exploitable immédiatement.
+
+Conclue uniquement avec :  
+"Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."  
 `.trim();
 }
 
@@ -70,37 +87,53 @@ function buildFinalAnalysisPrompt(domaine, fullHistory, diagnosticPrecedent, que
     .join('\n\n');
 
   return `
-Tu es un assistant technique expérimenté, spécialisé dans les diagnostics concrets. Tu t’appuies sur des faits vérifiés et des documents fiables.
+Tu es un assistant expert en diagnostic technique. Tu raisonnes comme un **technicien expérimenté**.  
+Tu t'appuies sur des documents fiables : constructeurs, bases techniques, expériences terrain.
 
-Historique :
+Voici l’historique utilisateur :  
 ${fullHistory}
 
-Diagnostic précédent :
+Résumé du diagnostic précédent :  
 ${diagnosticPrecedent}
 
-Questions/réponses :
+Questions/réponses :  
 ${qaFormatted}
 
-Propose jusqu’à 4 causes probables (logiques, concrètes, réalistes). Pour chaque cause, indique une vérification précise : paramètre, mesure, test ou action terrain.
+Ta priorité est d’identifier **la cause principale la plus probable** et de la présenter en **premier**, de façon claire, vérifiable et orientée terrain.  
+Ensuite, tu peux proposer jusqu’à 3 causes secondaires (autres pistes).
 
-Réponse :
+Pour chaque cause, associe une vérification précise :  
+- paramètre à vérifier ou régler  
+- mesure à effectuer  
+- action technique sur le système  
 
-Cause 9 : [description] → Vérification : [action précise]  
-Cause 10 : …  
-Cause 11 : …  
-Cause 12 : …
+Structure :
 
-Pas de raisonnement vague ou hypothétique.
+Cause 9 (principale) : [description claire]  
+→ Vérification : [test précis, nom de paramètre, mesure]
 
-Conclue avec :
+Cause 10 : ...  
+→ Vérification : ...
+
+Cause 11 : ...  
+→ Vérification : ...
+
+Cause 12 : ...  
+→ Vérification : ...
+
+⚠️ Ne propose pas de test inutile, hypothèse vague ou trop théorique.  
+Ta réponse doit être utile, réaliste et immédiatement exploitable.
+
+Conclue avec ce message uniquement :  
 "Si vous n'avez toujours pas trouvé la solution, veuillez contacter le fabricant ou fournisseur."
 
-Si analyseIndex = 4 ou plus, réponds uniquement :
-\\\json
-{ "error": "Limite d’analyses atteinte. Veuillez contacter un expert terrain pour aller plus loin." }
-\\\
+⚠️ Si cette analyse est la quatrième (analyseIndex = 4), retourne uniquement :  
+\\\json  
+{ "error": "Limite d’analyses atteinte. Veuillez contacter un expert terrain pour aller plus loin." }  
+\\\  
 `.trim();
 }
+
 
 module.exports = {
   buildFirstAnalysisPrompt,
