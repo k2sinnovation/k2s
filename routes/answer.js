@@ -6,6 +6,7 @@ const { buildSecondAnalysisPrompt } = require("../utils/promptBuilder");
 
 router.post('/', async (req, res) => {
   const { text, answers } = req.body;
+  console.log(`Réception d’une réponse pour l’analyse n°${analyseIndex || "?"}`);
   
   
   if (!text || !answers || typeof answers !== 'object') {
