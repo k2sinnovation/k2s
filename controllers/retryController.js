@@ -19,7 +19,7 @@ exports.retryFinalDiagnosis = async (req, res) => {
     const prompt = buildFinalAnalysisPrompt(resume, diagnostic_precedent, previousQA);
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4-turbo",
       messages: [{ role: "user", content: prompt }]
     });
 
