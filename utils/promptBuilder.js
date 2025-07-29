@@ -1,109 +1,67 @@
 function buildFirstAnalysisPrompt(userInput, qaFormatted) {
   return `
-  console.log("Questions reçues :", questions);
-  console.log("Réponses reçues :", answers);
-Tu es un assistant conçu pour comprendre, analyser et expliquer des problèmes techniques,
-en t’appuyant sur des bases solides (manuels, bases de données industrielles, documentation constructeur, expérience terrain).
-Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
+Tu es un assistant technique expérimenté, spécialisé en diagnostic terrain.
 
-⚠️ Analyse d’abord la demande utilisateur :  
+Analyse la demande :  
 "${userInput}"
 
-Voici les questions déja posées et leurs réponses pour ne pas répéter les même question :
+Questions déjà posées et réponses :  
 ${qaFormatted}
 
-Si cette demande est :
-- Trop vague ou incomplète,
-- Hors du cadre d’un problème technique sur un système (électrique, mécanique, automatisme, industriel…),
-- De nature théorique, administrative, commerciale ou non liée à une panne/problème technique/choix technique/Dimensionnement,
-
-Alors, **interromps immédiatement l’analyse** et réponds uniquement :
+Si la demande est hors sujet technique, réponds uniquement :  
 \\\json
-{ "error": "Demande non reconnue comme problème technique terrain exploitable." }
+{ "error": "Demande non technique." }
 \\\
 
----
+Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées (Oui/Non/Je ne sais pas), pratiques et adaptées.
 
-Si la demande est exploitable, ta mission est alors de :
-1. **Faire un résumé fidèle du problème** (garde l’essentiel sans reformuler excessivement).
-2. **Générer jusqu’à 5 questions fermées SANS CHOIX ni question déjà posée** (réponses attendues : Oui / Non / Je ne sais pas)
-   pour **mieux cerner le contexte technique**.
-
-Règles obligatoires :
-- Chaque question doit être **courte, pratique, adaptée à un contexte terrain**.
-- Vérifie la fréquence du défaut uniquement si (intermittent, constant) peut être utile pour le diagnostic, sinon passer à une autre question.
-- Supposer que l’équipement fonctionnait correctement auparavant, donc ne pas remettre en cause la conception, le dimensionnement ni le paramétrage, 
-
----
-
-Format attendu :
+Réponds uniquement par un objet JSON au format :  
 \\\json
-{
-  "resume": "...",
-  "questions": ["...", "...", "...", "...", "..."]
-}
+{ "resume": "...", "questions": ["...", "...", ...] }
 \\\
 `.trim();
 }
 
-function buildSecondAnalysisPrompt(domaine, resume, previousQA, diagnosticPrecedent = "", analyseIndex = 2) {
+function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "", analyseIndex = 1) {
   const qaFormatted = previousQA
-    .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
+    .map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`)
     .join('\n\n');
 
   const causeStart = analyseIndex === 1 ? 1 : 5;
 
   return `
-Tu es un assistant conçu pour comprendre, analyser et expliquer des problèmes techniques,
-en t’appuyant sur des bases solides (manuels, bases de données industrielles,
-documentation constructeur, expérience terrain).
-Tu raisonnes comme un **technicien expérimenté**, pas comme un théoricien.
-Supposer que l’équipement fonctionnait correctement auparavant, donc ne pas remettre en cause la conception, le dimensionnement ni le paramétrage, 
-sauf si l’utilisateur mentionne une mise en service ou une modification récente.
+Tu es un technicien expérimenté qui analyse des problèmes techniques.  
+L’équipement fonctionnait avant correctement, sauf info contraire.
 
-Voici le résumé actuel de la demande utilisateur : "${resume}"
+Résumé de la demande utilisateur : "${resume}"
 
-Règles obligatoires :
+Règles :
 
-- Base-toi en priorité sur les documents techniques du fabricant, tels que les manuels, les listes de codes défaut et autres documents officiels. 
-  Commence par comprendre la signification exacte du code défaut donnée par le constructeur, ainsi que la cause officielle associée.
-  Ensuite, propose trois autres causes probables en t’appuyant sur ces documents et ta base de connaissances terrain.
-  Reviens ensuite à ta base de connaissances pour affiner et déterminer la cause exacte du problème.
-  Si des paramètres doivent être corrigés, indique précisément les noms des paramètres concernés, ainsi que les méthodes ou actions à réaliser, 
-  en te basant uniquement sur les informations fournies par le constructeur.
-- Les causes possibles doivent être **classées par la plus probable au debut**.
-- Tiens compte de **l’environnement, d’apparition du problème**, des **codes erreur éventuels**,
-  et des **conditions de fonctionnement au moment du défaut**.
-- Si plusieurs éléments similaires en lien sont concernés, suspecte une **cause globale** (amont, aval, signal partagé, alimentation général…).
-- Dans l’analyse, prendre en compte les causes indirectes, surtout si la cause réelle n’est pas clairement identifiable. Même lorsqu’un composant est cité ou suspecté, 
-   envisager que la cause réelle puisse être extérieure ou annexe (ex. environnement, conditions d’usage, autre système lié, câble, relais, capteur associé, communication).
-- L’utilisateur peut mal nommer des éléments (ex. : interrupteur à la place de bouton poussoir) interprète au mieux selon le contexte.
-- Tu dois systématiquement **identifier les paramètres constructeurs spécifiques** (ex. pxxx, fxxx…) liés au code défaut ou symptôme détecté. 
-- Ne donne **aucune explication**, ne réponds que par un **objet JSON strict**.
+- Base-toi sur manuels, codes défaut, documents constructeur et expérience terrain.  
+- Commence par la cause officielle liée au code défaut, puis propose 3 autres causes probables.  
+- Classe les causes de la plus probable à la moins probable.  
+- Prends en compte environnement, apparition, codes erreur, conditions au moment du défaut.  
+- Considère causes globales si plusieurs éléments sont affectés.  
+- Pense aux causes indirectes (environnement, câblage, communication…).  
+- Interprète les termes mal nommés par l’utilisateur.  
+- Identifie les paramètres constructeur spécifiques à corriger.  
+- Ne donne aucune explication, répond uniquement par un objet JSON strict.
 
-${diagnosticPrecedent ? `Résumé du diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
+${diagnosticPrecedent ? `Diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
 
-Voici les questions posées et leurs réponses :
+Questions et réponses précédentes :  
 ${qaFormatted}
 
-Ta mission est de proposer **plusieurs causes probables (jusqu’à 4 maximum)** en prenant en compte les questions et en t’appuyant sur des bases solides (manuels, bases de données industrielles,
-documentation constructeur, expérience terrain)..
-Ton but est de fournir une réponse claire, utile et vérifiable, structurée en étapes logiques,
-avec des causes possibles, des solutions pratiques et, si nécessaire,
-une explication du fonctionnement sous-jacent.
-Pour chaque cause, indique immédiatement une vérification terrain concrète et précise. Chaque action doit être réaliste, ciblée, et orientée vers un résultat terrain.
+Propose jusqu’à 4 causes probables avec vérifications concrètes et actions terrain :
 
+Cause ${causeStart} : [description claire] → Vérification : [action à réaliser]  
+Cause ${causeStart + 1} : ... → Vérification : ...  
+Cause ${causeStart + 2} : ... → Vérification : ...  
+Cause ${causeStart + 3} : ... → Vérification : ...
 
-Cause ${causeStart} : [description courte et claire] → Vérification : [action concrète à réaliser, solutions techniques, paramètres à ajuster, tests spécifiques à effectuer]  
-Cause ${causeStart + 1} : ... → Vérification : ... → Action : ... 
-Cause ${causeStart + 2} : ... → Vérification : ... → Action : ...
-Cause ${causeStart + 3} : ... → Vérification : ... → Action : ...
-
-
-Conclue avec ce message, sans rien ajouter :  
-"Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse." 
-
-`.trim();
+Termine par :  
+"Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
+  `.trim();
 }
 
 
