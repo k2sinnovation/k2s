@@ -1,5 +1,7 @@
 const { askOpenAI } = require("../controllers/openaiService");
 const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
+console.log("📤 Prompt envoyé à l'IA (prompt1):\n", prompt);
+
 
 async function analyzeRequest(req, res) {
   try {
@@ -14,6 +16,7 @@ async function analyzeRequest(req, res) {
 
     // Appel à OpenAI via la fonction du service
     const content = await askOpenAI(prompt, description);
+    console.log("📥 Réponse brute de l'IA (prompt1):\n", response);
 
     // Extraction robuste du JSON : on cherche la première accolade ouvrante et la dernière fermante
    let json;
@@ -50,6 +53,9 @@ try {
       success: true,
       resume: json.resume || "",
       questions: structuredQuestions,
+      console.log("📌 Résumé reçu :", resume);
+console.log("❓ Questions reçues :", questions);
+
     });
 
   } catch (error) {
