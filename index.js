@@ -36,7 +36,6 @@ mongoose.connect(process.env.MONGO_URI, {
 // ✅ Routes correctement montées avec "/api" !
 app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
-app.use("/api/retry", retryRoute);
 app.use("/api/subscribe", subscribeRoute);
 
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
