@@ -41,7 +41,7 @@ app.use("/api/retry", retryRoute);
 app.use("/api/subscribe", subscribeRoute);
 
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
-app.get('/api/list-models', async (req, res) => {
+app.get('/api/istModels', async (req, res) => {
   try {
     const response = await openai.models.list();
     res.json(response.data);
