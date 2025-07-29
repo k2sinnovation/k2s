@@ -1,5 +1,7 @@
 function buildFirstAnalysisPrompt(userInput, qaFormatted) {
   return `
+  console.log("Questions reçues :", questions);
+  console.log("Réponses reçues :", answers);
 Tu es un assistant conçu pour comprendre, analyser et expliquer des problèmes techniques,
 en t’appuyant sur des bases solides (manuels, bases de données industrielles,
 documentation constructeur, expérience terrain).
