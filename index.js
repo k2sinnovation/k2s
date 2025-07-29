@@ -43,13 +43,14 @@ app.use("/api/subscribe", subscribeRoute);
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
 app.get('/api/list-models', async (req, res) => {
   try {
-    const response = await openai.api.models.list();
-    res.json(response.data || response);
+    const response = await openai.models.list();
+    res.json(response.data);
   } catch (error) {
     console.error("Erreur API OpenAI :", error.response?.data || error.message);
     res.status(500).json({ error: "Erreur API OpenAI" });
   }
 });
+
 
 // ❌ Retiré car usermodel n’est pas une route
 // app.use("/api/user", userRoute);
