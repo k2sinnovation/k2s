@@ -10,7 +10,8 @@ async function analyzeRequest(req, res) {
     }
 
     // Log début d’analyse avec index
-    console.log(`--- Début analyse #${analyseIndex} ---`);
+   console.log(`Réception d'une réponse pour l'analyse n°${analysisIndex}`);
+
 
     let prompt;
 
