@@ -1,20 +1,14 @@
-require('dotenv').config();
-const axios = require('axios');
+const express = require('express');
+const router = express.Router();
 
-async function listModels() {
+router.get('/', async (req, res) => {
   try {
-    const response = await axios.get('https://api.openai.com/v1/models', {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      }
-    });
-    console.log("Modèles accessibles :");
-    response.data.data.forEach(model => {
-      console.log(`- ${model.id}`);
-    });
+    const response = await req.app.locals.openai.models.list();
+    res.json(response.data);
   } catch (error) {
-    console.error("Erreur lors de la récupération des modèles :", error.response?.data || error.message);
+    console.error("Erreur API OpenAI :", error.response?.data || error.message);
+    res.status(500).json({ error: "Erreur API OpenAI" });
   }
-}
+});
 
-listModels();
+module.exports = router;
