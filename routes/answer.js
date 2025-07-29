@@ -7,8 +7,6 @@ const { buildSecondAnalysisPrompt } = require("../utils/promptBuilder");
 router.post('/', async (req, res) => {
   const { text, answers } = req.body;
   
-console.log("Reçu text :", text);
-console.log("Reçu answers :", answers);
   
   if (!text || !answers || typeof answers !== 'object') {
     return res.status(400).json({ error: "Paramètres manquants ou invalides" });
@@ -20,7 +18,9 @@ console.log("Reçu answers :", answers);
       question,
       reponse,
     }));
-
+    
+    console.log("Questions/Réponses reçues:", qaArray);
+    
     const domaine = "ton domaine ici"; // adapte selon contexte ou passe en paramètre
     const resume = "Résumé précédent ici ou vide";
 
