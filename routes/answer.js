@@ -5,7 +5,7 @@ const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
 const { buildSecondAnalysisPrompt } = require("../utils/promptBuilder");
 
 router.post('/', async (req, res) => {
-  const { text, answers } = req.body;
+const { text, answers, analyseIndex } = req.body;
   console.log(`Réception d’une réponse pour l’analyse n°${analyseIndex || "?"}`);
   
   
