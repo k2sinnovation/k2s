@@ -24,7 +24,7 @@ router.post('/', async (req, res) => {
     const domaine = "ton domaine ici"; // adapte selon contexte ou passe en paramètre
     const resume = "Résumé précédent ici ou vide";
 
-    const prompt = buildSecondAnalysisPrompt(domaine, resume, qaArray);
+   const prompt = buildSecondAnalysisPrompt(resume, qaArray, domaine);
 
     const aiResponse = await askOpenAI(prompt, text);
     res.json({ result: aiResponse });
