@@ -3,21 +3,25 @@ const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require("../util
 
 async function analyzeRequest(req, res) {
   try {
-    const { description, previousQA = [], resume = "", diagnosticPrecedent = "", analyseIndex = 1 } = req.body;
-    console.log("🧾 Données reçues :", {
-  description,
-  analyseIndex,
-  previousQAcount: previousQA.length,
-});
+    const {
+      description,
+      previousQA = [],
+      resume = "",
+      diagnosticPrecedent = "",
+      analyseIndex = 1,
+    } = req.body;
 
+    console.log("🧾 Données reçues :", {
+      description,
+      analyseIndex,
+      previousQAcount: previousQA.length,
+    });
 
     if (!description || description.trim().length < 5) {
       return res.status(400).json({ error: "Description trop courte ou absente." });
     }
 
-    // Log début d’analyse avec index
-  console.log(`Réception d'une réponse pour l'analyse n°${analyseIndex}`);
-
+    console.log(`Réception d'une requête pour l'analyse n°${analyseIndex}`);
 
     let prompt;
 
@@ -26,15 +30,12 @@ async function analyzeRequest(req, res) {
       const qaFormatted = previousQA
         .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
         .join("\n\n");
+
       prompt = buildFirstAnalysisPrompt(description, qaFormatted);
     } else {
       // 2ème analyse et suivantes : pas de questions, que causes
-      const qaFormatted = previousQA
-        .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
-        .join("\n\n");
-
       prompt = buildSecondAnalysisPrompt(
-        "", // domaine vide si tu n'en utilises pas
+        "", // domaine vide si inutilisé
         resume,
         previousQA,
         diagnosticPrecedent,
@@ -42,34 +43,10 @@ async function analyzeRequest(req, res) {
       );
     }
 
-    // Log prompt envoyé
-    console.log("Prompt envoyé :", prompt);
-
-    const content = await askOpenAI(prompt, description);
-
-    // Log réponse brute
-    console.log("Réponse IA :", content);
-
-    // Log fin d’analyse
-    console.log(`--- Fin analyse #${analyseIndex} ---`);
-
-    // Suite du traitement (parsing JSON, renvoi etc.)
-    // ...
-
-  } catch (error) {
-    console.error("❌ Erreur dans analyzeRequest :", error);
-    return res.status(500).json({
-      error: "Erreur lors de l'analyse.",
-      details: error.message,
-    });
-  }
-}
-
-
     console.log("📤 Prompt envoyé à l'IA :", prompt);
 
-    // Appel à OpenAI avec le prompt adapté
     const content = await askOpenAI(prompt, description);
+
     console.log("📥 Réponse brute de l'IA :", content);
 
     // Extraction robuste du JSON dans la réponse IA
@@ -92,9 +69,9 @@ async function analyzeRequest(req, res) {
       }
     }
 
-    // Selon l'analyse, contrôle le format de la réponse :
+    // Validation selon le type d'analyse
     if (analyseIndex === 1) {
-      // 1ère analyse doit contenir questions
+      // 1ère analyse : doit contenir des questions
       if (!json.questions || !Array.isArray(json.questions)) {
         throw new Error("JSON mal structuré (questions manquantes)");
       }
@@ -109,9 +86,8 @@ async function analyzeRequest(req, res) {
         questions: structuredQuestions,
       });
     } else {
-      // 2ème analyse doit contenir causes
+      // 2ème analyse et suivantes : doit contenir des causes
       if (!json.causes || !Array.isArray(json.causes)) {
-        // Ou selon ta structure, adapte ici
         throw new Error("JSON mal structuré (causes manquantes)");
       }
 
@@ -122,7 +98,7 @@ async function analyzeRequest(req, res) {
       });
     }
   } catch (error) {
-    console.error("❌ Erreur dans analyzeController :", error);
+    console.error("❌ Erreur dans analyzeRequest :", error);
     return res.status(500).json({
       error: "Erreur lors de l'analyse.",
       details: error.message,
