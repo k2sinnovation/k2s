@@ -15,7 +15,7 @@ Si la demande est hors sujet technique, réponds uniquement :
 
 Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées (Oui/Non/Je ne sais pas), pratiques et adaptées.
 
-Réponds uniquement par un objet JSON au format :  
+Réponds uniquement par un objet JSON strict. Aucun texte libre ou explication :  
 \\\json
 { "resume": "...", "questions": ["...", "...", ...] }
 \\\
