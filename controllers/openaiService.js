@@ -3,6 +3,8 @@ const axios = require("axios");
 
 exports.askOpenAI = async (prompt, userText) => {
   try {
+    console.log("🟡 Prompt system envoyé à OpenAI :\n", prompt);
+    console.log("🟢 Message user envoyé à OpenAI :\n", userText);
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -18,6 +20,7 @@ exports.askOpenAI = async (prompt, userText) => {
         },
       }
     );
+    console.log("✅ Réponse OpenAI reçue :\n", response.data.choices[0].message.content);
     return response.data.choices[0].message.content;
   } catch (error) {
     console.error("Erreur appel OpenAI :", error.response?.data || error.message);
