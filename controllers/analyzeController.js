@@ -4,13 +4,19 @@ const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require("../util
 async function analyzeRequest(req, res) {
   try {
     const { description, previousQA = [], resume = "", diagnosticPrecedent = "", analyseIndex = 1 } = req.body;
+    console.log("🧾 Données reçues :", {
+  description,
+  analyseIndex,
+  previousQAcount: previousQA.length,
+});
+
 
     if (!description || description.trim().length < 5) {
       return res.status(400).json({ error: "Description trop courte ou absente." });
     }
 
     // Log début d’analyse avec index
-   console.log(`Réception d'une réponse pour l'analyse n°${analysisIndex}`);
+  console.log(`Réception d'une réponse pour l'analyse n°${analyseIndex}`);
 
 
     let prompt;
