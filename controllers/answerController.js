@@ -20,8 +20,16 @@ exports.processAnswer = async (req, res) => {
       messages: [{ role: "user", content: prompt }],
     });
 
-    const result = completion.choices[0].message.content;
-    return res.json({ diagnostic: result });
+const resultText = completion.choices[0].message.content;
+
+try {
+  const resultJSON = JSON.parse(resultText);
+  return res.json({ diagnostic: resultJSON });
+} catch (parseError) {
+  console.error("❌ Erreur de parsing JSON IA :", parseError);
+  return res.status(500).json({ error: "Réponse IA invalide. Format JSON attendu non respecté." });
+}
+
 
   } catch (error) {
     console.error("Erreur dans processAnswer :", error);
