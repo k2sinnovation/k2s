@@ -22,18 +22,20 @@ Réponds uniquement par un objet JSON strict. Aucun texte libre ou explication :
 `.trim();
 }
 
-function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "", analyseIndex = 1) {
+function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "", analyseIndex = 1, userInput = "") {
   const qaFormatted = previousQA
     .map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`)
     .join('\n\n');
 
   const causeStart = analyseIndex === 1 ? 1 : 5;
 
+  const finalResume = resume && resume.trim().length > 0 ? resume : userInput;
+
   return `
 Tu es un technicien expérimenté qui analyse des problèmes techniques.  
 L’équipement fonctionnait avant correctement, sauf info contraire.
 
-Résumé de la demande utilisateur : "${resume}"
+Résumé de la demande utilisateur : "${finalResume}"
 
 Règles :
 
@@ -67,7 +69,8 @@ Réponds uniquement par un objet JSON strict :
 }
 \\\
 `.trim();
-} 
+}
+
 module.exports = {
   buildFirstAnalysisPrompt,
   buildSecondAnalysisPrompt
