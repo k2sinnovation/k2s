@@ -34,13 +34,13 @@ async function analyzeRequest(req, res) {
       prompt = buildFirstAnalysisPrompt(description, qaFormatted);
     } else {
       // 2ème analyse et suivantes : pas de questions, que causes
-      prompt = buildSecondAnalysisPrompt(
-        "", // domaine vide si inutilisé
-        resume,
-        previousQA,
-        diagnosticPrecedent,
-        analyseIndex
-      );
+prompt = buildSecondAnalysisPrompt(
+  resume,
+  previousQA,
+  diagnosticPrecedent,
+  analyseIndex
+);
+
     }
 
     console.log("📤 Prompt envoyé à l'IA :", prompt);
