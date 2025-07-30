@@ -13,7 +13,7 @@ Si la demande est hors sujet technique, réponds uniquement :
 { "error": "Demande non technique." }
 \\\
 
-Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées (Oui/Non/Je ne sais pas), pratiques et adaptées.
+Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées SANS CHOIX (Oui/Non/Je ne sais pas), pratiques et adaptées.
 
 Réponds uniquement par un objet JSON strict. Aucun texte libre ou explication :  
 \\\json
@@ -58,10 +58,10 @@ Réponds uniquement par un objet JSON strict :
 \\\json
 {
   "causes": [
-    { "cause": "Cause ${causeStart} : ...", "verification": "..." },
-    { "cause": "Cause ${causeStart + 1} : ...", "verification": "..." },
-    { "cause": "Cause ${causeStart + 2} : ...", "verification": "..." },
-    { "cause": "Cause ${causeStart + 3} : ...", "verification": "..." }
+    { "cause": " ${causeStart} : ...", "verification": "..." },
+    { "cause": " ${causeStart + 1} : ...", "verification": "..." },
+    { "cause": " ${causeStart + 2} : ...", "verification": "..." },
+    { "cause": "${causeStart + 3} : ...", "verification": "..." }
   ],
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
