@@ -6,7 +6,7 @@ Analyse la demande :
 "${userInput}"
 
 Questions déjà posées et réponses :  
-${formattedQA}
+${qaFormatted}
 
 Si la demande est hors sujet technique, réponds uniquement :  
 \\\json
