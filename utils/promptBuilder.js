@@ -53,16 +53,19 @@ Questions et réponses précédentes :
 ${qaFormatted}
 
 Propose jusqu’à 4 causes probables avec vérifications concrètes et actions terrain :
+Réponds uniquement par un objet JSON strict :
 
-Cause ${causeStart} : [description claire] → Vérification : [action à réaliser]  
-Cause ${causeStart + 1} : ... → Vérification : ...  
-Cause ${causeStart + 2} : ... → Vérification : ...  
-Cause ${causeStart + 3} : ... → Vérification : ...
-
-Termine par :  
-"Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
-  `.trim();
+\\\json
+{
+  "causes": [
+    { "cause": "Cause ${causeStart} : ...", "verification": "..." },
+    { "cause": "Cause ${causeStart + 1} : ...", "verification": "..." },
+    { "cause": "Cause ${causeStart + 2} : ...", "verification": "..." },
+    { "cause": "Cause ${causeStart + 3} : ...", "verification": "..." }
+  ],
+  "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
+\\\
 
 module.exports = {
   buildFirstAnalysisPrompt,
