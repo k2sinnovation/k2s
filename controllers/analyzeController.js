@@ -33,6 +33,13 @@ async function analyzeRequest(req, res) {
         .join("\n\n");
 
       prompt = buildFirstAnalysisPrompt(description, qaFormatted);
+     if (analyseIndex === 1) {
+      // 🔍 Première analyse : on génère les questions
+      const qaFormatted = previousQA
+        .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
+        .join("\n\n");
+
+      prompt = buildFirstAnalysisPrompt(description, qaFormatted);
     } else {
       // 🔎 Deuxième analyse : on génère les causes
       if (!resume || resume.trim().length < 5) {
