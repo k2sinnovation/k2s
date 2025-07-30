@@ -66,7 +66,8 @@ Réponds uniquement par un objet JSON strict :
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
 \\\
-
+`.trim();
+} 
 module.exports = {
   buildFirstAnalysisPrompt,
   buildSecondAnalysisPrompt
