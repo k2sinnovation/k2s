@@ -24,32 +24,23 @@ async function analyzeRequest(req, res) {
 
     console.log(`📡 Réception d'une requête pour l'analyse n°${analyseIndex}`);
 
+    const hasResume = resume && resume.trim().length >= 5;
+    const isFirstAnalysis = analyseIndex === 1 && !hasResume;
+
     let prompt;
 
-    if (analyseIndex === 1) {
-      // 🔍 Première analyse : on génère les questions
-      const qaFormatted = previousQA
-        .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
-        .join("\n\n");
-
-      prompt = buildFirstAnalysisPrompt(description, qaFormatted);
-     if (analyseIndex === 1) {
-      // 🔍 Première analyse : on génère les questions
+    if (isFirstAnalysis) {
+      // 🔍 Première analyse : générer les questions
       const qaFormatted = previousQA
         .map((item, idx) => `Question ${idx + 1} : ${item.question}\nRéponse : ${item.reponse}`)
         .join("\n\n");
 
       prompt = buildFirstAnalysisPrompt(description, qaFormatted);
     } else {
-      // 🔎 Deuxième analyse : on génère les causes
-      if (!resume || resume.trim().length < 5) {
-        console.warn("⚠️ Résumé manquant ou vide pour la deuxième analyse !");
-        return res.status(400).json({
-          error: "Résumé manquant. Impossible d'effectuer l’analyse approfondie.",
-        });
-      }
+      // 🔎 Analyse approfondie (2, 3, etc.)
+      const safeResume = hasResume ? resume.trim() : description.trim();
 
-      prompt = buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent, analyseIndex);
+      prompt = buildSecondAnalysisPrompt(safeResume, previousQA, diagnosticPrecedent, analyseIndex);
     }
 
     console.log("📤 Prompt envoyé à l'IA :", prompt);
@@ -58,7 +49,7 @@ async function analyzeRequest(req, res) {
 
     console.log("📥 Réponse brute de l'IA :", content);
 
-    // 🔐 Extraction robuste du JSON
+    // 🔐 Extraction JSON robuste
     let json;
     try {
       json = JSON.parse(content);
@@ -78,8 +69,8 @@ async function analyzeRequest(req, res) {
       }
     }
 
-    // ✅ Traitement selon type d'analyse
-    if (analyseIndex === 1) {
+    // ✅ Traitement
+    if (isFirstAnalysis) {
       if (!json.questions || !Array.isArray(json.questions)) {
         throw new Error("JSON mal structuré (questions manquantes)");
       }
