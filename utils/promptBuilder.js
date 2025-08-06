@@ -1,4 +1,6 @@
 function buildFirstAnalysisPrompt(userInput, qaFormatted) {
+  const formattedQA = qaFormatted && qaFormatted.trim() !== '' ? qaFormatted : "Aucune question précédente.";
+
   return `
 Tu es un assistant technique expérimenté, spécialisé en diagnostic terrain.
 
@@ -6,26 +8,27 @@ Analyse la demande :
 "${userInput}"
 
 Questions déjà posées et réponses :  
-${qaFormatted}
+${formattedQA}
 
 Si la demande est hors sujet technique, réponds uniquement :  
-\\\json
+\\json
 { "error": "Demande non technique." }
-\\\
+\\
 
 Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées SANS CHOIX (Oui/Non/Je ne sais pas), pratiques et adaptées.
 
 Réponds uniquement par un objet JSON strict. Aucun texte libre ou explication :  
-\\\json
+\\json
 { "resume": "...", "questions": ["...", "...", ...] }
-\\\
+\\
 `.trim();
 }
 
+
 function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "", analyseIndex = 1, userInput = "") {
-  const qaFormatted = previousQA
-    .map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`)
-    .join('\n\n');
+ const qaFormatted = previousQA.length > 0
+  ? previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+  : "Aucune question/réponse précédente.";
 
   const causeStart = analyseIndex === 1 ? 1 : 5;
 
