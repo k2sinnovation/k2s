@@ -25,14 +25,14 @@ Réponds uniquement par un objet JSON strict. Aucun texte libre ou explication :
 }
 
 
-function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "", analyseIndex = 1, userInput = "") {
+function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "", analyseIndex = 1) {
   const qaFormatted = previousQA.length > 0
     ? previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
     : "Aucune question/réponse précédente.";
 
   const causeStart = analyseIndex === 1 ? 1 : 5;
 
-  const finalResume = resume && resume.trim().length > 0 ? resume : userInput;
+  const finalResume = resume && resume.trim().length > 0 ? resume : userInput; 
 
   return `
 Tu es un technicien expérimenté qui analyse des problèmes techniques.  
@@ -42,8 +42,10 @@ Résumé de la demande utilisateur : "${finalResume}"
 
 Règles :
 
+
 - Base-toi sur manuels, codes défaut, documents constructeur et expérience terrain.  
-- Commence par la cause officielle liée au code défaut, puis propose 3 autres causes probables.  
+- Analyse toujours en priorité le message utilisateur. C’est l'observation terrain directe.
+- Les 5 questions servent à valider ou invalider des hypothèses. Si une réponse est "Je ne sais pas", considère qu’elle est neutre.
 - Classe les causes de la plus probable à la moins probable.  
 - Prends en compte environnement, apparition, codes erreur, conditions au moment du défaut.  
 - Considère causes globales si plusieurs éléments sont affectés.  
