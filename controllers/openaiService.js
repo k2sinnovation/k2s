@@ -16,7 +16,7 @@ exports.askOpenAI = async (prompt, userText) => {
       },
       {
         headers: {
-          Authorization: Bearer ${process.env.OPENAI_API_KEY},
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
       }
     );
@@ -27,3 +27,4 @@ exports.askOpenAI = async (prompt, userText) => {
     throw new Error("Erreur OpenAI");
   }
 };
+
