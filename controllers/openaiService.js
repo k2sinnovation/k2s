@@ -1,4 +1,3 @@
-// controllers/openaiService.js
 const axios = require("axios");
 
 exports.askOpenAI = async (prompt, userText) => {
@@ -20,13 +19,37 @@ exports.askOpenAI = async (prompt, userText) => {
         },
       }
     );
-    console.log("✅ Réponse OpenAI reçue :\n", response.data.choices[0].message.content);
-    return response.data.choices[0].message.content;
+
+    let content = response.data.choices[0].message.content;
+    console.log("✅ Réponse OpenAI brute reçue :\n", content);
+
+    // Nettoyage du contenu brut
+    let cleanedContent = content.trim();
+
+    // Supprimer les balises de code Markdown ```json ou ```
+    if (cleanedContent.startsWith("```json") || cleanedContent.startsWith("```")) {
+      cleanedContent = cleanedContent.replace(/^```(?:json)?\s*/i, ""); // Enlève le début
+      cleanedContent = cleanedContent.replace(/```$/, ""); // Enlève la fin
+    }
+
+    // Supprimer \json au début s'il existe
+    if (cleanedContent.startsWith("\\json")) {
+      cleanedContent = cleanedContent.replace(/^\\json\s*/i, "");
+    }
+
+    let parsedContent;
+    try {
+      parsedContent = JSON.parse(cleanedContent); // Parse le JSON propre
+    } catch (err) {
+      console.error("Erreur JSON.parse :", err.message);
+      // Si erreur de parsing, retourner le contenu brut
+      parsedContent = content;
+    }
+
+    return parsedContent;
+
   } catch (error) {
     console.error("Erreur appel OpenAI :", error.response?.data || error.message);
     throw new Error("Erreur OpenAI");
   }
 };
-
-
-
