@@ -37,6 +37,9 @@ exports.askOpenAI = async (prompt, userText) => {
       cleanedContent = cleanedContent.replace(/^\\json\s*/i, "");
     }
 
+    // Remplacer les guillemets typographiques par des guillemets simples ASCII
+    cleanedContent = cleanedContent.replace(/[«»]/g, '"');
+
     let parsedContent;
     try {
       parsedContent = JSON.parse(cleanedContent); // Parse le JSON propre
