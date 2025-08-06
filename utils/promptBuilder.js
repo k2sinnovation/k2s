@@ -61,7 +61,6 @@ ${qaFormatted}
 Propose jusqu’à 4 causes probables avec vérifications concrètes et actions terrain :
 Réponds uniquement par un objet JSON strict :
 
-\\\json
 {
   "causes": [
     { "cause": " ${causeStart + 1} : ...", "verification": "..." }, "Action": "..." }
