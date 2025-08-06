@@ -16,7 +16,7 @@ exports.processAnswer = async (req, res) => {
     console.log("📤 Prompt envoyé à l'IA (analyse des causes) :\n", prompt);
 
     const completion = await req.app.locals.openai.chat.completions.create({
-      model: "gpt-4-turbo",
+      model: "gpt-4.1",
       messages: [{ role: "user", content: prompt }],
     });
 
@@ -36,5 +36,6 @@ try {
     return res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
+
 
 
