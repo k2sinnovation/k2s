@@ -8,7 +8,7 @@ exports.askOpenAI = async (prompt, userText) => {
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4-turb", // plus rapide 
+        model: "gpt-4.1", // plus rapide 
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: userText }
@@ -27,5 +27,6 @@ exports.askOpenAI = async (prompt, userText) => {
     throw new Error("Erreur OpenAI");
   }
 };
+
 
 
