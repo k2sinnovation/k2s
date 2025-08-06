@@ -64,10 +64,10 @@ Réponds uniquement par un objet JSON strict :
 \\\json
 {
   "causes": [
-    { "cause": " ${causeStart + 1} : ...", "verification": "..." },
-    { "cause": " ${causeStart + 2} : ...", "verification": "..." },
-    { "cause": " ${causeStart + 3} : ...", "verification": "..." },
-    { "cause": "${causeStart + 4} : ...", "verification": "..." }
+    { "cause": " ${causeStart + 1} : ...", "verification": "..." }, "Action": "..." }
+    { "cause": " ${causeStart + 2} : ...", "verification": "..." }, "Action": "..." }
+    { "cause": " ${causeStart + 3} : ...", "verification": "..." }, "Action": "..." }
+    { "cause": "${causeStart + 4} : ...", "verification": "..." } "Action": "..." }
   ],
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
