@@ -51,7 +51,9 @@ Règles :
 - Considère causes globales si plusieurs éléments sont affectés.  
 - Interprète les termes mal nommés par l’utilisateur.  
 - Identifie les paramètres constructeur spécifiques à corriger.  
-- Analyse attentivement la demande et les échanges précédents pour générer des causes plausibles et cohérentes.  
+- Analyse attentivement la demande et les échanges précédents question reponse pour générer des causes plausibles et cohérentes.
+- Chaque action doit proposer une manipulation concrète avec, si possible, une valeur indicative à tester (ex. temps, tension, fréquence, seuil, etc.), 
+  même si la valeur exacte dépend du contexte. Cela permet au technicien de faire un essai terrain immédiatement.
 - Ne génère jamais de causes hors sujet ou inventées. Si l’information est insuffisante, indique-le clairement dans la cause la plus probable.  
 - Ne donne aucune explication, répond uniquement par un objet JSON strict.
 
