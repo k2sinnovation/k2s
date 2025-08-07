@@ -30,9 +30,9 @@ function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "",
     ? previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
     : "Aucune question/réponse précédente.";
 
-  const causeStart = analyseIndex === 1 ? 1 : 5;
+  const causeStart = (analyseIndex - 1) * 4;
 
-  const finalResume = resume && resume.trim().length > 0 ? resume : userInput; 
+  const finalResume = resume && resume.trim().length > 0 ? resume : userInput;
 
   return `
 Tu es un technicien expérimenté qui analyse des problèmes techniques.  
@@ -41,7 +41,6 @@ L’équipement fonctionnait avant correctement, sauf info contraire.
 Résumé de la demande utilisateur : "${finalResume}"
 
 Règles :
-
 
 - Base-toi sur manuels, codes défaut, documents constructeur et expérience terrain.  
 - Analyse toujours en priorité le message utilisateur. C’est l'observation terrain directe.
@@ -67,20 +66,14 @@ Réponds uniquement par un objet JSON strict :
 
 {
   "causes": [
-    { "cause": " ${causeStart + 1} : ...", "verification": "..." }, "Action": "..." }
-    { "cause": " ${causeStart + 2} : ...", "verification": "..." }, "Action": "..." }
-    { "cause": " ${causeStart + 3} : ...", "verification": "..." }, "Action": "..." }
-    { "cause": "${causeStart + 4} : ...", "verification": "..." } "Action": "..." }
+    { "cause": "${causeStart + 1} : ...", "verification": "...", "Action": "..." },
+    { "cause": "${causeStart + 2} : ...", "verification": "...", "Action": "..." },
+    { "cause": "${causeStart + 3} : ...", "verification": "...", "Action": "..." },
+    { "cause": "${causeStart + 4} : ...", "verification": "...", "Action": "..." }
   ],
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
-\\\
+\\
 `.trim();
 }
-
-
-module.exports = {
-  buildFirstAnalysisPrompt,
-  buildSecondAnalysisPrompt
-};
 
