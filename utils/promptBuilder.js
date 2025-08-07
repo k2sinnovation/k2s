@@ -87,11 +87,9 @@ Sinon, si c'est une demande de choix technique ou de dimensionnement, réponds e
 Réponds uniquement par un objet JSON strict :
 
 {
-  "contexte": "...",
-  "caracteristiques": "...",
-  "choix_dimensionnement": "...",
-  "securite": "...",
-  "conclusion": "..."
+  "causes": [
+    { "contexte": "...", "caracteristiques": "...", "choix_dimensionnement": "...", "securite": "...", "conclusion": "..." }
+  ]
 }
 \\
 `.trim();
