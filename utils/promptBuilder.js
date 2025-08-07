@@ -76,21 +76,6 @@ Réponds uniquement par un objet JSON strict :
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
 
-Sinon, si c'est une demande de choix technique ou de dimensionnement, réponds en suivant ces consignes précises :
-
-- Contexte de la demande : Résume brièvement la situation ou le besoin exprimé par l'utilisateur.
-- Caractéristiques techniques fournies : Liste claire des données utiles (puissance, tension, débit, surface, température, etc.)
-- Choix ou dimensionnement proposé : Donne le résultat avec justification (valeurs, normes, méthode utilisée).
-- Vérifications / Sécurité / Normes : Vérifie la cohérence du choix avec les contraintes de sécurité ou normes applicables.
-- Conclusion synthétique claire et directe : Résume le choix proposé en une phrase simple et exploitable.
-
-Réponds uniquement par un objet JSON strict :
-
-{
-  "causes": [
-    { "contexte": "...", "caracteristiques": "...", "choix_dimensionnement": "...", "securite": "...", "conclusion": "..." }
-  ]
-}
 \\
 `.trim();
 }
