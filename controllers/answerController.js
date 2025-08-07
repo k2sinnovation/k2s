@@ -11,7 +11,18 @@ exports.processAnswer = async (req, res) => {
 
     // Construire le prompt pour la deuxième analyse (causes)
     // index sert pour la numérotation des causes si besoin
-    const prompt = buildSecondAnalysisPrompt(resume, previousQA, diagnostic_precedent, index);
+   const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('../utils/promptBuilder');
+
+let prompt;
+
+if (index === 0) {
+  // Première analyse → génère 5 questions
+  const qaFormatted = previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n');
+  prompt = buildFirstAnalysisPrompt(resume, qaFormatted);
+} else {
+  // Analyses suivantes → génère causes
+  prompt = buildSecondAnalysisPrompt(resume, previousQA, diagnostic_precedent, index);
+}
 
     console.log("📤 Prompt envoyé à l'IA (analyse des causes) :\n", prompt);
 
@@ -36,6 +47,7 @@ try {
     return res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
+
 
 
 
