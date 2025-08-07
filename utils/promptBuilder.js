@@ -53,6 +53,8 @@ Règles :
 - Analyse attentivement la demande et les échanges précédents question reponse pour générer des causes plausibles et cohérentes.
 - Chaque action doit proposer une manipulation concrète avec, si possible, une valeur indicative à tester (ex. temps, tension, fréquence, seuil, etc.), 
   même si la valeur exacte dépend du contexte. Cela permet au technicien de faire un essai terrain immédiatement.
+- Inquite les précautions spécifique à prendre uniquement, en lien direct avec la cause et l'action à réaliser. Ne mentionne pas les régles de sécurité 
+  générales ou basiques. Soit bref, claire et pertinent, sans exageration.
 - Ne génère jamais de causes hors sujet ou inventées. Si l’information est insuffisante, indique-le clairement dans la cause la plus probable.  
 - Ne donne aucune explication, répond uniquement par un objet JSON strict.
 
@@ -66,10 +68,10 @@ Réponds uniquement par un objet JSON strict :
 
 {
   "causes": [
-    { "cause": "${causeStart + 1} : ...", "verification": "...", "Action": "..." },
-    { "cause": "${causeStart + 2} : ...", "verification": "...", "Action": "..." },
-    { "cause": "${causeStart + 3} : ...", "verification": "...", "Action": "..." },
-    { "cause": "${causeStart + 4} : ...", "verification": "...", "Action": "..." }
+    { "cause": "${causeStart + 1} : ...", "verification": "...","precaution": "...", "Action": "..." },
+    { "cause": "${causeStart + 2} : ...", "verification": "...","precaution": "...", "Action": "..." },
+    { "cause": "${causeStart + 3} : ...", "verification": "...","precaution": "...", "Action": "..." },
+    { "cause": "${causeStart + 4} : ...", "verification": "...","precaution": "...", "Action": "..." }
   ],
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
