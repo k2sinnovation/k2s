@@ -5,13 +5,9 @@ const { buildFirstAnalysisPrompt } = require("../utils/promptBuilder");
 
 // Fonction utilitaire pour extraire proprement le JSON dans la réponse OpenAI
 function extractJsonFromContent(content) {
-  // Nettoyage des balises Markdown 
-json ou
-
+  // Nettoyage des balises Markdown ```json ou ```
   let cleaned = content.trim();
-  cleaned = cleaned.replace(/
-json|
-/g, "");
+  cleaned = cleaned.replace(/```json|```/g, "");
 
   // Remplace les guillemets français par des guillemets ASCII standard
   cleaned = cleaned.replace(/[«»]/g, '"');
