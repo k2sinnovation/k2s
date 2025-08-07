@@ -77,3 +77,7 @@ Réponds uniquement par un objet JSON strict :
 `.trim();
 }
 
+module.exports = {
+  buildFirstAnalysisPrompt,
+  buildSecondAnalysisPrompt
+};
