@@ -1,56 +1,49 @@
-const { buildSecondAnalysisPrompt } = require('../utils/promptBuilder');
+const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('../utils/promptBuilder');
 
 exports.processAnswer = async (req, res) => {
   try {
     const { index, resume, previousQA, diagnostic_precedent } = req.body;
 
-    // Validation simplifiée : index et resume requis, previousQA un tableau non vide
+    // Validation simplifiée
     if (index === undefined || !resume || !Array.isArray(previousQA) || previousQA.length === 0) {
       return res.status(400).json({ error: "Champs requis manquants ou invalides" });
     }
 
-    // Construire le prompt pour la deuxième analyse (causes)
-    // index sert pour la numérotation des causes si besoin
-   const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('../utils/promptBuilder');
+    let prompt;
+    let promptType;
 
-let prompt;
+    if (index === 0) {
+      // Analyse initiale : génération des 5 questions fermées
+      const qaFormatted = previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n');
+      prompt = buildFirstAnalysisPrompt(resume, qaFormatted);
+      promptType = "🟡 Analyse 0 → Génération de 5 questions fermées";
+    } else {
+      // Analyse suivante : génération des causes/actions
+      prompt = buildSecondAnalysisPrompt(resume, previousQA, diagnostic_precedent, index);
+      const start = index * 4 + 1;
+      const end = start + 3;
+      promptType = `🟠 Analyse ${index} → Causes ${start} à ${end}`;
+    }
 
-if (index === 0) {
-  // Première analyse → génère 5 questions
-  const qaFormatted = previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n');
-  prompt = buildFirstAnalysisPrompt(resume, qaFormatted);
-} else {
-  // Analyses suivantes → génère causes
-  prompt = buildSecondAnalysisPrompt(resume, previousQA, diagnostic_precedent, index);
-}
-
-    console.log("📤 Prompt envoyé à l'IA (analyse des causes) :\n", prompt);
+    console.log(`📤 Prompt envoyé à l'IA (${promptType}) :\n${prompt}`);
 
     const completion = await req.app.locals.openai.chat.completions.create({
       model: "gpt-4o-2024-08-06",
       messages: [{ role: "user", content: prompt }],
     });
 
-const resultText = completion.choices[0].message.content;
+    const resultText = completion.choices[0].message.content;
 
-try {
-  const resultJSON = JSON.parse(resultText);
-  return res.json({ diagnostic: resultJSON });
-} catch (parseError) {
-  console.error("❌ Erreur de parsing JSON IA :", parseError);
-  return res.status(500).json({ error: "Réponse IA invalide. Format JSON attendu non respecté." });
-}
-
+    try {
+      const resultJSON = JSON.parse(resultText);
+      return res.json({ diagnostic: resultJSON });
+    } catch (parseError) {
+      console.error("❌ Erreur de parsing JSON IA :", parseError);
+      return res.status(500).json({ error: "Réponse IA invalide. Format JSON attendu non respecté." });
+    }
 
   } catch (error) {
     console.error("Erreur dans processAnswer :", error);
     return res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
-
-
-
-
-
-
-
