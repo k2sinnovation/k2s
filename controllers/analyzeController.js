@@ -11,9 +11,12 @@ async function analyzeRequest(req, res) {
       analyseIndex = 0,
     } = req.body;
 
+    // Cast explicite en nombre
+    const analyseIndexNum = Number(analyseIndex);
+
     console.log("🧾 Données reçues :", {
       description,
-      analyseIndex,
+      analyseIndex: analyseIndexNum,
       previousQAcount: previousQA.length,
       resumePresent: resume && resume.length > 0
     });
@@ -22,11 +25,10 @@ async function analyzeRequest(req, res) {
       return res.status(400).json({ error: "Description trop courte ou absente." });
     }
 
-    console.log(`📡 Réception d'une requête pour l'analyse n°${analyseIndex}`);
+    console.log(`📡 Réception d'une requête pour l'analyse n°${analyseIndexNum}`);
 
     const hasResume = resume && resume.trim().length >= 5;
-    const isFirstAnalysis = analyseIndex === 0;
-
+    const isFirstAnalysis = analyseIndexNum === 0;
 
     let prompt;
 
@@ -41,7 +43,7 @@ async function analyzeRequest(req, res) {
       // 🔎 Analyse approfondie (2, 3, etc.)
       const safeResume = hasResume ? resume.trim() : description.trim();
 
-      prompt = buildSecondAnalysisPrompt(safeResume, previousQA, diagnosticPrecedent, analyseIndex);
+      prompt = buildSecondAnalysisPrompt(safeResume, previousQA, diagnosticPrecedent, analyseIndexNum);
     }
 
     console.log("📤 Prompt envoyé à l'IA :", prompt);
@@ -109,5 +111,3 @@ async function analyzeRequest(req, res) {
 module.exports = {
   analyzeRequest,
 };
-
-
