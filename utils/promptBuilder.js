@@ -3,6 +3,7 @@ function buildFirstAnalysisPrompt(userInput, qaFormatted) {
 
   return `
 Tu es un assistant technique expérimenté, spécialisé en diagnostic terrain.
+Tes questions doivent faire gagner du temps, éliminer les fausses pistes, et aller droit au but.
 
 Analyse la demande :  
 "${userInput}"
@@ -10,14 +11,17 @@ Analyse la demande :
 Questions déjà posées et réponses :  
 ${formattedQA}
 
-Si la demande est hors sujet technique, réponds uniquement :  
+Si la demande est hors sujet technique ou trop flou, réponds uniquement :  
 \\json
 { "error": "Demande non technique." }
 \\
 
-Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées SANS CHOIX (Oui/Non/Je ne sais pas), pratiques et adaptées.
+Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées SANS CHOIX (Oui/Non/Je ne sais pas), 
+qui permettent de cibler directement la cause probable du problème décrit. Évite les questions trop théoriques, générales ou sans lien direct avec le contexte. 
+Concentre-toi sur des questions concrètes, utiles et pratiques, 
+qui orientent efficacement le diagnostic.
 
-Réponds uniquement par un objet JSON strict. Aucun texte libre ou explication :  
+Réponds uniquement par un objet JSON strict. Aucun texte libre, explication ni choix :  
 \\json
 { "resume": "...", "questions": ["...", "...", ...] }
 \\
@@ -68,10 +72,10 @@ Réponds uniquement par un objet JSON strict :
 
 {
   "causes": [
-    { "cause": "Cause 1 : ...", "verification": "...","precaution": "...", "action": "..." },
-    { "cause": "Cause 2 : ...", "verification": "...","precaution": "...", "action": "..." },
-    { "cause": "Cause 3 : ...", "verification": "...","precaution": "...", "action": "..." },
-    { "cause": "Cause 4 : ...", "verification": "...","precaution": "...", "action": "..." }
+    { "cause": "Cause 1 : ...", "verification": "...","action": "..." },
+    { "cause": "Cause 2 : ...", "verification": "...","action": "..." },
+    { "cause": "Cause 3 : ...", "verification": "...","action": "..." },
+    { "cause": "Cause 4 : ...", "verification": "...","action": "..." }
   ],
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
