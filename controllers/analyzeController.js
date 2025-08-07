@@ -8,7 +8,7 @@ async function analyzeRequest(req, res) {
       previousQA = [],
       resume = "",
       diagnosticPrecedent = "",
-      analyseIndex = 1,
+      analyseIndex = 0,
     } = req.body;
 
     console.log("🧾 Données reçues :", {
@@ -109,4 +109,5 @@ async function analyzeRequest(req, res) {
 module.exports = {
   analyzeRequest,
 };
+
 
