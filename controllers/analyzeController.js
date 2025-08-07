@@ -25,7 +25,8 @@ async function analyzeRequest(req, res) {
     console.log(`📡 Réception d'une requête pour l'analyse n°${analyseIndex}`);
 
     const hasResume = resume && resume.trim().length >= 5;
-    const isFirstAnalysis = analyseIndex === 1 && !hasResume;
+    const isFirstAnalysis = analyseIndex === 0;
+
 
     let prompt;
 
@@ -108,3 +109,4 @@ async function analyzeRequest(req, res) {
 module.exports = {
   analyzeRequest,
 };
+
