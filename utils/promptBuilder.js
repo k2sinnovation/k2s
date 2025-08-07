@@ -63,17 +63,35 @@ ${diagnosticPrecedent ? `Diagnostic précédent :\n${diagnosticPrecedent}\n` : "
 Questions et réponses précédentes :  
 ${qaFormatted}
 
-Propose jusqu’à 4 causes probables avec vérifications concrètes et actions terrain :
+Si la demande est un diagnostic de panne, répondre selon cette structure : Propose jusqu’à 4 causes probables avec vérifications concrètes et actions terrain :
 Réponds uniquement par un objet JSON strict :
 
 {
   "causes": [
-    { "cause": "${causeStart + 1} : ...", "verification": "...","precaution": "...", "Action": "..." },
-    { "cause": "${causeStart + 2} : ...", "verification": "...","precaution": "...", "Action": "..." },
-    { "cause": "${causeStart + 3} : ...", "verification": "...","precaution": "...", "Action": "..." },
-    { "cause": "${causeStart + 4} : ...", "verification": "...","precaution": "...", "Action": "..." }
+    { "cause": "Cause 1 : ...", "verification": "...","precaution": "...", "action": "..." },
+    { "cause": "Cause 2 : ...", "verification": "...","precaution": "...", "action": "..." },
+    { "cause": "Cause 3 : ...", "verification": "...","precaution": "...", "action": "..." },
+    { "cause": "Cause 4 : ...", "verification": "...","precaution": "...", "action": "..." }
   ],
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
+}
+
+Sinon, si c'est une demande de choix technique ou de dimensionnement, réponds en suivant ces consignes précises :
+
+- Contexte de la demande : Résume brièvement la situation ou le besoin exprimé par l'utilisateur.
+- Caractéristiques techniques fournies : Liste claire des données utiles (puissance, tension, débit, surface, température, etc.)
+- Choix ou dimensionnement proposé : Donne le résultat avec justification (valeurs, normes, méthode utilisée).
+- Vérifications / Sécurité / Normes : Vérifie la cohérence du choix avec les contraintes de sécurité ou normes applicables.
+- Conclusion synthétique claire et directe : Résume le choix proposé en une phrase simple et exploitable.
+
+Réponds uniquement par un objet JSON strict :
+
+{
+  "contexte": "...",
+  "caracteristiques": "...",
+  "choix_dimensionnement": "...",
+  "securite": "...",
+  "conclusion": "..."
 }
 \\
 `.trim();
