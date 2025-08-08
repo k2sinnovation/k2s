@@ -3,6 +3,12 @@ const mongoose = require('mongoose');
 const OpenAI = require("openai");
 require('dotenv').config();
 
+//APPELER LE RECORD TRANSCRIBE AUDIO WHITER
+
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' }); // dossier temporaire pour fichiers uploadés
+const { transcribeAudio } = require('./openaiService'); // fonction à créer
+
 // ✅ Chargement des routes
 const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
@@ -31,6 +37,20 @@ mongoose.connect(process.env.MONGO_URI, {
 }).catch((err) => {
   console.error('❌ Erreur de connexion MongoDB :', err);
   process.exit(1);
+});
+
+//APPEL WHISPER OPENIA POUR LE VOCAL 
+app.post('/api/whisper', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Fichier audio manquant" });
+    }
+    const transcription = await transcribeAudio(req.file.path);
+    res.json({ text: transcription });
+  } catch (err) {
+    console.error('Erreur Whisper :', err);
+    res.status(500).json({ error: 'Erreur serveur lors de la transcription' });
+  }
 });
 
 // ✅ Routes correctement montées avec "/api" !
