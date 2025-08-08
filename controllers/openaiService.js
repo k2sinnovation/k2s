@@ -1,6 +1,6 @@
-// controllers/openaiService.js
 const fs = require('fs');
 const axios = require("axios");
+const FormData = require('form-data');  // instancier ici pour éviter répétition
 
 exports.askOpenAI = async (prompt, userText) => {
   try {
@@ -9,7 +9,7 @@ exports.askOpenAI = async (prompt, userText) => {
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "chatgpt-4o-latest", // plus rapide 
+        model: "chatgpt-4o-latest",
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: userText }
@@ -29,14 +29,21 @@ exports.askOpenAI = async (prompt, userText) => {
   }
 };
 
-//POUR LA TRASNCRIBE AUDIO
+// POUR LA TRANSCRIBE AUDIO avec logs améliorés
 exports.transcribeAudio = async (filePath) => {
   try {
+    console.log("🟡 Début transcription audio, fichier :", filePath);
+
+    const fileExtension = filePath.split('.').pop();
+    console.log("ℹ️ Extension fichier :", fileExtension);
+
     const fileStream = fs.createReadStream(filePath);
 
-    const formData = new require('form-data')();
+    const formData = new FormData();
     formData.append('file', fileStream);
     formData.append('model', 'whisper-1');
+
+    console.log("📤 Envoi du fichier à OpenAI Whisper avec headers :", formData.getHeaders());
 
     const response = await axios.post(
       'https://api.openai.com/v1/audio/transcriptions',
@@ -48,14 +55,13 @@ exports.transcribeAudio = async (filePath) => {
         },
       }
     );
+
+    console.log("✅ Transcription reçue :", response.data.text);
+
     return response.data.text;
+
   } catch (error) {
-    console.error("Erreur transcription Whisper :", error.response?.data || error.message);
+    console.error("❌ Erreur transcription Whisper :", error.response?.data || error.message);
     throw new Error("Erreur transcription Whisper");
   }
 };
-
-
-
-
-
