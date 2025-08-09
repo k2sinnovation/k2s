@@ -3,7 +3,7 @@ const fs = require('fs');
 const axios = require('axios');
 const FormData = require('form-data');
 
-// --- Fonction existante : appel à OpenAI ChatCompletion ---
+// --- Fonction : appel texte à OpenAI ---
 exports.askOpenAI = async (prompt, userText) => {
   try {
     console.log("🟡 Prompt system envoyé à OpenAI :\n", prompt);
@@ -12,7 +12,7 @@ exports.askOpenAI = async (prompt, userText) => {
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o-2024-08-06", // plus rapide
+        model: "chatgpt-4o-latest", // plus rapide 
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: userText }
@@ -34,7 +34,7 @@ exports.askOpenAI = async (prompt, userText) => {
   }
 };
 
-// --- Fonction existante : transcription audio ---
+// --- Fonction : transcription audio ---
 exports.transcribeAudio = async (filePath) => {
   try {
     console.log("🟡 Début transcription audio, fichier :", filePath);
@@ -76,6 +76,4 @@ exports.transcribeAudio = async (filePath) => {
 
   } catch (error) {
     console.error("❌ Erreur transcription Whisper :", error.response?.data || error.message);
-    throw new Error("Erreur transcription Whisper");
-  }
-};
+    throw new Error
