@@ -47,6 +47,14 @@ app.post('/api/whisper', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: "Fichier audio manquant" });
     }
     const transcription = await transcribeAudio(req.file.path);
+    // Vérifier si transcription vide ou silence
+if (!transcription || transcription.trim() === "") {
+  // Ne rien renvoyer, ou renvoyer un objet neutre
+  return res.status(204).send(); // 204 = No Content
+  // Ou : res.json({ text: "" }); selon ce que tu veux côté client
+}
+
+// Sinon renvoyer la transcription normalement
     res.json({ text: transcription });
   } catch (err) {
     console.error('Erreur Whisper :', err);
