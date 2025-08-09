@@ -1,6 +1,8 @@
 const fs = require('fs');
 const axios = require("axios");
 const FormData = require('form-data');  // instancier ici pour éviter répétition
+const path = require('path');
+
 
 exports.transcribeAudio = async (filePath) => {
   try {
@@ -45,3 +47,4 @@ exports.transcribeAudio = async (filePath) => {
     throw new Error("Erreur transcription Whisper");
   }
 };
+
