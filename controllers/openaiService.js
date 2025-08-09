@@ -1,8 +1,7 @@
-const fs = require('fs');
-const axios = require("axios");
-const FormData = require('form-data');  // instancier ici pour éviter répétition
 const path = require('path');
-
+const fs = require('fs');
+const axios = require('axios');
+const FormData = require('form-data');
 
 exports.transcribeAudio = async (filePath) => {
   try {
@@ -24,6 +23,7 @@ exports.transcribeAudio = async (filePath) => {
     const formData = new FormData();
     formData.append('file', fileStream);
     formData.append('model', 'whisper-1');
+    formData.append('language', 'fr'); // Forcer la langue française
 
     console.log("📤 Envoi du fichier à OpenAI Whisper avec headers :", formData.getHeaders());
 
@@ -47,4 +47,5 @@ exports.transcribeAudio = async (filePath) => {
     throw new Error("Erreur transcription Whisper");
   }
 };
+
 
