@@ -42,6 +42,7 @@ mongoose.connect(process.env.MONGO_URI, {
 //APPEL WHISPER OPENIA POUR LE VOCAL 
 app.post('/api/whisper', upload.single('file'), async (req, res) => {
   try {
+    console.log("Fichier reçu :", req.file);  
     if (!req.file) {
       return res.status(400).json({ error: "Fichier audio manquant" });
     }
