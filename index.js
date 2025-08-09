@@ -50,7 +50,7 @@ app.post('/api/whisper', upload.single('file'), async (req, res) => {
     const transcription = await transcribeAudio(req.file.path);
 
     const ignoredTexts = [
-      "Sous-titres réalisés pour la communauté d'Amara.org",
+      "Sous-titres  réalisés  pour  la  communauté  d'Amara.org",
       "Sous-titrage  ST'  501",
       // tu peux ajouter d'autres phrases parasites ici
     ];
