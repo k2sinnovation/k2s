@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const OpenAI = require("openai");
 const { generateTTS } = require('./controllers/openaiService'); // à créer pour la génération vocale
-const { promptTTSVocal } = require('./promptsTTSVocal');
+const { promptTTSVocal } = require('./utils/promptsTTSVocal');
 
 require('dotenv').config();
 
