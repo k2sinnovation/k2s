@@ -57,7 +57,9 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
     }
 
     // Génération réponse GPT
-    const promptSystem = "Tu es un assistant expert qui répond de façon claire et précise.";
+    const promptSystem = 
+  "Tu es un assistant expert qui répond clairement et brièvement. " +
+  "Termine toujours par : 'Pour approfondir, lance une analyse.'";
     const reponse = await askOpenAI(promptSystem, texte);
 
     // Génération vocal TTS de la réponse GPT
