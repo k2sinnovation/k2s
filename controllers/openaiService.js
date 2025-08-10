@@ -10,7 +10,7 @@ async function generateTTS(text) {
   try {
     const response = await openai.audio.speech.create({
       model: "tts-1",
-      voice: "adam"",
+      voice: "adam",
       input: text,
       format: "mp3",
     });
@@ -119,6 +119,7 @@ module.exports = {
   transcribeAudio,
   transcribeAudioBuffer,
 };
+
 
 
 
