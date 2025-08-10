@@ -1,7 +1,35 @@
 const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
+const OpenAI = require("openai");
 const FormData = require("form-data");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+
+// generateTTS vocal 
+async function generateTTS(text) {
+  try {
+    const response = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "alloy",     // tu peux changer la voix si tu veux
+      input: text,
+      format: "mp3"       // format mp3, tu peux aussi essayer wav
+    });
+
+    // Récupérer le buffer audio (la réponse est un ReadableStream ou Blob selon version)
+    const buffer = await response.arrayBuffer();
+    return Buffer.from(buffer);
+
+  } catch (error) {
+    console.error("Erreur génération TTS :", error);
+    throw error;
+  }
+}
+
+module.exports = {
+  // ... tes autres exports
+  generateTTS,
+};
 
 // === Fonction pour appeler OpenAI Chat ===
 exports.askOpenAI = async (prompt, userText) => {
@@ -78,3 +106,4 @@ exports.transcribeAudio = async (filePath) => {
     throw new Error("Erreur transcription Whisper");
   }
 };
+
