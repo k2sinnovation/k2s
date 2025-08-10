@@ -70,34 +70,29 @@ app.post('/api/whisper', upload.single('file'), async (req, res) => {
   }
 });
 
-const { transcribeAudio, askOpenAI, generateAudioFromText } = require('./controllers/openaiService');
-
-app.post('/api/speech-response', upload.single('file'), async (req, res) => {
+//GESTION APPEL TTS VOCAL 
+app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "Fichier audio manquant" });
     }
 
-    // 1. Transcription audio via Whisper
-    const textTranscribed = await transcribeAudio(req.file.path);
+    // Transcription Whisper
+    const texte = await transcribeAudio(req.file.path);
 
-    // 2. Appel GPT pour la réponse texte
-    const prompt = "Ta consigne système ici pour orienter GPT"; 
-    const responseText = await askOpenAI(prompt, textTranscribed);
+    if (!texte || texte.trim() === '') {
+      return res.status(204).send();
+    }
 
-    // 3. Conversion texte -> audio avec TTS
-    const audioBuffer = await generateAudioFromText(responseText);
+    // Génération réponse GPT
+    const promptSystem = "Tu es un assistant expert qui répond de façon claire et précise.";
+    const reponse = await askOpenAI(promptSystem, texte);
 
-    // 4. Réponse JSON texte + audio encodé base64
-    res.json({
-      text: responseText,
-      audioBase64: audioBuffer.toString('base64'),
-      audioFormat: 'mp3' // ou wav selon l'API
-    });
+    res.json({ texte: texte, reponse });
 
-  } catch (err) {
-    console.error('Erreur dans /api/speech-response :', err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("Erreur dans /api/whisper-gpt :", error);
+    res.status(500).json({ error: error.message || "Erreur serveur" });
   }
 });
 
