@@ -10,7 +10,7 @@ require('dotenv').config();
 
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() }); // <-- stockage en mémoire, pas sur disque
-const { transcribeAudio, askOpenAI } = require('./controllers/openaiService');
+const { transcribeAudioBuffer, askOpenAI } = require('./controllers/openaiService');
 
 
 // ✅ Chargement des routes
