@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const OpenAI = require("openai");
+const { generateTTS } = require('./controllers/openaiService'); // à créer pour la génération vocale
 require('dotenv').config();
 
 //APPELER LE RECORD TRANSCRIBE AUDIO WHITER
