@@ -56,7 +56,7 @@ async function transcribeAudio(filePath) {
     console.log("🟡 Début transcription audio, fichier :", filePath);
     let ext = path.extname(filePath);
     if (!ext) {
-      const newFilePath = filePath + ".wav";
+      const newFilePath = filePath + ".m4a";
       fs.renameSync(filePath, newFilePath);
       filePath = newFilePath;
       console.log("ℹ️ Fichier renommé avec extension :", filePath);
@@ -119,4 +119,5 @@ module.exports = {
   transcribeAudio,
   transcribeAudioBuffer,
 };
+
 
