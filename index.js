@@ -7,7 +7,8 @@ require('dotenv').config();
 
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' }); // dossier temporaire pour fichiers uploadés
-const { transcribeAudio } = require('./controllers/openaiService');
+const { transcribeAudio, askOpenAI } = require('./controllers/openaiService');
+
 
 // ✅ Chargement des routes
 const analyzeRoute = require("./routes/analyze");
