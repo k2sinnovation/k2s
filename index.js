@@ -70,6 +70,38 @@ app.post('/api/whisper', upload.single('file'), async (req, res) => {
   }
 });
 
+const { transcribeAudio, askOpenAI, generateAudioFromText } = require('./controllers/openaiService');
+
+app.post('/api/speech-response', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Fichier audio manquant" });
+    }
+
+    // 1. Transcription audio via Whisper
+    const textTranscribed = await transcribeAudio(req.file.path);
+
+    // 2. Appel GPT pour la réponse texte
+    const prompt = "Ta consigne système ici pour orienter GPT"; 
+    const responseText = await askOpenAI(prompt, textTranscribed);
+
+    // 3. Conversion texte -> audio avec TTS
+    const audioBuffer = await generateAudioFromText(responseText);
+
+    // 4. Réponse JSON texte + audio encodé base64
+    res.json({
+      text: responseText,
+      audioBase64: audioBuffer.toString('base64'),
+      audioFormat: 'mp3' // ou wav selon l'API
+    });
+
+  } catch (err) {
+    console.error('Erreur dans /api/speech-response :', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ✅ Routes correctement montées avec "/api" !
 app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
