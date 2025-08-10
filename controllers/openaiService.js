@@ -1,18 +1,18 @@
-const axios = require("axios");
-const path = require("path");
 const fs = require("fs");
 const OpenAI = require("openai");
-const FormData = require("form-data");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const FormData = require("form-data");
+const axios = require("axios");
+const path = require("path");
 
-// generateTTS vocal 
+// generateTTS vocal (OK avec SDK, on garde)
 async function generateTTS(text) {
   try {
     const response = await openai.audio.speech.create({
       model: "tts-1",
-      voice: "alloy", 
+      voice: "alloy",
       input: text,
-      format: "wav"
+      format: "wav",
     });
     const buffer = await response.arrayBuffer();
     return Buffer.from(buffer);
@@ -22,41 +22,41 @@ async function generateTTS(text) {
   }
 }
 
-// Fonction pour appeler OpenAI Chat
+// Fonction askOpenAI optimisée : remplacer axios par SDK officielle
 async function askOpenAI(prompt, userText) {
   try {
     console.log("🟡 Prompt system envoyé à OpenAI :\n", prompt);
     console.log("🟢 Message user envoyé à OpenAI :\n", userText);
-    const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: "chatgpt-4o-latest",
-        messages: [
-          { role: "system", content: prompt },
-          { role: "user", content: userText }
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      }
-    );
-    console.log("✅ Réponse OpenAI reçue :\n", response.data.choices[0].message.content);
-    return response.data.choices[0].message.content;
+
+    // Limiter userText pour éviter surcharge
+    if (userText.length > 3000) {
+      userText = userText.substring(0, 3000);
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "chatgpt-4o-latest",
+      messages: [
+        { role: "system", content: prompt },
+        { role: "user", content: userText },
+      ],
+    });
+
+    console.log("✅ Réponse OpenAI reçue :\n", completion.choices[0].message.content);
+    return completion.choices[0].message.content;
   } catch (error) {
     console.error("❌ Erreur appel OpenAI :", error.response?.data || error.message);
     throw new Error("Erreur OpenAI");
   }
 }
 
-// Fonction pour transcription audio avec Whisper (fichier disque)
+// transcription audio fichier (garde axios + formData si tu veux, sinon SDK)
+// Ici tu peux garder ta version axios si ça marche bien (pas critique à changer)
 async function transcribeAudio(filePath) {
   try {
     console.log("🟡 Début transcription audio, fichier :", filePath);
     let ext = path.extname(filePath);
     if (!ext) {
-      const newFilePath = filePath + '.wav'; 
+      const newFilePath = filePath + ".wav";
       fs.renameSync(filePath, newFilePath);
       filePath = newFilePath;
       console.log("ℹ️ Fichier renommé avec extension :", filePath);
@@ -65,12 +65,12 @@ async function transcribeAudio(filePath) {
     }
     const fileStream = fs.createReadStream(filePath);
     const formData = new FormData();
-    formData.append('file', fileStream);
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'fr'); 
+    formData.append("file", fileStream);
+    formData.append("model", "whisper-1");
+    formData.append("language", "fr");
     console.log("📤 Envoi du fichier à OpenAI Whisper...");
     const response = await axios.post(
-      'https://api.openai.com/v1/audio/transcriptions',
+      "https://api.openai.com/v1/audio/transcriptions",
       formData,
       {
         headers: {
@@ -87,32 +87,28 @@ async function transcribeAudio(filePath) {
   }
 }
 
-// Nouvelle fonction pour transcription audio à partir d'un buffer (mémoire)
+// transcription audio buffer : remplacer axios + formData par SDK + fichier temporaire
 async function transcribeAudioBuffer(audioBuffer) {
+  const tmpFile = path.join(__dirname, "temp_audio.wav");
   try {
-    const formData = new FormData();
-    formData.append('file', audioBuffer, {
-      filename: 'audio.wav',
-      contentType: 'audio/wav',
-    });
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'fr');
+    // écrire le buffer dans un fichier temporaire
+    await fs.promises.writeFile(tmpFile, audioBuffer);
 
-    console.log("📤 Envoi du buffer audio à OpenAI Whisper...");
-    const response = await axios.post(
-      'https://api.openai.com/v1/audio/transcriptions',
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      }
-    );
-    console.log("✅ Transcription reçue :", response.data.text);
-    return response.data.text;
+    // appel SDK OpenAI
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(tmpFile),
+      model: "whisper-1",
+      language: "fr",
+    });
+
+    await fs.promises.unlink(tmpFile);
+
+    console.log("✅ Transcription reçue :", transcription.text);
+    return transcription.text;
   } catch (error) {
     console.error("❌ Erreur transcription Whisper buffer :", error.response?.data || error.message);
+    // supprimer fichier même en cas d'erreur
+    try { await fs.promises.unlink(tmpFile); } catch {}
     throw new Error("Erreur transcription Whisper");
   }
 }
@@ -121,5 +117,5 @@ module.exports = {
   generateTTS,
   askOpenAI,
   transcribeAudio,
-  transcribeAudioBuffer,   // export ajouté
+  transcribeAudioBuffer,
 };
