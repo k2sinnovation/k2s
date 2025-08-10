@@ -42,36 +42,6 @@ mongoose.connect(process.env.MONGO_URI, {
 });
 
 //APPEL WHISPER OPENIA POUR LE VOCAL 
-app.post('/api/whisper', upload.single('file'), async (req, res) => {
-  try {
-    console.log("Fichier reçu :", req.file);  
-    if (!req.file) {
-      return res.status(400).json({ error: "Fichier audio manquant" });
-    }
-
-    const transcription = await transcribeAudio(req.file.path);
-
-    const ignoredTexts = [
-      "Sous-titres  réalisés  pour  la  communauté  d'Amara.org",
-      "Sous-titrage  ST'  501",
-      // tu peux ajouter d'autres phrases parasites ici
-    ];
-
-    if (
-      !transcription || 
-      transcription.trim() === "" || 
-      ignoredTexts.includes(transcription.trim())
-    ) {
-      return res.status(204).send();
-    }
-
-    res.json({ text: transcription });
-  } catch (err) {
-    console.error('Erreur Whisper :', err);
-    res.status(500).json({ error: 'Erreur serveur lors de la transcription' });
-  }
-});
-
 //GESTION APPEL TTS VOCAL 
 app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
   try {
@@ -90,13 +60,27 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
     const promptSystem = "Tu es un assistant expert qui répond de façon claire et précise.";
     const reponse = await askOpenAI(promptSystem, texte);
 
-    res.json({ texte: texte, reponse });
+    // Génération vocal TTS de la réponse GPT
+    const audioBuffer = await generateTTS(reponse);
+
+    // Logs utiles
+    console.log("Transcription :", texte);
+    console.log("Réponse GPT :", reponse);
+    console.log("Buffer audio TTS généré, taille :", audioBuffer.length);
+
+    // Retourne transcription, réponse texte, et audio encodé en base64
+    res.json({
+      texte,
+      reponse,
+      audioBase64: audioBuffer.toString('base64'),
+    });
 
   } catch (error) {
     console.error("Erreur dans /api/whisper-gpt :", error);
     res.status(500).json({ error: error.message || "Erreur serveur" });
   }
 });
+
 
 
 // ✅ Routes correctement montées avec "/api" !
