@@ -13,7 +13,7 @@ async function generateTTS(text) {
       model: "tts-1",
       voice: "alloy",     // tu peux changer la voix si tu veux
       input: text,
-      format: "mp3"       // format mp3, tu peux aussi essayer wav
+      format: "wav"       // format mp3, tu peux aussi essayer wav
     });
 
     // Récupérer le buffer audio (la réponse est un ReadableStream ou Blob selon version)
@@ -106,4 +106,5 @@ exports.transcribeAudio = async (filePath) => {
     throw new Error("Erreur transcription Whisper");
   }
 };
+
 
