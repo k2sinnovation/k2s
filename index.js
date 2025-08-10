@@ -9,7 +9,7 @@ require('dotenv').config();
 //APPELER LE RECORD TRANSCRIBE AUDIO WHITER
 
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/' }); // dossier temporaire pour fichiers uploadés
+const upload = multer({ storage: multer.memoryStorage() }); // <-- stockage en mémoire, pas sur disque
 const { transcribeAudio, askOpenAI } = require('./controllers/openaiService');
 
 
@@ -51,8 +51,8 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: "Fichier audio manquant" });
     }
 
-    // Transcription Whisper
-    const texte = await transcribeAudio(req.file.path);
+    // Transcription Whisper en passant le buffer directement
+    const texte = await transcribeAudio(req.file.buffer);
 
     if (!texte || texte.trim() === '') {
       return res.status(204).send();
