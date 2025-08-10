@@ -50,7 +50,7 @@ async function askOpenAI(prompt, userText) {
   }
 }
 
-// Fonction pour transcription audio avec Whisper
+// Fonction pour transcription audio avec Whisper (fichier disque)
 async function transcribeAudio(filePath) {
   try {
     console.log("🟡 Début transcription audio, fichier :", filePath);
@@ -87,8 +87,39 @@ async function transcribeAudio(filePath) {
   }
 }
 
+// Nouvelle fonction pour transcription audio à partir d'un buffer (mémoire)
+async function transcribeAudioBuffer(audioBuffer) {
+  try {
+    const formData = new FormData();
+    formData.append('file', audioBuffer, {
+      filename: 'audio.wav',
+      contentType: 'audio/wav',
+    });
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'fr');
+
+    console.log("📤 Envoi du buffer audio à OpenAI Whisper...");
+    const response = await axios.post(
+      'https://api.openai.com/v1/audio/transcriptions',
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+      }
+    );
+    console.log("✅ Transcription reçue :", response.data.text);
+    return response.data.text;
+  } catch (error) {
+    console.error("❌ Erreur transcription Whisper buffer :", error.response?.data || error.message);
+    throw new Error("Erreur transcription Whisper");
+  }
+}
+
 module.exports = {
   generateTTS,
   askOpenAI,
   transcribeAudio,
+  transcribeAudioBuffer,   // export ajouté
 };
