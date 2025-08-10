@@ -2,6 +2,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const OpenAI = require("openai");
 const { generateTTS } = require('./controllers/openaiService'); // à créer pour la génération vocale
+const { promptTTSVocal } = require('./promptsTTSVocal');
+
 require('dotenv').config();
 
 //APPELER LE RECORD TRANSCRIBE AUDIO WHITER
@@ -57,10 +59,7 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
     }
 
     // Génération réponse GPT
-    const promptSystem = 
-  "Tu es un assistant expert qui répond clairement et brièvement. " +
-  "Termine toujours par : 'Pour approfondir, lance une analyse.'";
-    const reponse = await askOpenAI(promptSystem, texte);
+    const reponse = await askOpenAI(promptTTSVocal, texte);
 
     // Génération vocal TTS de la réponse GPT
     const audioBuffer = await generateTTS(reponse);
