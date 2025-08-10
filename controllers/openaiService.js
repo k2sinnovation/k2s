@@ -9,10 +9,10 @@ const path = require("path");
 async function generateTTS(text) {
   try {
     const response = await openai.audio.speech.create({
-      model: "tts-1",
+      model: "tts-1-hd",
       voice: "alloy",
       input: text,
-      format: "wav",
+      format: "mp3",
     });
     const buffer = await response.arrayBuffer();
     return Buffer.from(buffer);
@@ -119,3 +119,4 @@ module.exports = {
   transcribeAudio,
   transcribeAudioBuffer,
 };
+
