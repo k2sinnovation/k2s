@@ -52,7 +52,7 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
     }
 
     // Transcription Whisper en passant le buffer directement
-    const texte = await transcribeAudio(req.file.buffer);
+  const texte = await transcribeAudioBuffer(req.file.buffer);
 
     if (!texte || texte.trim() === '') {
       return res.status(204).send();
