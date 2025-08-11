@@ -46,6 +46,9 @@ mongoose.connect(process.env.MONGO_URI, {
 
 //APPEL WHISPER OPENIA POUR LE VOCAL 
 //GESTION APPEL TTS VOCAL 
+const path = require('path');
+const fs = require('fs');
+
 app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -54,7 +57,12 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
 
     const texte = await transcribeAudio(req.file.path);
 
-    fs.unlinkSync(req.file.path); // suppression fichier temporaire
+    // Suppression du fichier temporaire (avec extension ajoutée si renommé)
+    let fileToDelete = req.file.path;
+    if (!path.extname(req.file.path)) {
+      fileToDelete = req.file.path + ".m4a"; // chemin fichier renommé dans transcribeAudio
+    }
+    fs.unlinkSync(fileToDelete);
 
     if (!texte || texte.trim() === '') {
       return res.status(204).send();
@@ -78,6 +86,7 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
     res.status(500).json({ error: error.message || "Erreur serveur" });
   }
 });
+
 
 
 
