@@ -51,26 +51,21 @@ app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: "Fichier audio manquant" });
     }
 
-    // Transcription Whisper en passant le buffer directement
     const texte = await transcribeAudio(req.file.path);
-    fs.unlinkSync(req.file.path);
+
+    fs.unlinkSync(req.file.path); // suppression fichier temporaire
 
     if (!texte || texte.trim() === '') {
       return res.status(204).send();
     }
 
-    // Génération réponse GPT
     const reponse = await askOpenAI(promptTTSVocal, texte);
-
-    // Génération vocal TTS de la réponse GPT
     const audioBuffer = await generateTTS(reponse);
 
-    // Logs utiles
     console.log("Transcription :", texte);
     console.log("Réponse GPT :", reponse);
     console.log("Buffer audio TTS généré, taille :", audioBuffer.length);
 
-    // Retourne transcription, réponse texte, et audio encodé en base64
     res.json({
       texte,
       reponse,
