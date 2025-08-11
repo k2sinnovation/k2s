@@ -66,7 +66,7 @@ async function transcribeAudio(filePath) {
     const fileStream = fs.createReadStream(filePath);
     const formData = new FormData();
     formData.append("file", fileStream);
-    formData.append("model", "whisper-1");
+    formData.append("model", "gpt-4o-mini-realtime-preview");
     formData.append("language", "fr");
     console.log("📤 Envoi du fichier à OpenAI Whisper...");
     const response = await axios.post(
@@ -97,7 +97,7 @@ async function transcribeAudioBuffer(audioBuffer) {
     // appel SDK OpenAI
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tmpFile),
-      model: "whisper-1",
+      model: "gpt-4o-mini-realtime-preview",
       language: "fr",
     });
 
@@ -119,6 +119,7 @@ module.exports = {
   transcribeAudio,
   transcribeAudioBuffer,
 };
+
 
 
 
