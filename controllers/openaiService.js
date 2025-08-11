@@ -63,24 +63,15 @@ async function transcribeAudio(filePath) {
     } else {
       console.log("ℹ️ Extension fichier détectée :", ext);
     }
-    const fileStream = fs.createReadStream(filePath);
-    const formData = new FormData();
-    formData.append("file", fileStream);
-    formData.append("model", "gpt-4o-mini-realtime-preview");
-    formData.append("language", "fr");
-    console.log("📤 Envoi du fichier à OpenAI Whisper...");
-    const response = await axios.post(
-      "https://api.openai.com/v1/audio/transcriptions",
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      }
-    );
-    console.log("✅ Transcription reçue :", response.data.text);
-    return response.data.text;
+
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: "gpt-4o-mini-realtime-preview",
+      language: "fr",
+    });
+
+    console.log("✅ Transcription reçue :", transcription.text);
+    return transcription.text;
   } catch (error) {
     console.error("❌ Erreur transcription Whisper :", error.response?.data || error.message);
     throw new Error("Erreur transcription Whisper");
@@ -119,6 +110,7 @@ module.exports = {
   transcribeAudio,
   transcribeAudioBuffer,
 };
+
 
 
 
