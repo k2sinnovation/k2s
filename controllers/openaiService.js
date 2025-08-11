@@ -9,7 +9,7 @@ const path = require("path");
 async function generateTTS(text) {
   try {
     const response = await openai.audio.speech.create({
-      model: "gpt-4o-mini-tts",
+      model: "tts-1",
       voice: "shimmer",
       input: text,
       format: "mp3",
@@ -66,7 +66,7 @@ async function transcribeAudio(filePath) {
 
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(filePath),
-      model: "gpt-4o-mini-realtime-preview",
+      model: "whisper-1",
       language: "fr",
     });
 
@@ -88,7 +88,7 @@ async function transcribeAudioBuffer(audioBuffer) {
     // appel SDK OpenAI
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tmpFile),
-      model: "gpt-4o-mini-realtime-preview",
+      model: "whisper-1",
       language: "fr",
     });
 
@@ -110,6 +110,7 @@ module.exports = {
   transcribeAudio,
   transcribeAudioBuffer,
 };
+
 
 
 
