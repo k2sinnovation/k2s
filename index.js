@@ -9,7 +9,7 @@ require('dotenv').config();
 //APPELER LE RECORD TRANSCRIBE AUDIO WHITER
 
 const multer = require('multer');
-const upload = multer({ storage: multer.memoryStorage() }); // <-- stockage en mémoire, pas sur disque
+const upload = multer({ dest: 'uploads/' }); // dossier temporaire
 const { transcribeAudioBuffer, askOpenAI } = require('./controllers/openaiService');
 
 
