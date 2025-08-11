@@ -47,7 +47,6 @@ mongoose.connect(process.env.MONGO_URI, {
 //APPEL WHISPER OPENIA POUR LE VOCAL 
 //GESTION APPEL TTS VOCAL 
 const path = require('path');
-const fs = require('fs');
 
 app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
   try {
