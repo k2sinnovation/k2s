@@ -4,8 +4,8 @@ const fs = require('fs');
 const axios = require('axios');
 const OpenAI = require("openai");
 const textToSpeech = require('@google-cloud/text-to-speech');
-const path = require('path');
 const { PassThrough } = require('stream');
+const path = require('path');
 
 // Initialisation OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -13,12 +13,66 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Initialisation Google TTS
 const ttsClient = new textToSpeech.TextToSpeechClient();
 
-// Transcription AssemblyAI (identique)
+// ------------------------
+// Transcription AssemblyAI
+// ------------------------
 async function transcribeWithAssembly(audioPath) {
-  // ... (même code que précédemment)
+  try {
+    const fileData = fs.readFileSync(audioPath);
+    const uploadResponse = await axios.post(
+      'https://api.assemblyai.com/v2/upload',
+      fileData,
+      {
+        headers: {
+          authorization: process.env.ASSEMBLYAI_API_KEY,
+          'content-type': 'application/octet-stream'
+        }
+      }
+    );
+
+    const uploadUrl = uploadResponse.data.upload_url;
+
+    // Créer la transcription
+    const transcriptResponse = await axios.post(
+      'https://api.assemblyai.com/v2/transcript',
+      { audio_url: uploadUrl },
+      {
+        headers: { authorization: process.env.ASSEMBLYAI_API_KEY }
+      }
+    );
+
+    const transcriptId = transcriptResponse.data.id;
+
+    // Polling pour attendre la fin de la transcription
+    let finished = false;
+    let transcriptText = '';
+    while (!finished) {
+      const result = await axios.get(
+        `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
+        { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
+      );
+
+      if (result.data.status === 'completed') {
+        transcriptText = result.data.text;
+        finished = true;
+      } else if (result.data.status === 'failed') {
+        throw new Error('Transcription échouée');
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2s pause
+      }
+    }
+
+    return transcriptText;
+
+  } catch (error) {
+    console.error("Erreur transcrire avec AssemblyAI :", error.message);
+    throw error;
+  }
 }
 
-// Fonction pour générer TTS en streaming
+// ------------------------
+// Streaming TTS Google
+// ------------------------
 async function streamGoogleTTS(text, res) {
   try {
     const request = {
@@ -27,20 +81,16 @@ async function streamGoogleTTS(text, res) {
       audioConfig: { audioEncoding: 'MP3' },
     };
 
-    // synthèse TTS
     const [response] = await ttsClient.synthesizeSpeech(request);
 
-    // créer un flux depuis le buffer
     const stream = new PassThrough();
     stream.end(response.audioContent);
 
-    // définir headers pour le streaming MP3
     res.set({
       'Content-Type': 'audio/mpeg',
       'Content-Disposition': 'inline; filename="tts.mp3"',
     });
 
-    // pipe vers le client
     stream.pipe(res);
 
   } catch (error) {
@@ -49,7 +99,9 @@ async function streamGoogleTTS(text, res) {
   }
 }
 
-// Fonction centrale pour transcription + GPT
+// ------------------------
+// Processus central Audio → AssemblyAI → OpenAI
+// ------------------------
 async function processAudioWithAssembly(filePath) {
   try {
     const texte = await transcribeWithAssembly(filePath);
@@ -58,14 +110,16 @@ async function processAudioWithAssembly(filePath) {
       model: "chatgpt-4o-latest",
       messages: [{ role: "user", content: texte }],
     });
+
     const reponse = completion.choices[0].message.content;
 
+    // Supprimer le fichier audio temporaire
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     return { texte, reponse };
 
   } catch (error) {
-    console.error("Erreur processAudioWithAssembly :", error);
+    console.error("Erreur processAudioWithAssembly :", error.message);
     throw error;
   }
 }
