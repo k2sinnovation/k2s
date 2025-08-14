@@ -4,23 +4,38 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const FormData = require("form-data");
 const axios = require("axios");
 const path = require("path");
+const { promptTTSVocal } = require("../utils/promptsTTSVocal"); // nouveau fichier prompts
 
 // generateTTS vocal (OK avec SDK, on garde)
 async function generateTTS(text) {
   try {
+    // 1️⃣ Transformer le texte avec GPT pour style Lydia
+    const styledTextResponse = await openai.chat.completions.create({
+      model: "chatgpt-4o-latest",
+      messages: [
+        { role: "system", content: promptTTSVocal }, // prompt vocal Lydia
+        { role: "user", content: text }
+      ],
+    });
+    const styledText = styledTextResponse.choices[0].message.content;
+
+    // 2️⃣ Générer TTS à partir du texte stylisé
     const response = await openai.audio.speech.create({
       model: "tts-1",
       voice: "shimmer",
-      input: text,
+      input: styledText, // texte stylisé
       format: "mp3",
     });
+
     const buffer = await response.arrayBuffer();
     return Buffer.from(buffer);
+
   } catch (error) {
     console.error("Erreur génération TTS :", error);
     throw error;
   }
 }
+
 
 // Fonction askOpenAI optimisée : remplacer axios par SDK officielle
 async function askOpenAI(prompt, userText) {
@@ -110,6 +125,7 @@ module.exports = {
   transcribeAudio,
   transcribeAudioBuffer,
 };
+
 
 
 
