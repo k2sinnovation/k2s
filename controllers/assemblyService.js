@@ -23,10 +23,11 @@ async function transcribeWithAssembly(audioPath) {
       'https://api.assemblyai.com/v2/upload',
       fileData,
       {
-        headers: {
-          authorization: process.env.ASSEMBLYAI_API_KEY,
-          'content-type': 'application/octet-stream'
-        }
+headers: {
+  authorization: `Bearer ${process.env.ASSEMBLYAI_API_KEY}`,
+  'content-type': 'application/octet-stream'
+}
+
       }
     );
 
@@ -37,7 +38,8 @@ async function transcribeWithAssembly(audioPath) {
       'https://api.assemblyai.com/v2/transcript',
       { audio_url: uploadUrl },
       {
-        headers: { authorization: process.env.ASSEMBLYAI_API_KEY }
+       headers: { authorization: `Bearer ${process.env.ASSEMBLYAI_API_KEY}` }
+
       }
     );
 
@@ -49,7 +51,8 @@ async function transcribeWithAssembly(audioPath) {
     while (!finished) {
       const result = await axios.get(
         `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
-        { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
+        { headers: { authorization: `Bearer ${process.env.ASSEMBLYAI_API_KEY}` } }
+
       );
 
       if (result.data.status === 'completed') {
