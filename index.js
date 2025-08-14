@@ -7,8 +7,6 @@ const { promptTTSVocal } = require('./utils/promptsTTSVocal');
 
 require('dotenv').config();
 
-//APPELER LE RECORD TRANSCRIBE AUDIO WHITER
-
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' }); // dossier temporaire
 const { transcribeAudio, transcribeAudioBuffer, askOpenAI } = require('./controllers/openaiService');
@@ -18,9 +16,6 @@ const { transcribeAudio, transcribeAudioBuffer, askOpenAI } = require('./control
 const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
 const subscribeRoute = require("./routes/subscribe");
-
-// ⚠️ Ce n’est pas une route à utiliser comme tel, sauf si tu l’as défini dans /models comme un vrai routeur
-// const userRoute = require("./models/usermodel");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
