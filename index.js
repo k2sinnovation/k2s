@@ -44,51 +44,6 @@ mongoose.connect(process.env.MONGO_URI, {
   process.exit(1);
 });
 
-//APPEL WHISPER OPENIA POUR LE VOCAL 
-//GESTION APPEL TTS VOCAL 
-const path = require('path');
-
-app.post('/api/whisper-gpt', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "Fichier audio manquant" });
-    }
-
-    const texte = await transcribeAudio(req.file.path);
-
-    // Suppression du fichier temporaire (avec extension ajoutée si renommé)
-    let fileToDelete = req.file.path;
-    if (!path.extname(req.file.path)) {
-      fileToDelete = req.file.path + ".m4a"; // chemin fichier renommé dans transcribeAudio
-    }
-    fs.unlinkSync(fileToDelete);
-
-    if (!texte || texte.trim() === '') {
-      return res.status(204).send();
-    }
-
-    const reponse = await askOpenAI(promptTTSVocal, texte);
-    const audioBuffer = await generateTTS(reponse);
-
-    console.log("Transcription :", texte);
-    console.log("Réponse GPT :", reponse);
-    console.log("Buffer audio TTS généré, taille :", audioBuffer.length);
-
-    res.json({
-      texte,
-      reponse,
-      audioBase64: audioBuffer.toString('base64'),
-    });
-
-  } catch (error) {
-    console.error("Erreur dans /api/whisper-gpt :", error);
-    res.status(500).json({ error: error.message || "Erreur serveur" });
-  }
-});
-
-
-
-
 // ✅ Routes correctement montées avec "/api" !
 app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
