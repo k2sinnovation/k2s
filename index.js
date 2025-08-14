@@ -4,6 +4,9 @@ const OpenAI = require("openai");
 const fs = require('fs');
 const { generateTTS } = require('./controllers/openaiService'); // à créer pour la génération vocale
 const { promptTTSVocal } = require('./utils/promptsTTSVocal');
+const testAudioRoutes = require('./routes/testAudio');
+
+
 
 require('dotenv').config();
 
@@ -43,6 +46,7 @@ mongoose.connect(process.env.MONGO_URI, {
 app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
 app.use("/api/subscribe", subscribeRoute);
+app.use('/api', testAudioRoutes);
 
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
 app.get('/api/istModels', async (req, res) => {
