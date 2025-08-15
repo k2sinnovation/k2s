@@ -50,6 +50,7 @@ app.use("/api/subscribe", subscribeRoute);
 app.use('/api', testAudioRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/api', testTTSRoutes);
+app.use('/api/assembly', assemblyRoute);
 
 
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
