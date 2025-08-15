@@ -5,6 +5,8 @@ const fs = require('fs');
 const { generateTTS } = require('./controllers/openaiService'); // à créer pour la génération vocale
 const { promptTTSVocal } = require('./utils/promptsTTSVocal');
 const testAudioRoutes = require('./routes/testAudio');
+const testTTSRoutes = require('./routes/testTTS');
+
 
 
 
@@ -48,6 +50,7 @@ app.use("/api/answer", answerRoute);
 app.use("/api/subscribe", subscribeRoute);
 app.use('/api', testAudioRoutes);
 app.use('/uploads', express.static('uploads'));
+app.use('/api', testTTSRoutes);
 
 
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
