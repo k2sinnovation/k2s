@@ -7,7 +7,7 @@ const textToSpeech = require('@google-cloud/text-to-speech');
 const { PassThrough } = require('stream');
 const path = require('path');
 
-// Initialisation OpenAI avec variable d'environnement
+// Initialisation OpenAI
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Initialisation Google TTS
@@ -18,18 +18,15 @@ const ttsClient = new textToSpeech.TextToSpeechClient();
 // ------------------------
 async function transcribeWithAssembly(audioPath) {
   try {
-    const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
-    if (!ASSEMBLYAI_API_KEY) throw new Error("Clé AssemblyAI manquante dans les variables d'environnement");
-
     const fileData = fs.readFileSync(audioPath);
 
-    // Upload du fichier audio
+    // Upload audio
     const uploadResponse = await axios.post(
       'https://api.assemblyai.com/v2/upload',
       fileData,
       {
         headers: {
-          authorization: ASSEMBLYAI_API_KEY,
+          authorization: process.env.ASSEMBLYAI_API_KEY,
           'content-type': 'application/octet-stream',
         },
       }
@@ -37,26 +34,29 @@ async function transcribeWithAssembly(audioPath) {
 
     const uploadUrl = uploadResponse.data.upload_url;
 
-    // Création de la transcription
+    // Créer la transcription
     const transcriptResponse = await axios.post(
       'https://api.assemblyai.com/v2/transcript',
-      { audio_url: uploadUrl },
-      { headers: { authorization: ASSEMBLYAI_API_KEY } }
+      { audio_url: uploadUrl, speech_model: 'universal' },
+      { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
     );
 
     const transcriptId = transcriptResponse.data.id;
+    const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
 
-    // Polling jusqu'à la fin de la transcription
+    // Polling pour attendre la fin
     while (true) {
-      const result = await axios.get(
-        `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
-        { headers: { authorization: ASSEMBLYAI_API_KEY } }
-      );
+      const result = await axios.get(pollingEndpoint, {
+        headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
+      });
 
-      if (result.data.status === 'completed') return result.data.text;
-      if (result.data.status === 'failed') throw new Error('Transcription échouée');
-
-      await new Promise(resolve => setTimeout(resolve, 2000)); // pause 2s
+      if (result.data.status === 'completed') {
+        return result.data.text;
+      } else if (result.data.status === 'error') {
+        throw new Error(`Transcription échouée: ${result.data.error}`);
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
     }
 
   } catch (error) {
@@ -77,7 +77,6 @@ async function streamGoogleTTS(text, res) {
     };
 
     const [response] = await ttsClient.synthesizeSpeech(request);
-
     const stream = new PassThrough();
     stream.end(response.audioContent);
 
@@ -87,7 +86,6 @@ async function streamGoogleTTS(text, res) {
     });
 
     stream.pipe(res);
-
   } catch (error) {
     console.error("Erreur Google TTS :", error.message);
     res.status(500).send('Erreur génération TTS');
@@ -112,7 +110,6 @@ async function processAudioWithAssembly(filePath) {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     return { texte, reponse };
-
   } catch (error) {
     console.error("Erreur processAudioWithAssembly :", error.message);
     throw error;
