@@ -18,7 +18,7 @@ const ttsClient = new textToSpeech.TextToSpeechClient();
 // ------------------------
 async function transcribeWithAssembly(audioPath) {
   try {
-    const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+    const ASSEMBLYAI_API_KEY = "42cf66e52a024778bb2c487a03828190";
     const fileData = fs.readFileSync(audioPath);
 
     // Upload
@@ -44,7 +44,7 @@ async function transcribeWithAssembly(audioPath) {
 
     const transcriptId = transcriptResponse.data.id;
 
-    // Polling
+    // Polling pour la transcription
     while (true) {
       const result = await axios.get(
         `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
