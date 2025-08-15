@@ -27,7 +27,7 @@ async function transcribeWithAssembly(audioPath) {
       fileData,
       {
         headers: {
-          authorization: process.env.ASSEMBLYAI_API_KEY,
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
           'content-type': 'application/octet-stream',
         },
       }
