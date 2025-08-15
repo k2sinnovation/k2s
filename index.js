@@ -4,6 +4,7 @@ const OpenAI = require("openai");
 const fs = require('fs');
 const { processAudio, streamGoogleTTS } = require('./controllers/assemblyService');
 const { promptTTSVocal } = require('./utils/promptsTTSVocal');
+const assemblyRoute = require('./routes/assembly');
 const testAudioRoutes = require('./routes/testAudio');
 const testTTSRoutes = require('./routes/testTTS');
 
