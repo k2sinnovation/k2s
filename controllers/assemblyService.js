@@ -118,4 +118,5 @@ async function processAudioWithAssembly(filePath) {
   }
 }
 
-module.exports = { processAudioWithAssembly, streamGoogleTTS };
+module.exports = { processAudioWithAssembly, streamGoogleTTS, ttsClient };
+
