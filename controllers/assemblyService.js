@@ -24,7 +24,7 @@ async function transcribeWithAssembly(audioPath) {
       fileData,
       {
 headers: {
-  authorization: `Bearer ${process.env.ASSEMBLYAI_API_KEY}`,
+  authorization: `${process.env.ASSEMBLYAI_API_KEY}`,
   'content-type': 'application/octet-stream'
 }
 
@@ -38,7 +38,7 @@ headers: {
       'https://api.assemblyai.com/v2/transcript',
       { audio_url: uploadUrl },
       {
-       headers: { authorization: `Bearer ${process.env.ASSEMBLYAI_API_KEY}` }
+       headers: { authorization: `${process.env.ASSEMBLYAI_API_KEY}` }
 
       }
     );
@@ -51,7 +51,7 @@ headers: {
     while (!finished) {
       const result = await axios.get(
         `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
-        { headers: { authorization: `Bearer ${process.env.ASSEMBLYAI_API_KEY}` } }
+        { headers: { authorization: `${process.env.ASSEMBLYAI_API_KEY}` } }
 
       );
 
