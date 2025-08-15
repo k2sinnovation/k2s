@@ -37,7 +37,7 @@ async function transcribeWithAssembly(audioPath) {
     console.log("[AssemblyAI] Création de la transcription...");
     const transcriptResponse = await axios.post(
       'https://api.assemblyai.com/v2/transcript',
-      { audio_url: uploadUrl, speech_model: 'universal' },
+      { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
       { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
     );
 
