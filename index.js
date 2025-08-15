@@ -47,6 +47,8 @@ app.use("/api/analyze", analyzeRoute);
 app.use("/api/answer", answerRoute);
 app.use("/api/subscribe", subscribeRoute);
 app.use('/api', testAudioRoutes);
+app.use('/uploads', express.static('uploads'));
+
 
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
 app.get('/api/istModels', async (req, res) => {
