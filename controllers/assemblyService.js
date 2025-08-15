@@ -7,7 +7,7 @@ const textToSpeech = require('@google-cloud/text-to-speech');
 const { PassThrough } = require('stream');
 const path = require('path');
 
-// Initialisation OpenAI
+// Initialisation OpenAI avec variable d'environnement
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Initialisation Google TTS
@@ -18,10 +18,12 @@ const ttsClient = new textToSpeech.TextToSpeechClient();
 // ------------------------
 async function transcribeWithAssembly(audioPath) {
   try {
-    const ASSEMBLYAI_API_KEY = "42cf66e52a024778bb2c487a03828190";
+    const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+    if (!ASSEMBLYAI_API_KEY) throw new Error("Clé AssemblyAI manquante dans les variables d'environnement");
+
     const fileData = fs.readFileSync(audioPath);
 
-    // Upload
+    // Upload du fichier audio
     const uploadResponse = await axios.post(
       'https://api.assemblyai.com/v2/upload',
       fileData,
@@ -35,7 +37,7 @@ async function transcribeWithAssembly(audioPath) {
 
     const uploadUrl = uploadResponse.data.upload_url;
 
-    // Créer transcription
+    // Création de la transcription
     const transcriptResponse = await axios.post(
       'https://api.assemblyai.com/v2/transcript',
       { audio_url: uploadUrl },
@@ -44,7 +46,7 @@ async function transcribeWithAssembly(audioPath) {
 
     const transcriptId = transcriptResponse.data.id;
 
-    // Polling pour la transcription
+    // Polling jusqu'à la fin de la transcription
     while (true) {
       const result = await axios.get(
         `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
@@ -54,7 +56,7 @@ async function transcribeWithAssembly(audioPath) {
       if (result.data.status === 'completed') return result.data.text;
       if (result.data.status === 'failed') throw new Error('Transcription échouée');
 
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 2000)); // pause 2s
     }
 
   } catch (error) {
