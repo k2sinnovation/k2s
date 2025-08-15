@@ -18,54 +18,44 @@ const ttsClient = new textToSpeech.TextToSpeechClient();
 // ------------------------
 async function transcribeWithAssembly(audioPath) {
   try {
+    const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
     const fileData = fs.readFileSync(audioPath);
+
+    // Upload
     const uploadResponse = await axios.post(
       'https://api.assemblyai.com/v2/upload',
       fileData,
       {
-headers: {
-  authorization: `${process.env.ASSEMBLYAI_API_KEY}`,
-  'content-type': 'application/octet-stream'
-}
-
+        headers: {
+          authorization: ASSEMBLYAI_API_KEY,
+          'content-type': 'application/octet-stream',
+        },
       }
     );
 
     const uploadUrl = uploadResponse.data.upload_url;
 
-    // Créer la transcription
+    // Créer transcription
     const transcriptResponse = await axios.post(
       'https://api.assemblyai.com/v2/transcript',
       { audio_url: uploadUrl },
-      {
-       headers: { authorization: `${process.env.ASSEMBLYAI_API_KEY}` }
-
-      }
+      { headers: { authorization: ASSEMBLYAI_API_KEY } }
     );
 
     const transcriptId = transcriptResponse.data.id;
 
-    // Polling pour attendre la fin de la transcription
-    let finished = false;
-    let transcriptText = '';
-    while (!finished) {
+    // Polling
+    while (true) {
       const result = await axios.get(
         `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
-        { headers: { authorization: `${process.env.ASSEMBLYAI_API_KEY}` } }
-
+        { headers: { authorization: ASSEMBLYAI_API_KEY } }
       );
 
-      if (result.data.status === 'completed') {
-        transcriptText = result.data.text;
-        finished = true;
-      } else if (result.data.status === 'failed') {
-        throw new Error('Transcription échouée');
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2s pause
-      }
-    }
+      if (result.data.status === 'completed') return result.data.text;
+      if (result.data.status === 'failed') throw new Error('Transcription échouée');
 
-    return transcriptText;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
 
   } catch (error) {
     console.error("Erreur transcrire avec AssemblyAI :", error.message);
