@@ -101,7 +101,10 @@ async function processAudioAndReturnJSON(filePath) {
 
     const completion = await openai.chat.completions.create({
       model: "chatgpt-4o-latest",
-      messages: [{ role: "user", content: texteTranscrit }],
+      messages: [
+        { role: "system", content: promptTTSVocal },
+        { role: "user", content: texteTranscrit },
+    ],
     });
     gptResponse = completion.choices[0].message.content;
     console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
