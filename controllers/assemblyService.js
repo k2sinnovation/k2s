@@ -157,7 +157,7 @@ if (gptResponse) {
     cleanedText = Buffer.from(cleanedText, 'utf-8').toString();
 
     console.log(`[ProcessAudio] Texte envoyé à Google TTS : "${cleanedText}"`);
-    audioBase64 = await generateGoogleTTSBase64(cleanedText);
+    audioBase64 = await generateGoogleTTSMP3(cleanedText);
     console.log(`[ProcessAudio] Audio Base64 généré. Taille : ${audioBase64.length}`);
 
   } catch (ttsError) {
