@@ -4,7 +4,6 @@ const textToSpeech = require('@google-cloud/text-to-speech');
 const { PassThrough } = require('stream');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const promptTTSVocal = `Voici la transcription : ${transcription}`;
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
@@ -105,6 +104,7 @@ async function processAudioAndReturnJSON(filePath) {
     texteTranscrit = await transcribeWithAssembly(filePath);
     console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
 
+    const promptTTSVocal = `Voici la transcription à analyser : ${texteTranscrit}`;
     const completion = await openai.chat.completions.create({
       model: "chatgpt-4o-latest",
       messages: [
