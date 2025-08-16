@@ -25,12 +25,22 @@ const ttsClient = new textToSpeech.TextToSpeechClient({
 // ------------------------
 // Transcription AssemblyAI
 // ------------------------
-async function transcribeWithAssembly(audioPath) {
-  try {
-    console.log(`[AssemblyAI] Lecture du fichier audio : ${audioPath}`);
-    const fileData = fs.readFileSync(audioPath);
 
-    console.log("[AssemblyAI] Upload audio en cours...");
+// ------------------------
+// AJOUT : décodage Base64 → Buffer
+// ------------------------
+
+function decodeBase64Audio(base64String) {
+  // Supprime le préfixe si présent (ex: "data:audio/mp3;base64,")
+  const base64Data = base64String.replace(/^data:audio\/\w+;base64,/, '');
+  return Buffer.from(base64Data, 'base64');
+}
+
+async function transcribeWithAssembly(audioInput, isBase64 = false) {
+  try {
+    console.log("[AssemblyAI] Préparation de l'audio...");
+    const fileData = isBase64 ? decodeBase64Audio(audioInput) : fs.readFileSync(audioInput);
+
     const uploadResponse = await axios.post(
       'https://api.assemblyai.com/v2/upload',
       fileData,
@@ -56,24 +66,19 @@ async function transcribeWithAssembly(audioPath) {
     console.log(`[AssemblyAI] ID transcription : ${transcriptId}`);
     const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
 
-    while (true) {
-      const result = await axios.get(pollingEndpoint, {
-        headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
-      });
+while (true) {
+  const result = await axios.get(pollingEndpoint, {
+    headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
+  });
 
-      if (result.data.status === 'completed') {
-        console.log(`[AssemblyAI] Transcription terminée : ${result.data.text}`);
-        return result.data.text;
-      } else if (result.data.status === 'error') {
-        throw new Error(`Transcription échouée: ${result.data.error}`);
-      } else {
-        console.log("[AssemblyAI] Transcription en cours...");
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-  } catch (error) {
-    console.error("Erreur transcrire avec AssemblyAI :", error.message);
-    throw error;
+  if (result.data.status === 'completed') {
+    console.log(`[AssemblyAI] Transcription terminée : ${result.data.text}`);
+    return result.data.text;
+  } else if (result.data.status === 'error') {
+    throw new Error(`Transcription échouée: ${result.data.error}`);
+  } else {
+    console.log("[AssemblyAI] Transcription en cours...");
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
 }
 
@@ -101,16 +106,24 @@ async function generateGoogleTTSBase64(text) {
 // ------------------------
 // Processus complet Audio → AssemblyAI → GPT → TTS
 // ------------------------
-async function processAudioAndReturnJSON(filePath) {
+async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
+  let tempfilePath   = fileOrBase64;
+
+  if (isBase64) {
+    // Création d'un fichier temporaire à partir du Base64
+    tempfilePath     = `./temp_${Date.now()}.mp3`;
+    fs.writeFileSync(tempfilePath    , decodeBase64Audio(fileOrBase64));
+    console.log(`[ProcessAudio] Fichier temporaire créé à partir du Base64 : ${tempfilePath    }`);
+  }
   let texteTranscrit = "";
   let gptResponse = "";
   let audioBase64 = null;
 
-  console.log(`[ProcessAudio] Début traitement du fichier : ${filePath}`);
+  console.log(`[ProcessAudio] Début traitement du fichier : ${tempfilePath    }`);
 
   // 1️⃣ Transcription AssemblyAI
   try {
-    texteTranscrit = await transcribeWithAssembly(filePath);
+    texteTranscrit = await transcribeWithAssembly(tempfilePath  );
     console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
   } catch (assemblyError) {
     console.error("Erreur AssemblyAI :", assemblyError.message);
@@ -118,23 +131,23 @@ async function processAudioAndReturnJSON(filePath) {
   }
 
   // 2️⃣ GPT
-  if (texteTranscrit) {
-    try {
-      const promptTTSVocal = `Voici la transcription à analyser : ${texteTranscrit}`;
-      const completion = await openai.chat.completions.create({
-        model: "chatgpt-4o-latest",
-        messages: [
-          { role: "system", content: promptTTSVocal },
-          { role: "user", content: texteTranscrit },
-        ],
-      });
-      gptResponse = completion.choices[0].message.content;
-      console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
-    } catch (gptError) {
-      console.error("Erreur GPT (on continue) :", gptError.message);
-      gptResponse = "";
-    }
-  }
+// 2️⃣ GPT
+try {
+  const completion = await openai.chat.completions.create({
+    model: "chatgpt-4o-latest",
+    messages: [
+      { role: "system", content: promptTTSVocal },
+      { role: "user", content: texteTranscrit },
+    ],
+  });
+
+  gptResponse = completion.choices[0].message.content;
+  console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
+} catch (gptError) {
+  console.error("Erreur GPT (on continue) :", gptError.message);
+  gptResponse = "";
+}
+
 
   // 3️⃣ TTS
   if (gptResponse) {
@@ -148,8 +161,8 @@ async function processAudioAndReturnJSON(filePath) {
 
   // Suppression du fichier temporaire
   try {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
+    if (fs.existsSync(tempfilePath  )) fs.unlinkSync(tempfilePath  );
+    console.log(`[ProcessAudio] Fichier temporaire supprimé : ${tempfilePath  }`);
   } catch (fsError) {
     console.error("Erreur suppression fichier :", fsError.message);
   }
