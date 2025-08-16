@@ -4,6 +4,7 @@ const textToSpeech = require('@google-cloud/text-to-speech');
 const { PassThrough } = require('stream');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const { promptTTSVocal } = require('./promptTTSVocal');
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
