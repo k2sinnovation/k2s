@@ -4,7 +4,7 @@
   "description": "Backend pour K2S avec OpenAI",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node checkNode.js && node index.js"
   },
   "engines": {
     "node": ">=16.0.0"
