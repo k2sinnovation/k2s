@@ -17,7 +17,8 @@ async function generateGoogleTTSBase64(text) {
       {
         input: { text },
         voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-        audioConfig: { audioEncoding: 'MP3' },
+        audioConfig: {  "audioEncoding": "LINEAR16"   // <- Génère un fichier WAV
+ },
       }
     );
 
