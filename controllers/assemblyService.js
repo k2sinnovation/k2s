@@ -4,6 +4,8 @@ const fs = require('fs');
 const axios = require('axios');
 const textToSpeech = require('@google-cloud/text-to-speech');
 const { PassThrough } = require('stream');
+const OpenAI = require('openai');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
@@ -98,29 +100,38 @@ async function streamGoogleTTS(text, res) {
 }
 
 // ------------------------
-// Processus central Audio → AssemblyAI → GPT → TTS
+// Processus complet Audio → AssemblyAI → GPT → TTS
 // ------------------------
-async function processAudio(filePath, gptResponse) {
+async function processAudioAndRespond(filePath, res) {
   try {
     console.log(`[ProcessAudio] Début traitement du fichier : ${filePath}`);
-    const texte = await transcribeWithAssembly(filePath);
-    console.log(`[ProcessAudio] Texte transcrit : ${texte}`);
+    
+    // 1️⃣ Transcription
+    const texteTranscrit = await transcribeWithAssembly(filePath);
+    console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
 
-    if (gptResponse) {
-      console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
-    }
+    // 2️⃣ Appel à OpenAI pour obtenir la réponse
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-2025-04-14",
+      messages: [{ role: "user", content: texteTranscrit }],
+    });
 
-    // Supprimer le fichier audio temporaire
+    const gptResponse = completion.choices[0].message.content;
+    console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
+
+    // 3️⃣ Supprimer le fichier temporaire
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
     }
 
-    return { texte, gptResponse };
+    // 4️⃣ Générer et streamer le TTS directement au front
+    await streamGoogleTTS(gptResponse, res);
+
   } catch (error) {
-    console.error("Erreur processAudio :", error.message);
-    throw error;
+    console.error("Erreur processAudioAndRespond :", error.message);
+    res.status(500).send('Erreur traitement audio');
   }
 }
 
-module.exports = { transcribeWithAssembly, streamGoogleTTS, processAudio };
+module.exports = { transcribeWithAssembly, streamGoogleTTS, processAudio, processAudioAndRespond };
