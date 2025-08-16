@@ -159,14 +159,18 @@ try {
 
 
   // 3️⃣ TTS
-  if (gptResponse) {
-    try {
-      audioBase64 = await generateGoogleTTSBase64(gptResponse);
-    } catch (ttsError) {
-      console.error("Erreur Google TTS (on continue) :", ttsError.message);
-      audioBase64 = null;
-    }
+// 3️⃣ TTS
+if (gptResponse) {
+  try {
+    // --- AJOUT : nettoyage des caractères invisibles / Unicode non supportés ---
+    const cleanedText = gptResponse.replace(/[\u200B-\u200F\uFEFF]/g, '').trim();
+    audioBase64 = await generateGoogleTTSBase64(cleanedText);
+  } catch (ttsError) {
+    console.error("Erreur Google TTS (on continue) :", ttsError.message);
+    audioBase64 = null;
   }
+}
+
 
   // Suppression du fichier temporaire
   try {
