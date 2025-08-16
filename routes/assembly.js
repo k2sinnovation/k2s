@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { processAudioAndRespond, streamGoogleTTS } = require('../controllers/assemblyService');
+const { processAudioAndReturnJSON } = require('../controllers/assembly_service');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
@@ -22,7 +22,8 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
     console.log("[UPLOAD] Fichier renommé :", newPath);
 
     // Envoyer à processAudio
-    const result = await processAudioAndRespond(newPath, res);
+    const result = await processAudioAndReturnJSON(newPath);
+    res.json(result);
     console.log("[TRANSCRIBE] Transcription obtenue :", result.texte);
 
     res.json(result);
