@@ -1,109 +1,113 @@
-// controllers/assemblyService.js
+const OpenAI = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const FormData = require("form-data");
+const axios = require("axios");
+const path = require("path");
+const { promptTTSVocal } = require("../utils/promptsTTSVocal"); // nouveau fichier prompts
 
-const fs = require('fs');
-const axios = require('axios');
-const textToSpeech = require('@google-cloud/text-to-speech');
-const { PassThrough } = require('stream');
-const path = require('path');
-
-console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
-
-// Initialisation Google TTS
-const ttsClient = new textToSpeech.TextToSpeechClient();
-
-// ------------------------
-// Transcription AssemblyAI
-// ------------------------
-async function transcribeWithAssembly(audioPath) {
+// generateTTS vocal (OK avec SDK, on garde)
+async function generateTTS(text) {
   try {
-    const fileData = fs.readFileSync(audioPath);
-
-    // Upload audio sur AssemblyAI
-    const uploadResponse = await axios.post(
-      'https://api.assemblyai.com/v2/upload',
-      fileData,
-      {
-        headers: {
-          authorization: process.env.ASSEMBLYAI_API_KEY,
-          'content-type': 'application/octet-stream',
-        },
-      }
-    );
-
-    const uploadUrl = uploadResponse.data.upload_url;
-
-    // Créer la transcription
-    const transcriptResponse = await axios.post(
-      'https://api.assemblyai.com/v2/transcript',
-      { audio_url: uploadUrl, speech_model: 'universal' },
-      { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
-    );
-
-    const transcriptId = transcriptResponse.data.id;
-    const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
-
-    // Polling pour attendre la fin
-    while (true) {
-      const result = await axios.get(pollingEndpoint, {
-        headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
-      });
-
-      if (result.data.status === 'completed') {
-        return result.data.text;
-      } else if (result.data.status === 'error') {
-        throw new Error(`Transcription échouée: ${result.data.error}`);
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-  } catch (error) {
-    console.error("Erreur transcrire avec AssemblyAI :", error.message);
-    throw error;
-  }
-}
-
-// ------------------------
-// Streaming TTS Google Cloud
-// ------------------------
-async function streamGoogleTTS(text, res) {
-  try {
-    const request = {
-      input: { text },
-      voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-      audioConfig: { audioEncoding: 'MP3' },
-    };
-
-    const [response] = await ttsClient.synthesizeSpeech(request);
-    const stream = new PassThrough();
-    stream.end(response.audioContent);
-
-    res.set({
-      'Content-Type': 'audio/mpeg',
-      'Content-Disposition': 'inline; filename="tts.mp3"',
+    // 1️⃣ Transformer le texte avec GPT pour style Lydia
+    const styledTextResponse = await openai.chat.completions.create({
+      model: "chatgpt-4o-latest",
+      messages: [
+        { role: "system", content: promptTTSVocal }, // prompt vocal Lydia
+        { role: "user", content: text },
+      ],
     });
+    const styledText = styledTextResponse.choices[0].message.content;
 
-    stream.pipe(res);
+    // 2️⃣ Générer TTS à partir du texte stylisé
+    const response = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "shimmer",
+      input: styledText, // texte stylisé
+      format: "mp3",
+    });
+    const buffer = await response.arrayBuffer();
+    return Buffer.from(buffer);
   } catch (error) {
-    console.error("Erreur Google TTS :", error.message);
-    res.status(500).send('Erreur génération TTS');
-  }
-}
-
-// ------------------------
-// Processus central Audio → AssemblyAI → Google TTS
-// ------------------------
-async function processAudio(filePath) {
-  try {
-    const texte = await transcribeWithAssembly(filePath);
-
-    // Supprimer le fichier audio temporaire
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-
-    return { texte };
-  } catch (error) {
-    console.error("Erreur processAudio :", error.message);
+    console.error("Erreur génération TTS :", error);
     throw error;
   }
 }
 
-module.exports = { transcribeWithAssembly, streamGoogleTTS, processAudio };
+// Fonction askOpenAI optimisée : remplacer axios par SDK officielle
+async function askOpenAI(prompt, userText) {
+  try {
+    console.log("🟡 Prompt system envoyé à OpenAI :\n", prompt);
+    console.log("🟢 Message user envoyé à OpenAI :\n", userText);
+    // Limiter userText pour éviter surcharge
+    if (userText.length > 3000) {
+      userText = userText.substring(0, 3000);
+    }
+    const completion = await openai.chat.completions.create({
+      model: "chatgpt-4o-latest",
+      messages: [
+        { role: "system", content: prompt },
+        { role: "user", content: userText },
+      ],
+    });
+    console.log("✅ Réponse OpenAI reçue :\n", completion.choices[0].message.content);
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error("❌ Erreur appel OpenAI :", error.response?.data || error.message);
+    throw new Error("Erreur OpenAI");
+  }
+}
+
+// transcription audio fichier (garde axios + formData si tu veux, sinon SDK)
+// Ici tu peux garder ta version axios si ça marche bien (pas critique à changer)
+async function transcribeAudio(filePath) {
+  try {
+    console.log("🟡 Début transcription audio, fichier :", filePath);
+    let ext = path.extname(filePath);
+    if (!ext) {
+      const newFilePath = filePath + ".m4a";
+      fs.renameSync(filePath, newFilePath);
+      filePath = newFilePath;
+      console.log("ℹ️ Fichier renommé avec extension :", filePath);
+    } else {
+      console.log("ℹ️ Extension fichier détectée :", ext);
+    }
+
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: "whisper-1",
+      language: "fr",
+    });
+    console.log("✅ Transcription reçue :", transcription.text);
+    return transcription.text;
+  } catch (error) {
+    console.error("❌ Erreur transcription Whisper :", error.response?.data || error.message);
+    throw new Error("Erreur transcription Whisper");
+  }
+}
+
+// transcription audio buffer : remplacer axios + formData par SDK + fichier temporaire
+async function transcribeAudioBuffer(audioBuffer) {
+  const tmpFile = path.join(__dirname, "temp_audio.wav");
+  try {
+    // écrire le buffer dans un fichier temporaire
+    await fs.promises.writeFile(tmpFile, audioBuffer);
+    // appel SDK OpenAI
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(tmpFile),
+      model: "whisper-1",
+      language: "fr",
+    });
+    await fs.promises.unlink(tmpFile);
+    console.log("✅ Transcription reçue :", transcription.text);
+    return transcription.text;
+  } catch (error) {
+    console.error("❌ Erreur transcription Whisper buffer :", error.response?.data || error.message);
+    // supprimer fichier même en cas d’erreur
+    try {
+      await fs.promises.unlink(tmpFile);
+    } catch {}
+    throw new Error("Erreur transcription Whisper");
+  }
+}
+
+module.exports = { generateTTS, askOpenAI, transcribeAudio, transcribeAudioBuffer };
