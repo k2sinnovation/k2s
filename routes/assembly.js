@@ -22,7 +22,7 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
     console.log("[UPLOAD] Fichier renommé :", newPath);
 
     // Envoyer à processAudio
-    const result = await processAudio(newPath);
+    const result = await processAudioAndRespond(newPath, res);
     console.log("[TRANSCRIBE] Transcription obtenue :", result.texte);
 
     res.json(result);
