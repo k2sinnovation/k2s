@@ -158,18 +158,22 @@ try {
 }
 
 
-  // 3️⃣ TTS
 // 3️⃣ TTS
 if (gptResponse) {
   try {
     // --- AJOUT : nettoyage des caractères invisibles / Unicode non supportés ---
-    const cleanedText = gptResponse.replace(/[\u200B-\u200F\uFEFF]/g, '').trim();
+    let cleanedText = gptResponse.replace(/[\u200B-\u200F\uFEFF]/g, '').trim();
+
+    // --- AJOUT : conversion explicite en UTF-8 ---
+    cleanedText = Buffer.from(cleanedText, 'utf-8').toString();
+
     audioBase64 = await generateGoogleTTSBase64(cleanedText);
   } catch (ttsError) {
     console.error("Erreur Google TTS (on continue) :", ttsError.message);
     audioBase64 = null;
   }
 }
+
 
 
   // Suppression du fichier temporaire
