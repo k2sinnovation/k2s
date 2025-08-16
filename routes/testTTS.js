@@ -1,20 +1,15 @@
-// routes/testTTS.js
 const express = require('express');
 const router = express.Router();
-const { streamGoogleTTS } = require('../controllers/assemblyService');
+const { generateGoogleTTSBase64 } = require('../controllers/test_google_tts'); // <== ton fichier
 
-// Génération TTS et streaming direct
-router.post('/test-tts-stream', async (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Le champ "text" est requis.' });
-
-    // streamGoogleTTS s'occupe de générer le MP3 et de l'envoyer
-    await streamGoogleTTS(text, res);
-
+    const text = req.query.text || "Bonjour, ceci est un test de synthèse vocale.";
+    const audioBase64 = await generateGoogleTTSBase64(text);
+    res.json({ success: true, audioBase64 });
   } catch (error) {
-    console.error("Erreur /test-tts-stream :", error.message);
-    res.status(500).json({ error: error.message });
+    console.error('[Test TTS] Erreur :', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
