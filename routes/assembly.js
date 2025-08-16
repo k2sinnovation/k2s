@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { processAudioAndReturnJSON, generateGoogleTTSBase64 } = require('../controllers/assemblyservice');
+const { processAudioAndReturnJSON, generateGoogleTTSBase64 } = require('../controllers/assemblyService');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
