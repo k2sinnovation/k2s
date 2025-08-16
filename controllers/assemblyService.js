@@ -8,27 +8,27 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
 // Initialisation Google TTS
 // Nouvelle version compatible clé API simple (REST)
-async function generateGoogleTTSBase64(text) {
+async function generateGoogleTTSMP3(text) {
   try {
-    const apiKey = process.env.K2S_IQ_Speech_API;  // <== même nom que dans Render
+    const apiKey = process.env.K2S_IQ_Speech_API; // même nom que dans Render
 
     const response = await axios.post(
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
         input: { text },
         voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-        audioConfig: {  "audioEncoding": "LINEAR16"   // <- Génère un fichier WAV
- },
+        audioConfig: { audioEncoding: "MP3" } // <-- changement ici
       }
     );
 
-    // L'API Google renvoie directement le 'audioContent' en Base64
-    return response.data.audioContent;
+    // La réponse contient maintenant le TTS en Base64 MP3
+    return response.data.audioContent; 
   } catch (error) {
-    console.error("Erreur Google TTS :", error.response?.data || error.message);
-    throw error;
+    console.error("Erreur TTS Google :", error);
+    return null;
   }
 }
+
 
 
 
