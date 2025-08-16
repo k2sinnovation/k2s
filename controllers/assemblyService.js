@@ -1,5 +1,3 @@
-// controllers/assemblyService.js
-
 const fs = require('fs');
 const axios = require('axios');
 const textToSpeech = require('@google-cloud/text-to-speech');
@@ -35,7 +33,6 @@ async function transcribeWithAssembly(audioPath) {
     const uploadUrl = uploadResponse.data.upload_url;
     console.log(`[AssemblyAI] Audio uploadé : ${uploadUrl}`);
 
-    // Créer la transcription
     console.log("[AssemblyAI] Création de la transcription...");
     const transcriptResponse = await axios.post(
       'https://api.assemblyai.com/v2/transcript',
@@ -47,7 +44,6 @@ async function transcribeWithAssembly(audioPath) {
     console.log(`[AssemblyAI] ID transcription : ${transcriptId}`);
     const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
 
-    // Polling pour attendre la fin
     while (true) {
       const result = await axios.get(pollingEndpoint, {
         headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
@@ -106,11 +102,9 @@ async function processAudioAndRespond(filePath, res) {
   try {
     console.log(`[ProcessAudio] Début traitement du fichier : ${filePath}`);
     
-    // 1️⃣ Transcription
     const texteTranscrit = await transcribeWithAssembly(filePath);
     console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
 
-    // 2️⃣ Appel à OpenAI pour obtenir la réponse
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-2025-04-14",
       messages: [{ role: "user", content: texteTranscrit }],
@@ -119,13 +113,11 @@ async function processAudioAndRespond(filePath, res) {
     const gptResponse = completion.choices[0].message.content;
     console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
 
-    // 3️⃣ Supprimer le fichier temporaire
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
     }
 
-    // 4️⃣ Générer et streamer le TTS directement au front
     await streamGoogleTTS(gptResponse, res);
 
   } catch (error) {
@@ -134,4 +126,7 @@ async function processAudioAndRespond(filePath, res) {
   }
 }
 
-module.exports = { transcribeWithAssembly, streamGoogleTTS, processAudio, processAudioAndRespond };
+// ------------------------
+// Export
+// ------------------------
+module.exports = { transcribeWithAssembly, streamGoogleTTS, processAudioAndRespond };
