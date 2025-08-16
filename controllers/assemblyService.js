@@ -68,7 +68,8 @@ async function transcribeWithAssembly(audioPath) {
 // ------------------------
 // Streaming TTS Google Cloud
 // ------------------------
-async function streamGoogleTTS(text, res) {
+
+async function generateGoogleTTSBase64(text) {
   try {
     console.log(`[Google TTS] Génération TTS pour : ${text}`);
     const request = {
@@ -78,30 +79,19 @@ async function streamGoogleTTS(text, res) {
     };
 
     const [response] = await ttsClient.synthesizeSpeech(request);
-    console.log("[Google TTS] Audio généré (taille en bytes) :", response.audioContent.length);
-
-    const stream = new PassThrough();
-    stream.end(response.audioContent);
-
-    res.set({
-      'Content-Type': 'audio/mpeg',
-      'Content-Disposition': 'inline; filename="tts.mp3"',
-    });
-
-    stream.pipe(res);
+    return response.audioContent.toString('base64');
   } catch (error) {
     console.error("Erreur Google TTS :", error.message);
-    res.status(500).send('Erreur génération TTS');
+    throw error;
   }
 }
 
 // ------------------------
 // Processus complet Audio → AssemblyAI → GPT → TTS
 // ------------------------
-async function processAudioAndRespond(filePath, res) {
+async function processAudioAndReturnJSON(filePath) {
   try {
     console.log(`[ProcessAudio] Début traitement du fichier : ${filePath}`);
-    
     const texteTranscrit = await transcribeWithAssembly(filePath);
     console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
 
@@ -109,24 +99,29 @@ async function processAudioAndRespond(filePath, res) {
       model: "gpt-4.1-2025-04-14",
       messages: [{ role: "user", content: texteTranscrit }],
     });
-
     const gptResponse = completion.choices[0].message.content;
     console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
 
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
-    }
+    const audioBase64 = await generateGoogleTTSBase64(gptResponse);
 
-    await streamGoogleTTS(gptResponse, res);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+     console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
+
+    return { transcription: texteTranscrit, gptResponse, audioBase64 };
 
   } catch (error) {
-    console.error("Erreur processAudioAndRespond :", error.message);
-    res.status(500).send('Erreur traitement audio');
+    console.error("Erreur processAudioAndReturnJSON :", error.message);
+    throw error;
   }
 }
+
 
 // ------------------------
 // Export
 // ------------------------
-module.exports = { transcribeWithAssembly, streamGoogleTTS, processAudioAndRespond };
+module.exports = {
+  transcribeWithAssembly,
+  generateGoogleTTSBase64,
+  processAudioAndReturnJSON,
+};
+
