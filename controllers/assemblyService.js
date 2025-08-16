@@ -8,7 +8,10 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
 // Initialisation Google TTS
-const ttsClient = new textToSpeech.TextToSpeechClient();
+const googleCredentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+const ttsClient = new textToSpeech.TextToSpeechClient({
+  credentials: googleCredentials
+});
 
 // ------------------------
 // Transcription AssemblyAI
