@@ -1,6 +1,5 @@
 const fs = require('fs');
 const axios = require('axios');
-const textToSpeech = require('@google-cloud/text-to-speech');
 const { PassThrough } = require('stream');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -9,16 +8,28 @@ const { promptTTSVocal } = require('../utils/promptsTTSVocal');
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
 // Initialisation Google TTS
-if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-  throw new Error("La variable GOOGLE_APPLICATION_CREDENTIALS_JSON n'est pas définie !");
+// Nouvelle version compatible clé API simple (REST)
+async function generateGoogleTTSBase64(text) {
+  try {
+    const apiKey = process.env.K2S_IQ_Speech_API;  // <== même nom que dans Render
+
+    const response = await axios.post(
+      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+      {
+        input: { text },
+        voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
+        audioConfig: { audioEncoding: 'MP3' },
+      }
+    );
+
+    // L'API Google renvoie directement le 'audioContent' en Base64
+    return response.data.audioContent;
+  } catch (error) {
+    console.error("Erreur Google TTS :", error.response?.data || error.message);
+    throw error;
+  }
 }
 
-const googleCredentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-
-// --- AJOUT : création du client TTS ---
-const ttsClient = new textToSpeech.TextToSpeechClient({
-  credentials: googleCredentials,
-});
 
 
 
