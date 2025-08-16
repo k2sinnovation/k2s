@@ -20,8 +20,6 @@ const ttsClient = new textToSpeech.TextToSpeechClient({
 });
 
 
-const googleCredentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-
 
 // ------------------------
 // Transcription AssemblyAI
