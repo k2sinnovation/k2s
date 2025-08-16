@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: node-tts-app
+    env: docker
+    plan: starter  # ou un plan supérieur si besoin
+    dockerfilePath: ./Dockerfile
+    buildCommand: npm install
+    startCommand: node index.js
+    autoDeploy: true
+    branch: main  # la branche GitHub à surveiller
+    envVars:
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        fromSecret: GOOGLE_APPLICATION_CREDENTIALS_JSON
+      - key: ASSEMBLYAI_API_KEY
+        fromSecret: ASSEMBLYAI_API_KEY
