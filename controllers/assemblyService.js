@@ -105,39 +105,57 @@ async function processAudioAndReturnJSON(filePath) {
   let gptResponse = "";
   let audioBase64 = null;
 
+  console.log(`[ProcessAudio] Début traitement du fichier : ${filePath}`);
+
+  // 1️⃣ Transcription AssemblyAI
   try {
-    console.log(`[ProcessAudio] Début traitement du fichier : ${filePath}`);
     texteTranscrit = await transcribeWithAssembly(filePath);
     console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
+  } catch (assemblyError) {
+    console.error("Erreur AssemblyAI :", assemblyError.message);
+    // on continue malgré l'erreur pour renvoyer ce qu'on a pu récupérer
+  }
 
-    const promptTTSVocal = `Voici la transcription à analyser : ${texteTranscrit}`;
-    const completion = await openai.chat.completions.create({
-      model: "chatgpt-4o-latest",
-      messages: [
-        { role: "system", content: promptTTSVocal },
-        { role: "user", content: texteTranscrit },
-    ],
-    });
-    gptResponse = completion.choices[0].message.content;
-    console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
+  // 2️⃣ GPT
+  if (texteTranscrit) {
+    try {
+      const promptTTSVocal = `Voici la transcription à analyser : ${texteTranscrit}`;
+      const completion = await openai.chat.completions.create({
+        model: "chatgpt-4o-latest",
+        messages: [
+          { role: "system", content: promptTTSVocal },
+          { role: "user", content: texteTranscrit },
+        ],
+      });
+      gptResponse = completion.choices[0].message.content;
+      console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
+    } catch (gptError) {
+      console.error("Erreur GPT (on continue) :", gptError.message);
+      gptResponse = "";
+    }
+  }
 
+  // 3️⃣ TTS
+  if (gptResponse) {
     try {
       audioBase64 = await generateGoogleTTSBase64(gptResponse);
     } catch (ttsError) {
       console.error("Erreur Google TTS (on continue) :", ttsError.message);
-      audioBase64 = null; // on continue malgré l'échec TTS
+      audioBase64 = null;
     }
+  }
 
+  // Suppression du fichier temporaire
+  try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
-
-  } catch (error) {
-    console.error("Erreur processAudioAndReturnJSON :", error.message);
-    // on continue pour renvoyer ce qu'on a pu traiter
+  } catch (fsError) {
+    console.error("Erreur suppression fichier :", fsError.message);
   }
 
   return { transcription: texteTranscrit, gptResponse, audioBase64 };
 }
+
 
 
 
