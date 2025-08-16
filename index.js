@@ -9,11 +9,6 @@ const testAudioRoutes = require('./routes/testAudio');
 const testTTSRoutes = require('./routes/testTTS');
 const testTtsRouter = require('./controllers/test_google_tts');
 
-
-"scripts": {
-  "start": "node checkNode.js && node index.js"
-}
-
 require('dotenv').config();
 
 const multer = require('multer');
