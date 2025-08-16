@@ -1,6 +1,5 @@
 const fs = require('fs');
 const axios = require('axios');
-const { PassThrough } = require('stream');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
@@ -100,28 +99,6 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
   }
 }
 
-
-
-// ------------------------
-// Streaming TTS Google Cloud
-// ------------------------
-
-async function generateGoogleTTSBase64(text) {
-  try {
-    console.log(`[Google TTS] Génération TTS pour : ${text}`);
-    const request = {
-      input: { text },
-      voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-      audioConfig: { audioEncoding: 'WAV' },
-    };
-
-    const [response] = await ttsClient.synthesizeSpeech(request);
-    return response.audioContent.toString('base64');
-  } catch (error) {
-    console.error("Erreur Google TTS :", error.message);
-    throw error;
-  }
-}
 
 // ------------------------
 // Processus complet Audio → AssemblyAI → GPT → TTS
