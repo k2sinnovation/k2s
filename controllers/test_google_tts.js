@@ -1,35 +1,33 @@
-// test_google_tts.js
-
-// Importer la bibliothèque Google Cloud Text-to-Speech
+// controllers/test_google_tts.js
+const express = require('express');
+const router = express.Router();
 const textToSpeech = require('@google-cloud/text-to-speech');
-const fs = require('fs');
-const util = require('util');
 
-// Crée un client
+// Crée le client Google TTS
 const client = new textToSpeech.TextToSpeechClient();
 
-async function main() {
-  try {
-    const text = "Bonjour, comment ça va ? Ceci est un test de synthèse vocale.";
+// Fonction pour générer le TTS en Base64
+async function generateGoogleTTSBase64(text) {
+  const request = {
+    input: { text },
+    voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
+    audioConfig: { audioEncoding: 'MP3' },
+  };
 
-    // Construire la requête
-    const request = {
-      input: { text },
-      voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-      audioConfig: { audioEncoding: 'MP3' },
-    };
-
-    // Exécuter la synthèse vocale
-    const [response] = await client.synthesizeSpeech(request);
-
-    // Écrire le fichier audio
-    const writeFile = util.promisify(fs.writeFile);
-    await writeFile('output.mp3', response.audioContent, 'binary');
-    console.log('Fichier audio généré : output.mp3');
-  } catch (error) {
-    console.error('Erreur lors de la génération TTS :', error);
-  }
+  const [response] = await client.synthesizeSpeech(request);
+  return response.audioContent.toString('base64');
 }
 
-// Lancer la fonction
-main();
+// Route GET pour tester
+router.get('/', async (req, res) => {
+  try {
+    const text = req.query.text || "Bonjour, ceci est un test de synthèse vocale.";
+    const audioBase64 = await generateGoogleTTSBase64(text);
+    res.json({ success: true, audioBase64 });
+  } catch (error) {
+    console.error('[Test TTS] Erreur :', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+module.exports = router;
