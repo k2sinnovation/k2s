@@ -66,26 +66,29 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
     console.log(`[AssemblyAI] ID transcription : ${transcriptId}`);
     const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
 
-try {
-  while (true) {
-    const result = await axios.get(pollingEndpoint, {
-      headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
-    });
+    // --- Polling pour récupérer la transcription ---
+    while (true) {
+      const result = await axios.get(pollingEndpoint, {
+        headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
+      });
 
-    if (result.data.status === 'completed') {
-      console.log(`[AssemblyAI] Transcription terminée : ${result.data.text}`);
-      return result.data.text;
-    } else if (result.data.status === 'error') {
-      throw new Error(`Transcription échouée: ${result.data.error}`);
-    } else {
-      console.log("[AssemblyAI] Transcription en cours...");
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      if (result.data.status === 'completed') {
+        console.log(`[AssemblyAI] Transcription terminée : ${result.data.text}`);
+        return result.data.text;
+      } else if (result.data.status === 'error') {
+        throw new Error(`Transcription échouée: ${result.data.error}`);
+      } else {
+        console.log("[AssemblyAI] Transcription en cours...");
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
     }
+
+  } catch (err) {
+    console.error("[AssemblyAI] Erreur lors du polling :", err.message);
+    throw err;
   }
-} catch (err) {
-  console.error("[AssemblyAI] Erreur lors du polling :", err.message);
-  throw err; // relancer l'erreur ou gérer autrement si besoin
 }
+
 
 
 // ------------------------
