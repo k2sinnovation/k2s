@@ -14,6 +14,14 @@ if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
 
 const googleCredentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
 
+// --- AJOUT : création du client TTS ---
+const ttsClient = new textToSpeech.TextToSpeechClient({
+  credentials: googleCredentials,
+});
+
+
+const googleCredentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+
 
 // ------------------------
 // Transcription AssemblyAI
