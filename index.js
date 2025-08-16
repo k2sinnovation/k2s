@@ -52,6 +52,7 @@ app.use('/api', testAudioRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/api', testTTSRoutes);
 app.use('/api/assembly', assemblyRoute);
+app.use('/test-tts', testTtsRouter);
 
 
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
