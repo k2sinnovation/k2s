@@ -101,7 +101,7 @@ async function generateGoogleTTSBase64(text) {
     const request = {
       input: { text },
       voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-      audioConfig: { audioEncoding: 'LINEAR16' },
+      audioConfig: { audioEncoding: 'mp3' },
     };
 
     const [response] = await ttsClient.synthesizeSpeech(request);
