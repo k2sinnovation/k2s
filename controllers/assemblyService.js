@@ -187,7 +187,7 @@ if (gptResponse) {
 // ------------------------
 module.exports = {
   transcribeWithAssembly,
-  generateGoogleTTSBase64,
+  generateGoogleTTSMP3,
   processAudioAndReturnJSON,
 };
 
