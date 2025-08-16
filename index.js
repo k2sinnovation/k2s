@@ -3,11 +3,11 @@ const mongoose = require('mongoose');
 const OpenAI = require("openai");
 const fs = require('fs');
 const { processAudio, streamGoogleTTS } = require('./controllers/assemblyService');
-const { promptTTSVocal } = require('../utils/promptsTTSVocal');
+const { promptTTSVocal } = require('./utils/promptsTTSVocal');
 const assemblyRoute = require('./routes/assembly');
-const testAudioRoutes = require('../routes/testAudio');
-const testTTSRoutes = require('../routes/testTTS');
-const testTtsRouter = require('../controllers/test_google_tts');
+const testAudioRoutes = require('./routes/testAudio');
+const testTTSRoutes = require('./routes/testTTS');
+const testTtsRouter = require('./controllers/test_google_tts');
 
 
 
@@ -19,9 +19,9 @@ const upload = multer({ dest: 'uploads/' }); // dossier temporaire
 
 
 // ✅ Chargement des routes
-const analyzeRoute = require("../routes/analyze");
-const answerRoute = require("../routes/answer");
-const subscribeRoute = require("../routes/subscribe");
+const analyzeRoute = require("./routes/analyze");
+const answerRoute = require("./routes/answer");
+const subscribeRoute = require("./routes/subscribe");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
