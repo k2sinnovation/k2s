@@ -90,30 +90,40 @@ async function generateGoogleTTSBase64(text) {
 // Processus complet Audio → AssemblyAI → GPT → TTS
 // ------------------------
 async function processAudioAndReturnJSON(filePath) {
+  let texteTranscrit = "";
+  let gptResponse = "";
+  let audioBase64 = null;
+
   try {
     console.log(`[ProcessAudio] Début traitement du fichier : ${filePath}`);
-    const texteTranscrit = await transcribeWithAssembly(filePath);
+    texteTranscrit = await transcribeWithAssembly(filePath);
     console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-2025-04-14",
+      model: "chatgpt-4o-latest",
       messages: [{ role: "user", content: texteTranscrit }],
     });
-    const gptResponse = completion.choices[0].message.content;
+    gptResponse = completion.choices[0].message.content;
     console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
 
-    const audioBase64 = await generateGoogleTTSBase64(gptResponse);
+    try {
+      audioBase64 = await generateGoogleTTSBase64(gptResponse);
+    } catch (ttsError) {
+      console.error("Erreur Google TTS (on continue) :", ttsError.message);
+      audioBase64 = null; // on continue malgré l'échec TTS
+    }
 
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-     console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
-
-    return { transcription: texteTranscrit, gptResponse, audioBase64 };
+    console.log(`[ProcessAudio] Fichier temporaire supprimé : ${filePath}`);
 
   } catch (error) {
     console.error("Erreur processAudioAndReturnJSON :", error.message);
-    throw error;
+    // on continue pour renvoyer ce qu'on a pu traiter
   }
+
+  return { transcription: texteTranscrit, gptResponse, audioBase64 };
 }
+
 
 
 // ------------------------
