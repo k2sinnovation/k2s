@@ -17,11 +17,11 @@ async function generateGoogleTTSMP3(text) {
       {
         input: { text },
         voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-        audioConfig: { audioEncoding: "MP3" } // <-- changement ici
+        audioConfig: { audioEncoding: "wav" } // <-- changement ici
       }
     );
 
-    // La réponse contient maintenant le TTS en Base64 MP3
+    // La réponse contient maintenant le TTS en Base64 wav
     return response.data.audioContent; 
   } catch (error) {
     console.error("Erreur TTS Google :", error);
