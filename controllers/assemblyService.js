@@ -152,9 +152,8 @@ try {
 // 3️⃣ TTS
 if (gptResponse) {
   try {
-
-    // --- AJOUT : conversion explicite en UTF-8 ---
-    cleanedText = Buffer.from(cleanedText, 'utf-8').toString();
+    // Nettoyage optionnel du texte GPT
+    const cleanedText = gptResponse.trim();
 
     console.log(`[ProcessAudio] Texte envoyé à Google TTS : "${cleanedText}"`);
     audioBase64 = await generateGoogleTTSMP3(cleanedText);
@@ -165,6 +164,7 @@ if (gptResponse) {
     audioBase64 = null;
   }
 }
+
 
 
 
