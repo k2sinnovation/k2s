@@ -12,14 +12,16 @@ async function generateGoogleTTSMP3(text) {
   try {
     const apiKey = process.env.K2S_IQ_Speech_API; // même nom que dans Render
 
+    console.log("[Google TTS] Texte envoyé :", text);
     const response = await axios.post(
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
         input: { text },
         voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-        audioConfig: { audioEncoding: "wav" } // <-- changement ici
+        audioConfig: { audioEncoding: "LINEAR16" } // <-- changement ici
       }
     );
+    console.log("[Google TTS] Réponse reçue. Taille Base64 :", response.data.audioContent.length);
 
     // La réponse contient maintenant le TTS en Base64 wav
     return response.data.audioContent; 
@@ -150,8 +152,6 @@ try {
 // 3️⃣ TTS
 if (gptResponse) {
   try {
-    // --- AJOUT : nettoyage des caractères invisibles / Unicode non supportés ---
-    let cleanedText = gptResponse.replace(/[\u200B-\u200F\uFEFF]/g, '').trim();
 
     // --- AJOUT : conversion explicite en UTF-8 ---
     cleanedText = Buffer.from(cleanedText, 'utf-8').toString();
