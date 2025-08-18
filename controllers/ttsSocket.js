@@ -1,10 +1,11 @@
 // controller/ttsGrpcSocket.js
-// WebSocket server pour Google TTS streaming via gRPC
-// Nécessite : @google-cloud/text-to-speech
+// WebSocket server pour GPT streaming + Google TTS streaming
 
 const WebSocket = require('ws');
 const textToSpeech = require('@google-cloud/text-to-speech');
 const client = new textToSpeech.TextToSpeechClient(); // Clé via GOOGLE_APPLICATION_CREDENTIALS
+const OpenAI = require('openai');
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 async function startTTSGrpcWebSocketServer(server) {
   const wss = new WebSocket.Server({ server, path: '/tts-grpc-stream' });
@@ -14,7 +15,7 @@ async function startTTSGrpcWebSocketServer(server) {
 
     ws.on('message', async (message) => {
       const text = message.toString();
-      console.log('[TTS gRPC WS] Texte reçu :', text);
+      console.log('[TTS gRPC WS] Texte complet reçu pour GPT :', text);
 
       if (!text || text.trim() === '') {
         ws.send(JSON.stringify({ error: 'Texte vide' }));
@@ -23,38 +24,57 @@ async function startTTSGrpcWebSocketServer(server) {
       }
 
       try {
-        const request = {
-          input: { text },
-          voice: { languageCode: 'fr-FR', name: 'fr-FR-Neural2-F', ssmlGender: 'FEMALE' },
-          audioConfig: { audioEncoding: 'MP3' },
-        };
+        // 1️⃣ GPT streaming
+        const gptStream = await openai.chat.completions.create({
+          model: "gpt-5-mini",
+          messages: [
+            { role: "system", content: "Réponds de manière concise en français." },
+            { role: "user", content: text }
+          ],
+          stream: true
+        });
 
-        console.log('[TTS gRPC WS] Démarrage du streaming Google TTS...');
+        gptStream.on('data', async (chunk) => {
+          const delta = chunk.choices[0].delta?.content;
+          if (delta) {
+            console.log('[GPT] Chunk reçu :', delta);
 
-        // streamingSynthesizeSpeech renvoie un flux audio
-        const [stream] = client.streamingSynthesizeSpeech(request);
+            // 2️⃣ Google TTS streaming pour chaque chunk GPT
+            const ttsRequest = {
+              input: { text: delta },
+              voice: { languageCode: 'fr-FR', name: 'fr-FR-Neural2-F', ssmlGender: 'FEMALE' },
+              audioConfig: { audioEncoding: 'MP3' }
+            };
 
-        stream.on('data', (chunk) => {
-          if (chunk.audioContent) {
-            // Convertir en Base64 et envoyer
-            ws.send(chunk.audioContent.toString('base64'));
+            const [ttsStream] = client.streamingSynthesizeSpeech(ttsRequest);
+
+            ttsStream.on('data', (audioChunk) => {
+              if (audioChunk.audioContent) {
+                ws.send(audioChunk.audioContent.toString('base64'));
+              }
+            });
+
+            ttsStream.on('error', (err) => {
+              console.error('[TTS gRPC WS] Erreur chunk TTS :', err.message);
+              ws.send(JSON.stringify({ error: err.message }));
+            });
           }
         });
 
-        stream.on('end', () => {
+        gptStream.on('end', () => {
           ws.send('END_STREAM');
-          console.log('[TTS gRPC WS] Streaming terminé');
+          console.log('[GPT] Streaming terminé');
           ws.close();
         });
 
-        stream.on('error', (err) => {
-          console.error('[TTS gRPC WS] Erreur streaming :', err.message);
+        gptStream.on('error', (err) => {
+          console.error('[GPT] Erreur streaming :', err.message);
           ws.send(JSON.stringify({ error: err.message }));
           ws.close();
         });
 
       } catch (err) {
-        console.error('[TTS gRPC WS] Erreur Google TTS :', err.message);
+        console.error('[TTS gRPC WS] Erreur générale :', err.message);
         ws.send(JSON.stringify({ error: err.message }));
         ws.close();
       }
