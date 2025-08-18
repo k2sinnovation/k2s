@@ -1,4 +1,4 @@
-const fs = require('fs');
+/*const fs = require('fs');
 const axios = require('axios');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -166,3 +166,4 @@ module.exports = {
   generateGoogleTTSMP3,
   processAudioAndReturnJSON,
 };
+*/
