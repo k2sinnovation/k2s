@@ -16,11 +16,15 @@ async function generateGoogleTTSMP3(text) {
     const response = await axios.post(
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
-        input: { text },
-        voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
-        audioConfig: { audioEncoding: "LINEAR16" } // <-- changement ici
-      }
-    );
+    input: { text },
+    voice: { 
+      languageCode: 'fr-FR', 
+      name: 'fr-FR-Chirp3-HD-Leda', // Voix féminine naturelle et douce
+      ssmlGender: 'FEMALE' 
+    },
+    audioConfig: { audioEncoding: "LINEAR16" } // reste inchangé
+  }
+);
     console.log("[Google TTS] Réponse reçue. Taille Base64 :", response.data.audioContent.length);
 
     // La réponse contient maintenant le TTS en Base64 wav
