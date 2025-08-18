@@ -23,7 +23,7 @@ async function generateGoogleTTSMP3(text) {
           name: 'fr-FR-Chirp3-HD-Leda', 
           ssmlGender: 'FEMALE' 
         },
-        audioConfig: { audioEncoding: "LINEAR16" }
+        audioConfig: { audioEncoding: "mp3" }
       }
     );
     console.log("[Google TTS] Réponse reçue. Taille Base64 :", response.data.audioContent.length);
