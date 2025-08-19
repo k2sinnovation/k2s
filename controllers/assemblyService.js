@@ -169,7 +169,9 @@ if (gptResponse) {
     console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
   }
 
-  return { transcription: texteTranscrit, gptResponse, audioBase64 };
+  // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
+return { transcription: texteTranscrit, gptResponse, audioSegments };
+
 }
 
 // ------------------------
