@@ -127,17 +127,39 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
     gptResponse = "";
   }
 
-  // 3️⃣ TTS
-  if (gptResponse) {
-    try {
-      const cleanedText = gptResponse.trim();
-      audioBase64 = await generateGoogleTTSMP3(cleanedText);
-      console.log("[ProcessAudio] Audio Base64 généré. Taille :", audioBase64.length);
-    } catch (ttsError) {
-      console.error("[ProcessAudio] Erreur TTS :", ttsError.message);
-      audioBase64 = null;
+// 3️⃣ TTS - SEGMENTATION PHRASE
+const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
+if (gptResponse) {
+  try {
+    // 1️⃣ Découper le texte GPT en phrases
+    const sentences = gptResponse
+      .split(/(?<=[.!?])\s+/) // Regex pour couper sur . ! ? suivi d'espace
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
+
+    // 2️⃣ Générer TTS pour chaque phrase et stocker dans audioSegments
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i];
+      console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
+      
+      const segmentAudio = await generateGoogleTTSMP3(sentence);
+      if (segmentAudio) {
+        audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
+        console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
+
+        // 3️⃣ Ici, on pourrait directement renvoyer ce segment à Flutter via websocket ou SSE
+        // sendToFlutter(segmentAudio, i); // Exemple si tu veux streaming immédiat
+      } else {
+        console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
+      }
     }
+  } catch (ttsError) {
+    console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
   }
+}
+
 
   // Nettoyage fichier temporaire
   try {
