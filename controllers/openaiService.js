@@ -10,7 +10,7 @@ async function generateTTS(text) {
   try {
     // 1️⃣ Transformer le texte avec GPT pour style Lydia
     const styledTextResponse = await openai.chat.completions.create({
-      model: "chatgpt-4o-latest",
+      model: "gpt-5-mini",
       messages: [
         { role: "system", content: promptTTSVocal }, // prompt vocal Lydia
         { role: "user", content: text },
@@ -111,3 +111,4 @@ async function transcribeAudioBuffer(audioBuffer) {
 }
 
 module.exports = { generateTTS, askOpenAI, transcribeAudio, transcribeAudioBuffer };
+
