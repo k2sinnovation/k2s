@@ -114,7 +114,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   // 2️⃣ GPT
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "chatgpt-4o-dernier",
       messages: [
         { role: "system", content: promptTTSVocal },
         { role: "user", content: texteTranscrit },
