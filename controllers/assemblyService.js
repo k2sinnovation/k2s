@@ -111,6 +111,24 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
     console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
   }
 
+// ------------------------
+// Recherche Google via SerpAPI
+// ------------------------
+async function googleSearch(query) {
+  try {
+    const apiKey = process.env.SERPAPI_API_KEY; // 🔑 Clé stockée dans Render
+    const url = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&hl=fr&gl=fr&api_key=${apiKey}`;
+    const res = await axios.get(url);
+    return res.data.organic_results?.slice(0, 3) || [];
+  } catch (err) {
+    console.error("[SerpAPI] Erreur recherche Google :", err.message);
+    return [];
+  }
+}
+
+// ------------------------
+// GPT avec Function Calling
+// ------------------------
   // 2️⃣ GPT
   try {
     const completion = await openai.chat.completions.create({
@@ -119,13 +137,57 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         { role: "system", content: promptTTSVocal },
         { role: "user", content: texteTranscrit },
       ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "google_search",
+            description: "Recherche Google pour obtenir des infos récentes (météo, horaires, actualité, données techniques).",
+            parameters: {
+              type: "object",
+              properties: {
+                query: { type: "string", description: "Texte exact à rechercher" }
+              },
+              required: ["query"]
+            }
+          }
+        }
+      ]
     });
-    gptResponse = completion.choices[0].message.content;
+
+    const toolCall = completion.choices[0].message?.tool_calls?.[0];
+
+    if (toolCall && toolCall.function.name === "google_search") {
+      // GPT a décidé qu'une recherche Google est nécessaire
+      const query = JSON.parse(toolCall.function.arguments).query;
+      const searchResults = await googleSearch(query);
+
+      const finalResponse = await openai.chat.completions.create({
+        model: "gpt-5-chat-latest",
+        messages: [
+          { role: "system", content: promptTTSVocal },
+          { role: "user", content: texteTranscrit },
+          completion.choices[0].message, // message avec appel de fonction
+          {
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(searchResults),
+          }
+        ]
+      });
+
+      gptResponse = finalResponse.choices[0].message.content;
+    } else {
+      // Pas de recherche nécessaire
+      gptResponse = completion.choices[0].message.content;
+    }
+
     console.log("[ProcessAudio] Réponse GPT :", gptResponse);
   } catch (gptError) {
     console.error("[ProcessAudio] Erreur GPT :", gptError.message);
     gptResponse = "";
   }
+
 
 // 3️⃣ TTS - SEGMENTATION PHRASE
 const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
