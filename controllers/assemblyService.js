@@ -30,7 +30,7 @@ async function generateGoogleTTSMP3(text) {
     return null;
   }
 }
-
+}
 // ------------------------
 // Décodage Base64
 // ------------------------
