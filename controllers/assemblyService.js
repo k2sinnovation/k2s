@@ -254,7 +254,6 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
     if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
     console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
 
-    return { transcription: texteTranscrit, gptResponse, audioSegments };
 
   } catch (ttsError) {
     console.error("[ProcessAudio] Erreur TTS :", ttsError.message);
