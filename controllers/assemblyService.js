@@ -127,66 +127,62 @@ async function googleSearch(query) {
 }
 
 // ------------------------
-// GPT avec Function Calling
+// GPT avec Function Calling via responses.create
 // ------------------------
-  // 2️⃣ GPT
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5-chat-latest",
-      messages: [
-        { role: "system", content: promptTTSVocal },
-        { role: "user", content: texteTranscrit },
-      ],
-      tools: [
-        {
-          type: "function",
-          function: {
-            name: "google_search",
-            description: "Recherche Google pour obtenir des infos récentes (météo, horaires, actualité, données techniques).",
-            parameters: {
-              type: "object",
-              properties: {
-                query: { type: "string", description: "Texte exact à rechercher" }
-              },
-              required: ["query"]
-            }
-          }
+try {
+  async function callGPTWithFunction(texteTranscrit) {
+    const tools = [
+      {
+        type: "function",
+        name: "google_search",
+        description: "Recherche Google pour obtenir des infos récentes (météo, horaires, actualité, données techniques).",
+        parameters: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"]
         }
-      ]
+      }
+    ];
+
+    let inputList = [{ role: "user", content: texteTranscrit }];
+
+    const initialResponse = await openai.responses.create({
+      model: "gpt-5",
+      tools,
+      input: inputList
     });
 
-    const toolCall = completion.choices[0].message?.tool_calls?.[0];
+    const functionCallItem = initialResponse.output.find(item => item.type === "function_call");
 
-    if (toolCall && toolCall.function.name === "google_search") {
-      // GPT a décidé qu'une recherche Google est nécessaire
-      const query = JSON.parse(toolCall.function.arguments).query;
+    if (functionCallItem && functionCallItem.function_call.name === "google_search") {
+      const query = JSON.parse(functionCallItem.arguments).query;
       const searchResults = await googleSearch(query);
 
-      const finalResponse = await openai.chat.completions.create({
-        model: "gpt-4o-latest",
-        messages: [
-          { role: "system", content: promptTTSVocal },
-          { role: "user", content: texteTranscrit },
-          completion.choices[0].message, // message avec appel de fonction
-          {
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(searchResults),
-          }
-        ]
+      inputList.push({
+        type: "function_call_output",
+        call_id: functionCallItem.call_id,
+        output: JSON.stringify(searchResults)
       });
 
-      gptResponse = finalResponse.choices[0].message.content;
-    } else {
-      // Pas de recherche nécessaire
-      gptResponse = completion.choices[0].message.content;
+      const finalResponse = await openai.responses.create({
+        model: "gpt-5",
+        tools,
+        input: inputList
+      });
+
+      return finalResponse.output_text;
     }
 
-    console.log("[ProcessAudio] Réponse GPT :", gptResponse);
-  } catch (gptError) {
-    console.error("[ProcessAudio] Erreur GPT :", gptError.message);
-    gptResponse = "";
+    return initialResponse.output_text;
   }
+
+  gptResponse = await callGPTWithFunction(texteTranscrit);
+  console.log("[ProcessAudio] Réponse GPT :", gptResponse);
+} catch (gptError) {
+  console.error("[ProcessAudio] Erreur GPT :", gptError.message);
+  gptResponse = "";
+}
+
 
 
 // 3️⃣ TTS - SEGMENTATION PHRASE
