@@ -90,6 +90,7 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
 // ------------------------
 async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   let tempfilePath = fileOrBase64;
+
   if (isBase64) {
     tempfilePath = `./temp_${Date.now()}.mp3`;
     fs.writeFileSync(tempfilePath, decodeBase64Audio(fileOrBase64));
@@ -121,10 +122,8 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         ],
       });
       gptResponse = completion.choices[0].message.content;
-      console.log("[ProcessAudio] Réponse GPT (texte vide) :", gptResponse);
     } catch (gptError) {
       console.error("[ProcessAudio] Erreur GPT :", gptError.message);
-      gptResponse = "";
     }
   } else {
     async function callGPTWithFunction(texte) {
@@ -133,11 +132,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
           type: "function",
           name: "google_search",
           description: "Recherche Google pour obtenir des infos récentes.",
-          parameters: {
-            type: "object",
-            properties: { query: { type: "string" } },
-            required: ["query"],
-          },
+          parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
         },
       ];
 
@@ -146,35 +141,15 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         { role: "user", content: texte },
       ];
 
-      let response = await openai.responses.create({
-        model: "gpt-5",
-        tools,
-        input,
-      });
+      let response = await openai.responses.create({ model: "gpt-5", tools, input });
 
-      let toolCall = null;
-      let toolCallArgs = null;
-      response.output.forEach(item => {
-        if (item.type === "tool_call") {
-          toolCall = item;
-          toolCallArgs = JSON.parse(item.arguments);
-        }
-      });
+      const toolCallItem = response.output.find(item => item.type === "tool_call");
+      if (toolCallItem && toolCallItem.name === "google_search") {
+        const args = JSON.parse(toolCallItem.arguments);
+        const results = await googleSearch(args.query);
 
-      if (toolCall && toolCall.name === "google_search") {
-        const searchResults = await googleSearch(toolCallArgs.query);
-
-        input.push({
-          type: "tool_call_output",
-          call_id: toolCall.call_id,
-          output: JSON.stringify(searchResults),
-        });
-
-        response = await openai.responses.create({
-          model: "gpt-5",
-          tools,
-          input,
-        });
+        input.push({ type: "tool_call_output", call_id: toolCallItem.call_id, output: JSON.stringify(results) });
+        response = await openai.responses.create({ model: "gpt-5", tools, input });
       }
 
       return response.output_text;
@@ -182,10 +157,8 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
     try {
       gptResponse = await callGPTWithFunction(texteTranscrit);
-      console.log("[ProcessAudio] Réponse GPT :", gptResponse);
-    } catch (err) {
-      console.error("[ProcessAudio] Erreur GPT :", err.message);
-      gptResponse = "";
+    } catch (gptError) {
+      console.error("[ProcessAudio] Erreur GPT :", gptError.message);
     }
   }
 
@@ -197,26 +170,29 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         .map(s => s.trim())
         .filter(s => s.length > 0);
 
-      console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
-
       for (let i = 0; i < sentences.length; i++) {
-        const sentence = sentences[i];
-        console.log(`[ProcessAudio] Phrase ${i + 1} à TTS :`, sentence);
-
-        const segmentAudio = await generateGoogleTTSMP3(sentence);
+        const segmentAudio = await generateGoogleTTSMP3(sentences[i]);
         if (segmentAudio) {
-          audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
-
-          // ⚡ Si Flutter est prêt
-          // sendToFlutter({ index: i, text: sentence, audioBase64: segmentAudio });
-        } else {
-          console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
+          audioSegments.push({ index: i, text: sentences[i], audioBase64: segmentAudio });
+          sendToFlutter({ index: i, text: sentences[i], audioBase64: segmentAudio });
         }
       }
     } catch (ttsError) {
       console.error("[ProcessAudio] Erreur TTS :", ttsError.message);
     }
   }
+
+  // Nettoyage fichier temporaire
+  try {
+    if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
+  } catch (fsError) {
+    console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
+  }
+
+  // Retour final
+  return { transcription: texteTranscrit, gptResponse, audioSegments };
+}
+
 
   // Nettoyage fichier temporaire
   if (gptResponse) {
