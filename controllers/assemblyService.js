@@ -103,57 +103,57 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
     console.log("[ProcessAudio] Début traitement audio direct...");
 
-// 1️⃣ Transcription
-try {
-    texteTranscrit = await transcribeWithAssembly(audioBuffer, false);
-    console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
-
-    // 🔹 Renvoi immédiat au frontend ou appel callback
-    if (typeof onTranscriptionReady === "function") {
-        onTranscriptionReady(texteTranscrit);
+    // 1️⃣ Transcription
+    try {
+        texteTranscrit = await transcribeWithAssembly(audioBuffer, false);
+        console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
+    } catch (assemblyError) {
+        console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
     }
 
-} catch (assemblyError) {
-    console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
-}
-
-// 2️⃣ GPT
-try {
-    const completion = await openai.chat.completions.create({
-        model: "gpt-5-chat-latest",
-        messages: [
-            { role: "system", content: promptTTSVocal },
-            { role: "user", content: texteTranscrit },
-        ],
-    });
-    gptResponse = completion.choices[0].message.content;
-    console.log("[ProcessAudio] Réponse GPT :", gptResponse);
-
-    // 🔹 Renvoi immédiat de la réponse GPT
-    if (typeof onGPTResponseReady === "function") {
-        onGPTResponseReady(gptResponse);
+    // 2️⃣ GPT
+    try {
+        const completion = await openai.chat.completions.create({
+            model: "gpt-5-chat-latest",
+            messages: [
+                { role: "system", content: promptTTSVocal },
+                { role: "user", content: texteTranscrit },
+            ],
+        });
+        gptResponse = completion.choices[0].message.content;
+        console.log("[ProcessAudio] Réponse GPT :", gptResponse);
+    } catch (gptError) {
+        console.error("[ProcessAudio] Erreur GPT :", gptError.message);
+        gptResponse = "";
     }
 
-} catch (gptError) {
-    console.error("[ProcessAudio] Erreur GPT :", gptError.message);
-    gptResponse = "";
-}
-
-// 3️⃣ TTS ...
-// Tu peux continuer la génération TTS phrase par phrase
-// et renvoyer chaque segment dès qu'il est prêt
-for (let i = 0; i < sentences.length; i++) {
-    const segmentAudio = await generateGoogleTTSMP3(sentences[i]);
-    if (segmentAudio && typeof onTTSSegmentReady === "function") {
-        onTTSSegmentReady(i, segmentAudio, sentences[i]);
+    // 3️⃣ TTS - SEGMENTATION PHRASE
+    if (gptResponse) {
+        try {
+            const sentences = gptResponse
+                .split(/(?<=[.!?])\s+/)
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+            console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
+            for (let i = 0; i < sentences.length; i++) {
+                const sentence = sentences[i];
+                console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
+                const segmentAudio = await generateGoogleTTSMP3(sentence);
+                if (segmentAudio) {
+                    audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
+                    console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
+                } else {
+                    console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
+                }
+            }
+        } catch (ttsError) {
+            console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+        }
     }
+
+    // Plus besoin de suppression de fichier
+    return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
-
-// On peut toujours retourner tout à la fin si besoin
-return { transcription: texteTranscrit, gptResponse, audioSegments };
-
-}
-
 
 // ------------------------
 // Export
