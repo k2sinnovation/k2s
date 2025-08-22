@@ -127,7 +127,6 @@ async function googleSearch(query) {
 }
 
 // 2️⃣ GPT avec Function Calling conditionnelle
-let gptResponse = "";
 
 if (!texteTranscrit || texteTranscrit.trim() === "") {
   // Transcription vide → cycle d'origine
