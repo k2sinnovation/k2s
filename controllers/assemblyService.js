@@ -219,22 +219,49 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   }
 
   // Nettoyage fichier temporaire
+  if (gptResponse) {
   try {
+    // 1️⃣ Découper le texte GPT en phrases
+    const sentences = gptResponse
+      .split(/(?<=[.!?])\s+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
+
+    // 2️⃣ Générer TTS pour chaque phrase et stocker dans audioSegments
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i];
+      console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
+
+      const segmentAudio = await generateGoogleTTSMP3(sentence);
+      if (segmentAudio) {
+        audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
+        console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
+
+        // ⚡ Envoi immédiat à Flutter
+        sendToFlutter({
+          index: i,
+          text: sentence,
+          audioBase64: segmentAudio
+        });
+      } else {
+        console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
+      }
+    }
+
+    // Nettoyage fichier temporaire
     if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
     console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
-  } catch (fsError) {
-    console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
-  }
 
-  return { transcription: texteTranscrit, gptResponse, audioSegments };
-}
-
+    return { transcription: texteTranscrit, gptResponse, audioSegments };
 
   } catch (ttsError) {
     console.error("[ProcessAudio] Erreur TTS :", ttsError.message);
     return { transcription: texteTranscrit, gptResponse, audioSegments };
   }
 }
+
 
 
 // ------------------------
