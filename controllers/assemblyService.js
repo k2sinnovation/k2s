@@ -126,11 +126,28 @@ async function googleSearch(query) {
   }
 }
 
-// ------------------------
-// GPT avec Function Calling via responses.create
-// ------------------------
-try {
-  async function callGPTWithFunction(texteTranscrit) {
+// 2️⃣ GPT avec Function Calling conditionnelle
+let gptResponse = "";
+
+if (!texteTranscrit || texteTranscrit.trim() === "") {
+  // Transcription vide → cycle d'origine
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-chat-latest",
+      messages: [
+        { role: "system", content: promptTTSVocal },
+        { role: "user", content: texteTranscrit },
+      ],
+    });
+    gptResponse = completion.choices[0].message.content;
+    console.log("[ProcessAudio] Réponse GPT (texte vide) :", gptResponse);
+  } catch (gptError) {
+    console.error("[ProcessAudio] Erreur GPT :", gptError.message);
+    gptResponse = "";
+  }
+} else {
+  // Transcription non vide → Function Calling seulement si nécessaire
+  async function callGPTWithFunction(texte) {
     const tools = [
       {
         type: "function",
@@ -144,43 +161,50 @@ try {
       }
     ];
 
-    let inputList = [{ role: "user", content: texteTranscrit }];
-
-    const initialResponse = await openai.responses.create({
-      model: "gpt-5",
-      tools,
-      input: inputList
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5-chat-latest",
+      messages: [
+        { role: "system", content: promptTTSVocal },
+        { role: "user", content: texte }
+      ],
+      tools
     });
 
-    const functionCallItem = initialResponse.output.find(item => item.type === "function_call");
+    const toolCall = completion.choices[0].message?.tool_calls?.[0];
 
-    if (functionCallItem && functionCallItem.function_call.name === "google_search") {
-      const query = JSON.parse(functionCallItem.arguments).query;
+    if (toolCall && toolCall.function.name === "google_search") {
+      // GPT a demandé une recherche
+      const query = JSON.parse(toolCall.function.arguments).query;
       const searchResults = await googleSearch(query);
 
-      inputList.push({
-        type: "function_call_output",
-        call_id: functionCallItem.call_id,
-        output: JSON.stringify(searchResults)
+      const finalResponse = await openai.chat.completions.create({
+        model: "gpt-5-chat-latest",
+        messages: [
+          { role: "system", content: promptTTSVocal },
+          { role: "user", content: texte },
+          completion.choices[0].message,
+          {
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(searchResults),
+          }
+        ]
       });
 
-      const finalResponse = await openai.responses.create({
-        model: "gpt-5",
-        tools,
-        input: inputList
-      });
-
-      return finalResponse.output_text;
+      return finalResponse.choices[0].message.content;
     }
 
-    return initialResponse.output_text;
+    // Pas d'appel de fonction → renvoie direct
+    return completion.choices[0].message.content;
   }
 
-  gptResponse = await callGPTWithFunction(texteTranscrit);
-  console.log("[ProcessAudio] Réponse GPT :", gptResponse);
-} catch (gptError) {
-  console.error("[ProcessAudio] Erreur GPT :", gptError.message);
-  gptResponse = "";
+  try {
+    gptResponse = await callGPTWithFunction(texteTranscrit);
+    console.log("[ProcessAudio] Réponse GPT :", gptResponse);
+  } catch (err) {
+    console.error("[ProcessAudio] Erreur GPT :", err.message);
+    gptResponse = "";
+  }
 }
 
 
