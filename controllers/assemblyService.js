@@ -160,19 +160,43 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
       }
     ];
 
-let input = [
-  { role: "system", content: "prompt" },
-  { role: "user", content: texte }
-];
-
 let response = await openai.responses.create({
   model: "gpt-5",
   tools,
   input
 });
 
+// Vérifier si le modèle veut appeler une fonction
+let toolCall = null;
+let toolCallArgs = null;
+response.output.forEach(item => {
+  if (item.type === "tool_call") {
+    toolCall = item;
+    toolCallArgs = JSON.parse(item.arguments);
+  }
+});
 
-    const toolCall = completion.choices[0].message?.tool_calls?.[0];
+// Exécution de la fonction si nécessaire
+if (toolCall && toolCall.name === "google_search") {
+  const searchResults = await googleSearch(toolCallArgs.query);
+
+  input.push({
+    type: "tool_call_output",
+    call_id: toolCall.call_id,
+    output: JSON.stringify(searchResults)
+  });
+
+  // Appel final pour récupérer la réponse finale du modèle
+  response = await openai.responses.create({
+    model: "gpt-5",
+    tools,
+    input
+  });
+}
+
+// Texte final à renvoyer
+gptResponse = response.output_text;
+
 
     if (toolCall && toolCall.function.name === "google_search") {
       // GPT a demandé une recherche
