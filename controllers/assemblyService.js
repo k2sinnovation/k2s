@@ -150,7 +150,7 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
       {
         type: "function",
         name: "google_search",
-        description: "Recherche Google pour obtenir des infos récentes (météo, horaires, actualité, données techniques).",
+        description: "Recherche Google pour obtenir des infos récentes.",
         parameters: {
           type: "object",
           properties: { query: { type: "string" } },
@@ -159,20 +159,17 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
       }
     ];
 
-    // On prépare l'entrée pour openai.responses.create
     let input = [
       { role: "system", content: promptTTSVocal },
       { role: "user", content: texte }
     ];
 
-    // Appel initial au modèle
     let response = await openai.responses.create({
       model: "gpt-5",
       tools,
       input
     });
 
-    // Vérification si le modèle veut appeler une fonction
     let toolCall = null;
     let toolCallArgs = null;
     response.output.forEach(item => {
@@ -182,7 +179,6 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
       }
     });
 
-    // Exécution de la fonction si nécessaire
     if (toolCall && toolCall.name === "google_search") {
       const searchResults = await googleSearch(toolCallArgs.query);
 
@@ -192,7 +188,6 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
         output: JSON.stringify(searchResults)
       });
 
-      // Appel final pour récupérer la réponse finale du modèle
       response = await openai.responses.create({
         model: "gpt-5",
         tools,
@@ -200,7 +195,6 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
       });
     }
 
-    // Texte final à renvoyer
     return response.output_text;
   }
 
@@ -211,7 +205,7 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
     console.error("[ProcessAudio] Erreur GPT :", err.message);
     gptResponse = "";
   }
-}
+} // <-- fin correcte du else
 
 
 
