@@ -163,7 +163,7 @@ async function googleSearch(query) {
       const searchResults = await googleSearch(query);
 
       const finalResponse = await openai.chat.completions.create({
-        model: "gpt-5-chat-latest",
+        model: "gpt-4o-latest",
         messages: [
           { role: "system", content: promptTTSVocal },
           { role: "user", content: texteTranscrit },
