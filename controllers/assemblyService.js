@@ -220,24 +220,25 @@ if (gptResponse) {
 
     console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
-    // 2️⃣ Générer TTS pour chaque phrase et stocker dans audioSegments
-    for (let i = 0; i < sentences.length; i++) {
-      const sentence = sentences[i];
-      console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
-      
-      const segmentAudio = await generateGoogleTTSMP3(sentence);
-      if (segmentAudio) {
-        audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
-        console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
+   // 2️⃣ Générer TTS pour chaque phrase et stocker dans audioSegments
+for (let i = 0; i < sentences.length; i++) {
+  const sentence = sentences[i];
+  console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
+  
+  const segmentAudio = await generateGoogleTTSMP3(sentence);
+  if (segmentAudio) {
+    audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
+    console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
 
-        // 3️⃣ Ici, on pourrait directement renvoyer ce segment à Flutter via websocket ou SSE
-        // sendToFlutter(segmentAudio, i); // Exemple si tu veux streaming immédiat
-      } else {
-        console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
-      }
-    }
-  } catch (ttsError) {
-    console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+    // ⚡ Envoi immédiat à Flutter
+    sendToFlutter({
+      index: i,
+      text: sentence,
+      audioBase64: segmentAudio
+    });
+
+  } else {
+    console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
   }
 }
 
