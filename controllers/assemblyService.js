@@ -257,6 +257,7 @@ for (let i = 0; i < sentences.length; i++) {
 return { transcription: texteTranscrit, gptResponse, audioSegments };
 
 }
+  }
 
 // ------------------------
 // Export
