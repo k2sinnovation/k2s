@@ -160,14 +160,17 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
       }
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5-chat-latest",
-      messages: [
-        { role: "system", content: promptTTSVocal },
-        { role: "user", content: texte }
-      ],
-      tools
-    });
+let input = [
+  { role: "system", content: "prompt" },
+  { role: "user", content: texte }
+];
+
+let response = await openai.responses.create({
+  model: "gpt-5",
+  tools,
+  input
+});
+
 
     const toolCall = completion.choices[0].message?.tool_calls?.[0];
 
