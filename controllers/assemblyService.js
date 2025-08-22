@@ -12,8 +12,8 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 async function generateGoogleTTSMP3(text) {
   try {
     const apiKey = process.env.K2S_IQ_Speech_API;
-
     console.log("[Google TTS] Texte envoyé :", text);
+
     const response = await axios.post(
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
@@ -63,21 +63,13 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
     );
 
     const transcriptId = transcriptResponse.data.id;
-    console.log("[AssemblyAI] ID transcription :", transcriptId);
     const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
 
-    // Polling pour récupérer la transcription complète
     while (true) {
       const result = await axios.get(pollingEndpoint, { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } });
-      if (result.data.status === 'completed') {
-        console.log("[AssemblyAI] Transcription terminée :", result.data.text);
-        return result.data.text;
-      } else if (result.data.status === 'error') {
-        throw new Error(result.data.error);
-      } else {
-        console.log("[AssemblyAI] Transcription en cours...");
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
+      if (result.data.status === 'completed') return result.data.text;
+      if (result.data.status === 'error') throw new Error(result.data.error);
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
   } catch (err) {
     console.error("[AssemblyAI] Erreur transcription :", err.message);
@@ -86,11 +78,25 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
 }
 
 // ------------------------
+// Recherche Google via SerpAPI
+// ------------------------
+async function googleSearch(query) {
+  try {
+    const apiKey = process.env.SERPAPI_API_KEY;
+    const url = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&hl=fr&gl=fr&api_key=${apiKey}`;
+    const res = await axios.get(url);
+    return res.data.organic_results?.slice(0, 3) || [];
+  } catch (err) {
+    console.error("[SerpAPI] Erreur recherche Google :", err.message);
+    return [];
+  }
+}
+
+// ------------------------
 // Processus complet : Audio → AssemblyAI → GPT → TTS
 // ------------------------
 async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   let tempfilePath = fileOrBase64;
-
   if (isBase64) {
     tempfilePath = `./temp_${Date.now()}.mp3`;
     fs.writeFileSync(tempfilePath, decodeBase64Audio(fileOrBase64));
@@ -100,8 +106,6 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   let texteTranscrit = "";
   let gptResponse = "";
   const audioSegments = [];
-
-  console.log("[ProcessAudio] Début traitement :", tempfilePath);
 
   // 1️⃣ Transcription
   try {
@@ -147,7 +151,6 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
       if (toolCallItem && toolCallItem.name === "google_search") {
         const args = JSON.parse(toolCallItem.arguments);
         const results = await googleSearch(args.query);
-
         input.push({ type: "tool_call_output", call_id: toolCallItem.call_id, output: JSON.stringify(results) });
         response = await openai.responses.create({ model: "gpt-5", tools, input });
       }
@@ -170,11 +173,16 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         .map(s => s.trim())
         .filter(s => s.length > 0);
 
+      console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
+
       for (let i = 0; i < sentences.length; i++) {
         const segmentAudio = await generateGoogleTTSMP3(sentences[i]);
         if (segmentAudio) {
           audioSegments.push({ index: i, text: sentences[i], audioBase64: segmentAudio });
           sendToFlutter({ index: i, text: sentences[i], audioBase64: segmentAudio });
+          console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
+        } else {
+          console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
         }
       }
     } catch (ttsError) {
@@ -185,59 +193,13 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   // Nettoyage fichier temporaire
   try {
     if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
+    console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
   } catch (fsError) {
     console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
   }
 
-  // Retour final
   return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
-
-
-  // Nettoyage fichier temporaire
-  if (gptResponse) {
-  try {
-    // 1️⃣ Découper le texte GPT en phrases
-    const sentences = gptResponse
-      .split(/(?<=[.!?])\s+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-
-    console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
-
-    // 2️⃣ Générer TTS pour chaque phrase et stocker dans audioSegments
-    for (let i = 0; i < sentences.length; i++) {
-      const sentence = sentences[i];
-      console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
-
-      const segmentAudio = await generateGoogleTTSMP3(sentence);
-      if (segmentAudio) {
-        audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
-        console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
-
-        // ⚡ Envoi immédiat à Flutter
-        sendToFlutter({
-          index: i,
-          text: sentence,
-          audioBase64: segmentAudio
-        });
-      } else {
-        console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
-      }
-    }
-
-    // Nettoyage fichier temporaire
-    if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
-    console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
-
-
-  } catch (ttsError) {
-    console.error("[ProcessAudio] Erreur TTS :", ttsError.message);
-    return { transcription: texteTranscrit, gptResponse, audioSegments };
-  }
-}
-
-
 
 // ------------------------
 // Export
