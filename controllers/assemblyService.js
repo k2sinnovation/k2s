@@ -38,12 +38,14 @@ function decodeBase64Audio(base64String) {
 }
 
 // ------------------------
-// Transcription AssemblyAI
+// Transcription AssemblyAI (sans fichier local)
 // ------------------------
 async function transcribeWithAssembly(audioInput, isBase64 = false) {
     try {
         console.log("[AssemblyAI] Préparation de l'audio...");
-        const fileData = isBase64 ? decodeBase64Audio(audioInput) : fs.readFileSync(audioInput);
+        // On utilise directement le buffer, plus de lecture fichier
+        const fileData = isBase64 ? decodeBase64Audio(audioInput) : audioInput;
+
         const uploadResponse = await axios.post(
             'https://api.assemblyai.com/v2/upload',
             fileData,
@@ -89,25 +91,21 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
 }
 
 // ------------------------
-// Processus complet : Audio → AssemblyAI → GPT → TTS
+// Processus complet : Audio → AssemblyAI → GPT → TTS (sans fichier temporaire)
 // ------------------------
 async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
-    let tempfilePath = fileOrBase64;
-    if (isBase64) {
-        tempfilePath = `./temp_${Date.now()}.mp3`;
-        fs.writeFileSync(tempfilePath, decodeBase64Audio(fileOrBase64));
-        console.log("[ProcessAudio] Fichier temporaire créé :", tempfilePath);
-    }
+    // On convertit directement en Buffer si base64
+    const audioBuffer = isBase64 ? decodeBase64Audio(fileOrBase64) : fileOrBase64;
 
     let texteTranscrit = "";
     let gptResponse = "";
-    let audioBase64 = null;
+    const audioSegments = [];
 
-    console.log("[ProcessAudio] Début traitement :", tempfilePath);
+    console.log("[ProcessAudio] Début traitement audio direct...");
 
     // 1️⃣ Transcription
     try {
-        texteTranscrit = await transcribeWithAssembly(tempfilePath);
+        texteTranscrit = await transcribeWithAssembly(audioBuffer, false);
         console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
     } catch (assemblyError) {
         console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
@@ -130,17 +128,14 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
     }
 
     // 3️⃣ TTS - SEGMENTATION PHRASE
-    const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
     if (gptResponse) {
         try {
-            // 1️⃣ Découper le texte GPT en phrases
             const sentences = gptResponse
-                .split(/(?<=[.!?])\s+/) // Regex pour couper sur . ! ? suivi d'espace
+                .split(/(?<=[.!?])\s+/)
                 .map(s => s.trim())
                 .filter(s => s.length > 0);
             console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
-            // 2️⃣ Générer TTS pour chaque phrase et stocker dans audioSegments
             for (let i = 0; i < sentences.length; i++) {
                 const sentence = sentences[i];
                 console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
@@ -148,9 +143,6 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
                 if (segmentAudio) {
                     audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
                     console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
-                    // 3️⃣ Ici, on pourrait directement renvoyer ce segment à Flutter via websocket ou SSE
-                    // sendToFlutter(segmentAudio, i);
-                    // Exemple si tu veux streaming immédiat
                 } else {
                     console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
                 }
@@ -160,17 +152,11 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         }
     }
 
-    // Nettoyage fichier temporaire
-    try {
-        if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
-        console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
-    } catch (fsError) {
-        console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
-    }
+    // Plus besoin de suppression de fichier
 
-    // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
     return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
+
 
 // ------------------------
 // Export
