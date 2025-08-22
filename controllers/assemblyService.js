@@ -127,7 +127,6 @@ async function googleSearch(query) {
 }
 
 // 2️⃣ GPT avec Function Calling conditionnelle
-
 if (!texteTranscrit || texteTranscrit.trim() === "") {
   // Transcription vide → cycle d'origine
   try {
@@ -160,68 +159,49 @@ if (!texteTranscrit || texteTranscrit.trim() === "") {
       }
     ];
 
-let response = await openai.responses.create({
-  model: "gpt-5",
-  tools,
-  input
-});
+    // On prépare l'entrée pour openai.responses.create
+    let input = [
+      { role: "system", content: promptTTSVocal },
+      { role: "user", content: texte }
+    ];
 
-// Vérifier si le modèle veut appeler une fonction
-let toolCall = null;
-let toolCallArgs = null;
-response.output.forEach(item => {
-  if (item.type === "tool_call") {
-    toolCall = item;
-    toolCallArgs = JSON.parse(item.arguments);
-  }
-});
+    // Appel initial au modèle
+    let response = await openai.responses.create({
+      model: "gpt-5",
+      tools,
+      input
+    });
 
-// Exécution de la fonction si nécessaire
-if (toolCall && toolCall.name === "google_search") {
-  const searchResults = await googleSearch(toolCallArgs.query);
+    // Vérification si le modèle veut appeler une fonction
+    let toolCall = null;
+    let toolCallArgs = null;
+    response.output.forEach(item => {
+      if (item.type === "tool_call") {
+        toolCall = item;
+        toolCallArgs = JSON.parse(item.arguments);
+      }
+    });
 
-  input.push({
-    type: "tool_call_output",
-    call_id: toolCall.call_id,
-    output: JSON.stringify(searchResults)
-  });
+    // Exécution de la fonction si nécessaire
+    if (toolCall && toolCall.name === "google_search") {
+      const searchResults = await googleSearch(toolCallArgs.query);
 
-  // Appel final pour récupérer la réponse finale du modèle
-  response = await openai.responses.create({
-    model: "gpt-5",
-    tools,
-    input
-  });
-}
-
-// Texte final à renvoyer
-gptResponse = response.output_text;
-
-
-    if (toolCall && toolCall.function.name === "google_search") {
-      // GPT a demandé une recherche
-      const query = JSON.parse(toolCall.function.arguments).query;
-      const searchResults = await googleSearch(query);
-
-      const finalResponse = await openai.chat.completions.create({
-        model: "gpt-5-chat-latest",
-        messages: [
-          { role: "system", content: promptTTSVocal },
-          { role: "user", content: texte },
-          completion.choices[0].message,
-          {
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(searchResults),
-          }
-        ]
+      input.push({
+        type: "tool_call_output",
+        call_id: toolCall.call_id,
+        output: JSON.stringify(searchResults)
       });
 
-      return finalResponse.choices[0].message.content;
+      // Appel final pour récupérer la réponse finale du modèle
+      response = await openai.responses.create({
+        model: "gpt-5",
+        tools,
+        input
+      });
     }
 
-    // Pas d'appel de fonction → renvoie direct
-    return completion.choices[0].message.content;
+    // Texte final à renvoyer
+    return response.output_text;
   }
 
   try {
@@ -232,6 +212,7 @@ gptResponse = response.output_text;
     gptResponse = "";
   }
 }
+
 
 
 
