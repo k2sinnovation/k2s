@@ -43,49 +43,66 @@ function decodeBase64Audio(base64String) {
 async function transcribeWithAssembly(audioInput, isBase64 = false) {
     try {
         console.log("[AssemblyAI] Préparation de l'audio...");
-        // On utilise directement le buffer, plus de lecture fichier
-        const fileData = isBase64 ? decodeBase64Audio(audioInput) : audioInput;
+
+        // 🔹 Étape 1 : convertir proprement en Buffer
+        let fileBuffer;
+        if (isBase64) {
+            // On supprime le préfixe seulement s'il existe
+            const base64Data = audioInput.includes('base64,')
+                ? audioInput.split('base64,')[1]
+                : audioInput;
+            fileBuffer = Buffer.from(base64Data, 'base64');
+        } else {
+            // Si c'est déjà un Buffer ou Uint8Array du frontend, on force Buffer
+            fileBuffer = Buffer.isBuffer(audioInput)
+                ? audioInput
+                : Buffer.from(audioInput);
+        }
+
+        // 🔹 Étape 2 : upload AssemblyAI
         const uploadResponse = await axios.post(
             'https://api.assemblyai.com/v2/upload',
-            fileData,
+            fileBuffer,
             {
                 headers: {
                     authorization: process.env.ASSEMBLYAI_API_KEY,
                     'content-type': 'application/octet-stream'
-                }
+                },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity
             }
         );
+
         const uploadUrl = uploadResponse.data.upload_url;
         console.log("[AssemblyAI] Audio uploadé :", uploadUrl);
+
+        // 🔹 Étape 3 : transcription
         const transcriptResponse = await axios.post(
             'https://api.assemblyai.com/v2/transcript',
             { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
             { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
         );
+
         const transcriptId = transcriptResponse.data.id;
         console.log("[AssemblyAI] ID transcription :", transcriptId);
         const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
 
-        // Polling pour récupérer la transcription complète
+        // 🔹 Étape 4 : polling
         while (true) {
             const result = await axios.get(pollingEndpoint, {
                 headers: { authorization: process.env.ASSEMBLYAI_API_KEY }
             });
-            if (result.data.status === 'completed') {
-                console.log("[AssemblyAI] Transcription terminée :", result.data.text);
-                return result.data.text;
-            } else if (result.data.status === 'error') {
-                throw new Error(result.data.error);
-            } else {
-                console.log("[AssemblyAI] Transcription en cours...");
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
+            if (result.data.status === 'completed') return result.data.text;
+            else if (result.data.status === 'error') throw new Error(result.data.error);
+            await new Promise(resolve => setTimeout(resolve, 3000));
         }
+
     } catch (err) {
         console.error("[AssemblyAI] Erreur transcription :", err.message);
         throw err;
     }
 }
+
 
 // ------------------------
 // Processus complet : Audio → AssemblyAI → GPT → TTS (sans fichier temporaire)
