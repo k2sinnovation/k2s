@@ -1,4 +1,3 @@
-const fs = require('fs');
 const axios = require('axios');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -12,7 +11,6 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 async function generateGoogleTTSMP3(text) {
     try {
         const apiKey = process.env.K2S_IQ_Speech_API;
-        console.log("[Google TTS] Texte envoyé :", text);
         const response = await axios.post(
             `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
             {
@@ -21,7 +19,6 @@ async function generateGoogleTTSMP3(text) {
                 audioConfig: { audioEncoding: "LINEAR16" }
             }
         );
-        console.log("[Google TTS] Réponse reçue. Taille Base64 :", response.data.audioContent.length);
         return response.data.audioContent;
     } catch (error) {
         console.error("[Google TTS] Erreur :", error.message);
@@ -38,28 +35,19 @@ function decodeBase64Audio(base64String) {
 }
 
 // ------------------------
-// Transcription AssemblyAI (sans fichier local)
-// ------------------------
 // Transcription AssemblyAI (buffer direct depuis Flutter)
+// ------------------------
 async function transcribeWithAssemblyBytes(audioBytes) {
     try {
-        console.log("[AssemblyAI] Préparation de l'audio...");
-
-        // upload direct du buffer
-        const uploadResponse = await axios.post(
+        // Upload direct
+        const uploadResp = await axios.post(
             'https://api.assemblyai.com/v2/upload',
             audioBytes,
-            {
-                headers: {
-                    authorization: process.env.ASSEMBLYAI_API_KEY,
-                    'content-type': 'application/octet-stream'
-                }
-            }
+            { headers: { authorization: process.env.ASSEMBLYAI_API_KEY, 'content-type': 'application/octet-stream' } }
         );
-        const uploadUrl = uploadResponse.data.upload_url;
-        console.log("[AssemblyAI] Audio uploadé :", uploadUrl);
+        const uploadUrl = uploadResp.data.upload_url;
 
-        // création de la transcription
+        // Créer la transcription
         const transcriptResp = await axios.post(
             'https://api.assemblyai.com/v2/transcript',
             { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
@@ -67,53 +55,18 @@ async function transcribeWithAssemblyBytes(audioBytes) {
         );
 
         const transcriptId = transcriptResp.data.id;
-        console.log("[AssemblyAI] ID transcription :", transcriptId);
 
-        // polling pour récupérer la transcription complète
+        // Polling pour récupérer le texte final
         while (true) {
-            const result = await axios.get(
-                `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
-                { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
-            );
+            const result = await axios.get(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+                headers: { authorization: process.env.ASSEMBLYAI_API_KEY }
+            });
 
-            if (result.data.status === 'completed') {
-                console.log("[AssemblyAI] Transcription terminée :", result.data.text);
-                return result.data.text;
-            }
-            if (result.data.status === 'error') {
-                throw new Error(result.data.error);
-            }
+            if (result.data.status === 'completed') return result.data.text;
+            if (result.data.status === 'error') throw new Error(result.data.error);
 
             await new Promise(r => setTimeout(r, 3000));
         }
-
-    } catch (err) {
-        console.error("[AssemblyAI] Erreur transcription :", err.message);
-        throw err;
-    }
-}
-
-
-
-        const transcriptId = transcriptResponse.data.id;
-        console.log("[AssemblyAI] ID transcription :", transcriptId);
-        const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
-
-        // Polling pour récupérer la transcription complète
-        while (true) {
-            const result = await axios.get(pollingEndpoint, {
-                headers: { authorization: process.env.ASSEMBLYAI_API_KEY }
-            });
-            if (result.data.status === 'completed') {
-                console.log("[AssemblyAI] Transcription terminée :", result.data.text);
-                return result.data.text;
-            } else if (result.data.status === 'error') {
-                throw new Error(result.data.error);
-            } else {
-                console.log("[AssemblyAI] Transcription en cours...");
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
-        }
     } catch (err) {
         console.error("[AssemblyAI] Erreur transcription :", err.message);
         throw err;
@@ -121,25 +74,23 @@ async function transcribeWithAssemblyBytes(audioBytes) {
 }
 
 // ------------------------
-// Processus complet : Audio → AssemblyAI → GPT → TTS (sans fichier temporaire)
+// Processus complet : Audio → AssemblyAI → GPT → TTS
 // ------------------------
 async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
-    // On convertit directement en Buffer si base64
     const audioBuffer = isBase64 ? decodeBase64Audio(fileOrBase64) : fileOrBase64;
-
     let texteTranscrit = "";
     let gptResponse = "";
     const audioSegments = [];
 
     console.log("[ProcessAudio] Début traitement audio direct...");
 
-// 1️⃣ Transcription
-try {
-    texteTranscrit = await transcribeWithAssemblyBytes(audioBuffer);
-    console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
-} catch (assemblyError) {
-    console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
-}
+    // 1️⃣ Transcription
+    try {
+        texteTranscrit = await transcribeWithAssemblyBytes(audioBuffer);
+        console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
+    } catch (assemblyError) {
+        console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
+    }
 
     // 2️⃣ GPT
     try {
@@ -157,23 +108,18 @@ try {
         gptResponse = "";
     }
 
-    // 3️⃣ TTS - SEGMENTATION PHRASE
+    // 3️⃣ TTS - Segmentation phrases
     if (gptResponse) {
         try {
             const sentences = gptResponse
                 .split(/(?<=[.!?])\s+/)
                 .map(s => s.trim())
                 .filter(s => s.length > 0);
-            console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
+
             for (let i = 0; i < sentences.length; i++) {
-                const sentence = sentences[i];
-                console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
-                const segmentAudio = await generateGoogleTTSMP3(sentence);
+                const segmentAudio = await generateGoogleTTSMP3(sentences[i]);
                 if (segmentAudio) {
-                    audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
-                    console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
-                } else {
-                    console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
+                    audioSegments.push({ index: i, text: sentences[i], audioBase64: segmentAudio });
                 }
             }
         } catch (ttsError) {
@@ -181,7 +127,6 @@ try {
         }
     }
 
-    // Plus besoin de suppression de fichier
     return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
 
@@ -189,7 +134,7 @@ try {
 // Export
 // ------------------------
 module.exports = {
-    transcribeWithAssembly,
+    transcribeWithAssemblyBytes,
     generateGoogleTTSMP3,
     processAudioAndReturnJSON,
     decodeBase64Audio,
