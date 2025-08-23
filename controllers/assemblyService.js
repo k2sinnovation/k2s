@@ -200,15 +200,15 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false, onSegme
   }
 
   // Nettoyage fichier temporaire
-  try {
-    if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
-  } catch (fsError) {
-    console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
-  }
+ try {
+  if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
+} catch (fsError) {
+  console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
+}
 
   return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
-}
+
 
 // ------------------------
 // Export
