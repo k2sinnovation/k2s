@@ -45,19 +45,17 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
         console.log("[AssemblyAI] Préparation de l'audio...");
 
         // 🔹 Étape 1 : convertir proprement en Buffer
-        let fileBuffer;
-        if (isBase64) {
-            // On supprime le préfixe seulement s'il existe
-            const base64Data = audioInput.includes('base64,')
-                ? audioInput.split('base64,')[1]
-                : audioInput;
-            fileBuffer = Buffer.from(base64Data, 'base64');
-        } else {
-            // Si c'est déjà un Buffer ou Uint8Array du frontend, on force Buffer
-            fileBuffer = Buffer.isBuffer(audioInput)
-                ? audioInput
-                : Buffer.from(audioInput);
-        }
+let fileBuffer;
+if (isBase64) {
+    const base64Data = audioInput.includes('base64,')
+        ? audioInput.split('base64,')[1]
+        : audioInput;
+    fileBuffer = Buffer.from(base64Data, 'base64');
+} else {
+    fileBuffer = Buffer.isBuffer(audioInput)
+        ? audioInput
+        : Buffer.from(audioInput);
+}
 
         // 🔹 Étape 2 : upload AssemblyAI
         const uploadResponse = await axios.post(
@@ -119,7 +117,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
     // 1️⃣ Transcription
     try {
-        texteTranscrit = await transcribeWithAssembly(audioBuffer, false);
+        texteTranscrit = await transcribeWithAssembly(fileOrBase64, isBase64);
         console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
     } catch (assemblyError) {
         console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
