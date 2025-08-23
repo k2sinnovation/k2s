@@ -40,15 +40,12 @@ function decodeBase64Audio(base64String) {
 // ------------------------
 // Transcription AssemblyAI (sans fichier local)
 // ------------------------
-async function transcribeWithAssembly(audioInput, isBase64 = false) {
-    try {
-        console.log("[AssemblyAI] Préparation de l'audio...");
-        // On utilise directement le buffer, plus de lecture fichier
-        const fileData = isBase64 ? decodeBase64Audio(audioInput) : audioInput;
-
+// Transcription AssemblyAI (buffer direct depuis Flutter)
 async function transcribeWithAssemblyBytes(audioBytes) {
     try {
-        // upload direct du buffer reçu de Flutter
+        console.log("[AssemblyAI] Préparation de l'audio...");
+
+        // upload direct du buffer
         const uploadResponse = await axios.post(
             'https://api.assemblyai.com/v2/upload',
             audioBytes,
@@ -63,31 +60,39 @@ async function transcribeWithAssemblyBytes(audioBytes) {
         console.log("[AssemblyAI] Audio uploadé :", uploadUrl);
 
         // création de la transcription
-        const transcriptResponse = await axios.post(
+        const transcriptResp = await axios.post(
             'https://api.assemblyai.com/v2/transcript',
             { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
             { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
         );
 
-        const transcriptId = transcriptResponse.data.id;
+        const transcriptId = transcriptResp.data.id;
         console.log("[AssemblyAI] ID transcription :", transcriptId);
 
-        // polling
+        // polling pour récupérer la transcription complète
         while (true) {
-            const result = await axios.get(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
-                headers: { authorization: process.env.ASSEMBLYAI_API_KEY }
-            });
+            const result = await axios.get(
+                `https://api.assemblyai.com/v2/transcript/${transcriptId}`,
+                { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
+            );
 
-            if (result.data.status === 'completed') return result.data.text;
-            if (result.data.status === 'error') throw new Error(result.data.error);
+            if (result.data.status === 'completed') {
+                console.log("[AssemblyAI] Transcription terminée :", result.data.text);
+                return result.data.text;
+            }
+            if (result.data.status === 'error') {
+                throw new Error(result.data.error);
+            }
 
             await new Promise(r => setTimeout(r, 3000));
         }
+
     } catch (err) {
         console.error("[AssemblyAI] Erreur transcription :", err.message);
         throw err;
     }
 }
+
 
 
         const transcriptId = transcriptResponse.data.id;
@@ -128,13 +133,13 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
     console.log("[ProcessAudio] Début traitement audio direct...");
 
-    // 1️⃣ Transcription
-    try {
-        texteTranscrit = await transcribeWithAssembly(audioBuffer, false);
-        console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
-    } catch (assemblyError) {
-        console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
-    }
+// 1️⃣ Transcription
+try {
+    texteTranscrit = await transcribeWithAssemblyBytes(audioBuffer);
+    console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
+} catch (assemblyError) {
+    console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
+}
 
     // 2️⃣ GPT
     try {
