@@ -1,7 +1,5 @@
-const fs = require('fs');
 const axios = require('axios');
 const OpenAI = require('openai');
-
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
 
@@ -19,11 +17,7 @@ async function generateGoogleTTSMP3(text) {
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
         input: { text },
-        voice: {
-          languageCode: 'fr-FR',
-          name: 'fr-FR-Chirp3-HD-Leda',
-          ssmlGender: 'FEMALE'
-        },
+        voice: { languageCode: 'fr-FR', name: 'fr-FR-Chirp3-HD-Leda', ssmlGender: 'FEMALE' },
         audioConfig: { audioEncoding: "LINEAR16" }
       }
     );
@@ -119,7 +113,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
   let texteTranscrit = "";
   let gptResponse = "";
-  const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
+  let audioBase64 = null;
 
   console.log("[ProcessAudio] Début traitement :", tempfilePath);
 
@@ -137,7 +131,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
       model: "gpt-5-chat-latest",
       messages: [
         { role: "system", content: promptTTSVocal },
-        { role: "user", content: texteTranscrit }
+        { role: "user", content: texteTranscrit },
       ],
     });
     gptResponse = completion.choices[0].message.content;
@@ -148,6 +142,8 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   }
 
   // 3️⃣ TTS - SEGMENTATION PHRASE
+  const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
+
   if (gptResponse) {
     try {
       // 1️⃣ Découper le texte GPT en phrases
@@ -158,19 +154,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
       console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
-async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false, onSegmentReady = null) {
-  // ... transcription + GPT identiques
-
-  // 3️⃣ TTS - SEGMENTATION PHRASE
-  if (gptResponse) {
-    try {
-      const sentences = gptResponse
-        .split(/(?<=[.!?])\s+/)
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
-
-      console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
-
+      // 2️⃣ Générer TTS pour chaque phrase et stocker dans audioSegments
       for (let i = 0; i < sentences.length; i++) {
         const sentence = sentences[i];
         console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
@@ -178,37 +162,31 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false, onSegme
         const segmentAudio = await generateGoogleTTSMP3(sentence);
 
         if (segmentAudio) {
-          const segment = {
-            index: i,
-            text: sentence,
-            audioBase64: segmentAudio
-          };
+          audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
+          console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
 
-          // 🔥 Envoi immédiat au client (Flutter) s'il y a un callback
-          if (onSegmentReady) onSegmentReady(segment);
-
-          // Sinon stockage local (comme avant)
-          audioSegments.push(segment);
+          // 3️⃣ Ici, on pourrait directement renvoyer ce segment à Flutter via websocket ou SSE
+          // sendToFlutter(segmentAudio, i); // Exemple si tu veux streaming immédiat
+        } else {
+          console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
         }
       }
-
-      // 🔔 Signal de fin (optionnel)
-      if (onSegmentReady) onSegmentReady({ done: true });
     } catch (ttsError) {
       console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
     }
   }
 
   // Nettoyage fichier temporaire
- try {
-  if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
-} catch (fsError) {
-  console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
-}
+  try {
+    if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
+    console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
+  } catch (fsError) {
+    console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
+  }
 
+  // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
   return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
-
 
 // ------------------------
 // Export
