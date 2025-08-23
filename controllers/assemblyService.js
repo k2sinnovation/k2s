@@ -1,5 +1,7 @@
+const fs = require('fs');
 const axios = require('axios');
 const OpenAI = require('openai');
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
 
@@ -17,7 +19,11 @@ async function generateGoogleTTSMP3(text) {
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
         input: { text },
-        voice: { languageCode: 'fr-FR', name: 'fr-FR-Chirp3-HD-Leda', ssmlGender: 'FEMALE' },
+        voice: {
+          languageCode: 'fr-FR',
+          name: 'fr-FR-Chirp3-HD-Leda',
+          ssmlGender: 'FEMALE'
+        },
         audioConfig: { audioEncoding: "LINEAR16" }
       }
     );
@@ -113,7 +119,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
   let texteTranscrit = "";
   let gptResponse = "";
-  let audioBase64 = null;
+  const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
 
   console.log("[ProcessAudio] Début traitement :", tempfilePath);
 
@@ -131,7 +137,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
       model: "gpt-5-chat-latest",
       messages: [
         { role: "system", content: promptTTSVocal },
-        { role: "user", content: texteTranscrit },
+        { role: "user", content: texteTranscrit }
       ],
     });
     gptResponse = completion.choices[0].message.content;
@@ -142,8 +148,6 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   }
 
   // 3️⃣ TTS - SEGMENTATION PHRASE
-  const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
-
   if (gptResponse) {
     try {
       // 1️⃣ Découper le texte GPT en phrases
@@ -162,11 +166,12 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         const segmentAudio = await generateGoogleTTSMP3(sentence);
 
         if (segmentAudio) {
-          audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
+          audioSegments.push({
+            index: i,
+            text: sentence,
+            audioBase64: segmentAudio
+          });
           console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
-
-          // 3️⃣ Ici, on pourrait directement renvoyer ce segment à Flutter via websocket ou SSE
-          // sendToFlutter(segmentAudio, i); // Exemple si tu veux streaming immédiat
         } else {
           console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
         }
@@ -184,7 +189,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
     console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
   }
 
-  // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
+  // Retour final
   return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
 
