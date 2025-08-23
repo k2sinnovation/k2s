@@ -46,9 +46,12 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
         // On utilise directement le buffer, plus de lecture fichier
         const fileData = isBase64 ? decodeBase64Audio(audioInput) : audioInput;
 
+async function transcribeWithAssemblyBytes(audioBytes) {
+    try {
+        // upload direct du buffer reçu de Flutter
         const uploadResponse = await axios.post(
             'https://api.assemblyai.com/v2/upload',
-            fileData,
+            audioBytes,
             {
                 headers: {
                     authorization: process.env.ASSEMBLYAI_API_KEY,
@@ -59,11 +62,33 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
         const uploadUrl = uploadResponse.data.upload_url;
         console.log("[AssemblyAI] Audio uploadé :", uploadUrl);
 
+        // création de la transcription
         const transcriptResponse = await axios.post(
             'https://api.assemblyai.com/v2/transcript',
             { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
             { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
         );
+
+        const transcriptId = transcriptResponse.data.id;
+        console.log("[AssemblyAI] ID transcription :", transcriptId);
+
+        // polling
+        while (true) {
+            const result = await axios.get(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+                headers: { authorization: process.env.ASSEMBLYAI_API_KEY }
+            });
+
+            if (result.data.status === 'completed') return result.data.text;
+            if (result.data.status === 'error') throw new Error(result.data.error);
+
+            await new Promise(r => setTimeout(r, 3000));
+        }
+    } catch (err) {
+        console.error("[AssemblyAI] Erreur transcription :", err.message);
+        throw err;
+    }
+}
+
 
         const transcriptId = transcriptResponse.data.id;
         console.log("[AssemblyAI] ID transcription :", transcriptId);
