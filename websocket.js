@@ -1,14 +1,26 @@
-// ws.js
 const WebSocket = require('ws');
 const clients = new Set();
 
 const wss = new WebSocket.Server({ noServer: true });
 
+// Nouvelle partie : gérer l'upgrade HTTP -> WS
+function attachWebSocketToServer(server) {
+  server.on('upgrade', (request, socket, head) => {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  });
+}
+
+// Connexion WS
 wss.on('connection', (ws) => {
   clients.add(ws);
   console.log('Client connecté au WebSocket');
 
-  ws.on('close', () => clients.delete(ws));
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log('Client déconnecté du WebSocket');
+  });
 });
 
 function sendToFlutter(payload) {
@@ -25,6 +37,4 @@ function sendToFlutter(payload) {
   });
 }
 
-
-module.exports = { wss, sendToFlutter, clients };
-
+module.exports = { wss, sendToFlutter, clients, attachWebSocketToServer };
