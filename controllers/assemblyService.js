@@ -21,12 +21,13 @@ async function generateGoogleTTSMP3(text) {
       {
         input: { text },
         voice: { languageCode: 'fr-FR', name: 'fr-FR-Chirp3-HD-Leda', ssmlGender: 'FEMALE' },
-        audioConfig: { audioEncoding: "LINEAR16" }
+        audioConfig: { audioEncoding: "MP3" }
       }
     );
 
-    console.log("[Google TTS] Réponse reçue. Taille Base64 :", response.data.audioContent.length);
-    return response.data.audioContent;
+    const base64 = response.data.audioContent; // MP3 en base64
+    console.log("[Google TTS] MP3 Base64 length:", base64?.length || 0);
+    return base64;
   } catch (error) {
     console.error("[Google TTS] Erreur :", error.message);
     return null;
@@ -165,14 +166,15 @@ for (let i = 0; i < sentences.length; i++) {
   const segmentAudio = await generateGoogleTTSMP3(sentence);
 
   if (segmentAudio) {
-    // Stockage toujours possible si tu veux garder le tableau complet
-    audioSegments.push({ index: i, text: sentence, audioBase64: segmentAudio });
-    console.log(`[ProcessAudio] Phrase ${i + 1} convertie en audio. Taille Base64 :`, segmentAudio.length);
+    const payload = { index: i, text: sentence, audioBase64: segmentAudio, mime: 'audio/mpeg' };
+    audioSegments.push(payload);
+
+    console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
     // --- Envoi immédiat à Flutter ---
-    sendToFlutter(segmentAudio, i); // Appelle ta fonction WebSocket ou SSE ici
+    sendToFlutter(payload);
   } else {
-    console.error(`[ProcessAudio] Erreur TTS pour phrase ${i + 1}`);
+    console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
   }
 }
     } catch (ttsError) {
