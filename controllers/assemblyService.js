@@ -167,46 +167,47 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
       console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
-      // 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter
-      for (let i = 0; i < sentences.length; i++) {
-        const sentence = sentences[i];
-        console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
+// 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter via service WS
+for (let i = 0; i < sentences.length; i++) {
+  const sentence = sentences[i];
+  console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
 
-        const segmentAudio = await generateGoogleTTSMP3(sentence);
+  const segmentAudio = await generateGoogleTTSMP3(sentence);
 
-        if (segmentAudio) {
-          const payload = {
-            index: i,
-            text: sentence,
-            audioBase64: segmentAudio,
-            mime: 'audio/mpeg'
-          };
+  if (segmentAudio) {
+    const payload = {
+      index: i,
+      text: sentence,
+      audioBase64: segmentAudio,
+      mime: 'audio/mpeg'
+    };
 
-          audioSegments.push(payload);
-          console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
+    audioSegments.push(payload);
+    console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
-          // --- Envoi immédiat à Flutter ---
-          sendToFlutter(payload);
-
-        } else {
-          console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
-        }
-      }
-    } catch (ttsError) {
-      console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+    // --- Envoi via service WebSocket Render ---
+    try {
+      await axios.post('https://websocket-8bgz.onrender.com/send', payload);
+      console.log('[WebSocket HTTP] Payload envoyé au service WS:', payload.index, payload.text);
+    } catch (e) {
+      console.error('[WebSocket HTTP] Erreur envoi WS:', e.message);
     }
-  }
 
-  // Nettoyage fichier temporaire
-  try {
-    if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
-    console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
-  } catch (fsError) {
-    console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
+  } else {
+    console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
   }
+}
 
-  // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
-  return { transcription: texteTranscrit, gptResponse, audioSegments };
+try {
+  if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
+  console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
+} catch (fsError) {
+  console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
+}
+
+// On remplace audioBase64 par audioSegments pour l'envoi à Flutter
+return { transcription: texteTranscrit, gptResponse, audioSegments };
+
 }
 
 // ------------------------
