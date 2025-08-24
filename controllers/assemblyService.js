@@ -186,12 +186,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
           console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
           // --- Envoi via service WebSocket Render ---
-          try {
-            await axios.post('https://websocket-8bgz.onrender.com/send', payload);
-            console.log('[WebSocket HTTP] Payload envoyé au service WS:', payload.index, payload.text);
-          } catch (e) {
-            console.error('[WebSocket HTTP] Erreur envoi WS:', e.message);
-          }
+         sendToFlutter(payload);
 
         } else {
           console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
