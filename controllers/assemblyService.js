@@ -187,7 +187,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
           // --- Envoi via service WebSocket Render ---
           try {
-            await axios.post('https://websocket-8bgz.onrender.com/send', payload);
+            await axios.post('wss://websocket-8bgz.onrender.com/send', payload);
             console.log('[WebSocket HTTP] Payload envoyé au service WS:', payload.index, payload.text);
           } catch (e) {
             console.error('[WebSocket HTTP] Erreur envoi WS:', e.message);
