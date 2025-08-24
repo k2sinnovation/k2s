@@ -3,6 +3,7 @@ const fs = require('fs');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
+const { sendToFlutter } = require('../websocket'); // adapte le chemin si nécessaire
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
@@ -197,38 +198,7 @@ for (let i = 0; i < sentences.length; i++) {
 // ------------------------
 // WebSocket global pour envoyer des messages à Flutter
 // ------------------------
-let websocketInstance = null;
-let pendingSegments = []; // <--- buffer pour les segments avant WS
 
-function setWebSocket(ws) {
-  websocketInstance = ws;
-  console.log("[WebSocket] WS défini dans AssemblyService");
-
-  // Envoyer tous les segments pendants
-  if (pendingSegments.length > 0) {
-    pendingSegments.forEach(seg => websocketInstance.send(JSON.stringify(seg)));
-    pendingSegments = [];
-  }
-
-  ws.on('message', (message) => {
-    console.log("[WebSocket] Message reçu :", message);
-  });
-
-  ws.on('close', () => {
-    console.log("[WebSocket] Client déconnecté");
-    websocketInstance = null;
-  });
-}
-
-function sendToFlutter(payload) {
-  if (websocketInstance) {
-    websocketInstance.send(JSON.stringify(payload));
-  } else {
-    // Stocker les segments si WS pas encore définie
-    pendingSegments.push(payload);
-    console.log("[WebSocket] Segment bufferisé, WS pas encore défini");
-  }
-}
 
 
 
