@@ -2,11 +2,11 @@ const axios = require('axios');
 const fs = require('fs');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
 const { sendToFlutter } = require('../websocket'); // adapte le chemin si nécessaire
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
-
 
 // ------------------------
 // Google TTS
@@ -20,7 +20,11 @@ async function generateGoogleTTSMP3(text) {
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
         input: { text },
-        voice: { languageCode: 'fr-FR', name: 'fr-FR-Chirp3-HD-Leda', ssmlGender: 'FEMALE' },
+        voice: {
+          languageCode: 'fr-FR',
+          name: 'fr-FR-Chirp3-HD-Leda',
+          ssmlGender: 'FEMALE'
+        },
         audioConfig: { audioEncoding: "MP3" }
       }
     );
@@ -28,6 +32,7 @@ async function generateGoogleTTSMP3(text) {
     const base64 = response.data.audioContent; // MP3 en base64
     console.log("[Google TTS] MP3 Base64 length:", base64?.length || 0);
     return base64;
+
   } catch (error) {
     console.error("[Google TTS] Erreur :", error.message);
     return null;
@@ -90,8 +95,10 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
       if (result.data.status === 'completed') {
         console.log("[AssemblyAI] Transcription terminée :", result.data.text);
         return result.data.text;
+
       } else if (result.data.status === 'error') {
         throw new Error(result.data.error);
+
       } else {
         console.log("[AssemblyAI] Transcription en cours...");
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -138,8 +145,10 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
         { role: "user", content: texteTranscrit },
       ],
     });
+
     gptResponse = completion.choices[0].message.content;
     console.log("[ProcessAudio] Réponse GPT :", gptResponse);
+
   } catch (gptError) {
     console.error("[ProcessAudio] Erreur GPT :", gptError.message);
     gptResponse = "";
@@ -158,42 +167,35 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
       console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
-// 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter
-for (let i = 0; i < sentences.length; i++) {
-  const sentence = sentences[i];
-  console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
+      // 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter
+      for (let i = 0; i < sentences.length; i++) {
+        const sentence = sentences[i];
+        console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
 
-  const segmentAudio = await generateGoogleTTSMP3(sentence);
+        const segmentAudio = await generateGoogleTTSMP3(sentence);
 
-  if (segmentAudio) {
-    const payload = { index: i, text: sentence, audioBase64: segmentAudio, mime: 'audio/mpeg' };
-    audioSegments.push(payload);
+        if (segmentAudio) {
+          const payload = {
+            index: i,
+            text: sentence,
+            audioBase64: segmentAudio,
+            mime: 'audio/mpeg'
+          };
 
-    console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
+          audioSegments.push(payload);
+          console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
-    // --- Envoi immédiat à Flutter ---
-function sendToFlutter(payload) {
-  try {
-    const jsonPayload = JSON.stringify(payload);
-    console.log(`[sendToFlutter] Tentative d'envoi segment index=${payload.index} text="${payload.text}" length=${jsonPayload.length} à ${clients.size} clients`);
+          // --- Envoi immédiat à Flutter ---
+          sendToFlutter(payload);
 
-    if (clients.size === 0) {
-      console.warn('[sendToFlutter] Aucun client connecté, segment perdu !');
-    }
-
-    clients.forEach(client => {
-      try {
-        client.send(jsonPayload);
-        console.log(`[sendToFlutter] Segment index=${payload.index} envoyé avec succès`);
-      } catch (e) {
-        console.error('[sendToFlutter] Erreur envoi à un client :', e.message);
+        } else {
+          console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
+        }
       }
-    });
-  } catch (err) {
-    console.error('[sendToFlutter] Erreur sérialisation payload :', err.message);
+    } catch (ttsError) {
+      console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+    }
   }
-}
-
 
   // Nettoyage fichier temporaire
   try {
@@ -206,13 +208,6 @@ function sendToFlutter(payload) {
   // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
   return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
-
-// ------------------------
-// WebSocket global pour envoyer des messages à Flutter
-// ------------------------
-
-
-
 
 // ------------------------
 // Export
