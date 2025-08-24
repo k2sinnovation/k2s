@@ -11,11 +11,13 @@ wss.on('connection', (ws) => {
   ws.on('close', () => clients.delete(ws));
 });
 
-function sendToFlutter(segmentAudio, index) {
-  const message = JSON.stringify({ index, audioBase64: segmentAudio });
+function sendToFlutter(payload) {
+  // payload = { index, text, audioBase64, mime }
+  const message = JSON.stringify(payload);
   clients.forEach((ws) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(message);
   });
 }
 
 module.exports = { wss, sendToFlutter, clients };
+
