@@ -195,6 +195,26 @@ for (let i = 0; i < sentences.length; i++) {
 }
 
 // ------------------------
+// WebSocket global pour envoyer des messages à Flutter
+// ------------------------
+let websocketInstance = null;
+
+function setWebSocket(ws) {
+  websocketInstance = ws;
+  console.log("[WebSocket] WS défini dans AssemblyService");
+
+  ws.on('message', (message) => {
+    console.log("[WebSocket] Message reçu :", message);
+  });
+
+  ws.on('close', () => {
+    console.log("[WebSocket] Client déconnecté");
+    websocketInstance = null;
+  });
+}
+
+
+// ------------------------
 // Export
 // ------------------------
 module.exports = {
