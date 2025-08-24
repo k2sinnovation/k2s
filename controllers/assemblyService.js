@@ -172,15 +172,28 @@ for (let i = 0; i < sentences.length; i++) {
     console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
     // --- Envoi immédiat à Flutter ---
-    sendToFlutter(payload);
-  } else {
-    console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
+function sendToFlutter(payload) {
+  try {
+    const jsonPayload = JSON.stringify(payload);
+    console.log(`[sendToFlutter] Tentative d'envoi segment index=${payload.index} text="${payload.text}" length=${jsonPayload.length} à ${clients.size} clients`);
+
+    if (clients.size === 0) {
+      console.warn('[sendToFlutter] Aucun client connecté, segment perdu !');
+    }
+
+    clients.forEach(client => {
+      try {
+        client.send(jsonPayload);
+        console.log(`[sendToFlutter] Segment index=${payload.index} envoyé avec succès`);
+      } catch (e) {
+        console.error('[sendToFlutter] Erreur envoi à un client :', e.message);
+      }
+    });
+  } catch (err) {
+    console.error('[sendToFlutter] Erreur sérialisation payload :', err.message);
   }
 }
-    } catch (ttsError) {
-      console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
-    }
-  }
+
 
   // Nettoyage fichier temporaire
   try {
