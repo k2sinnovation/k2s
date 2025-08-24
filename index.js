@@ -35,14 +35,14 @@ const { wss } = require('./websocket'); // Import WebSocket
 const server = http.createServer(app);
 
 // Attache WebSocket au serveur HTTP
+// Attache WebSocket au serveur HTTP
 server.on('upgrade', (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
     wss.emit('connection', ws, request);
-
-    // Ici on définit le ws pour AssemblyService
-    setWebSocket(ws);
+    console.log("[WebSocket] Client connecté via upgrade");
   });
 });
+
 
 
 // ✅ Connexion MongoDB
