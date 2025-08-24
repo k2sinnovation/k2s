@@ -203,4 +203,5 @@ module.exports = {
   processAudioAndReturnJSON,
   decodeBase64Audio,
   sendToFlutter,
+  setWebSocket,
 };
