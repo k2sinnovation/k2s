@@ -3,8 +3,11 @@ const fs = require('fs');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
+const { sendToFlutter } = require('./ws');
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
+
+
 
 
 // ------------------------
@@ -25,15 +28,6 @@ function setWebSocket(websocketInstance) {
     ws.send(JSON.stringify({ index, audioBase64: segmentAudio }));
   });
   pendingSegments.length = 0; // vider le buffer
-}
-
-function sendToFlutter(segmentAudio, index) {
-  if (!ws) {
-    console.warn("[sendToFlutter] WebSocket non défini, segment mis en attente");
-    pendingSegments.push({ segmentAudio, index });
-    return;
-  }
-  ws.send(JSON.stringify({ index, audioBase64: segmentAudio }));
 }
 
 
