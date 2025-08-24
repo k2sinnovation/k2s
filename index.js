@@ -29,7 +29,7 @@ app.locals.openai = openai;
 
 // ✅ WebSocket
 const http = require('http');
-const { wss } = require('./ws'); // Import WebSocket
+const { wss } = require('./websocket'); // Import WebSocket
 
 // Crée serveur HTTP pour attacher Express + WebSocket
 const server = http.createServer(app);
