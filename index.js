@@ -47,13 +47,6 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 
-// Attache WebSocket au serveur HTTP
-server.on('upgrade', (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit('connection', ws, request);
-  });
-});
-
 // ✅ Connexion MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
