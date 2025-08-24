@@ -3,7 +3,7 @@ const fs = require('fs');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
-const { sendToFlutter } = require('./ws');
+const { sendToFlutter } = require('../websocket');
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
