@@ -14,7 +14,6 @@ require('dotenv').config();
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' }); // dossier temporaire
 
-
 // ✅ Chargement des routes
 const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
@@ -28,14 +27,28 @@ app.use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.locals.openai = openai;
 
+// ✅ WebSocket
+const http = require('http');
+const { wss } = require('./ws'); // Import WebSocket
+
+// Crée serveur HTTP pour attacher Express + WebSocket
+const server = http.createServer(app);
+
+// Attache WebSocket au serveur HTTP
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
+});
+
 // ✅ Connexion MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => {
   console.log('✅ Connexion MongoDB réussie');
-  app.listen(PORT, () => {
-    console.log(`🚀 Serveur lancé sur le port ${PORT}`);
+  server.listen(PORT, () => {
+    console.log(`🚀 Serveur HTTP + WebSocket lancé sur le port ${PORT}`);
   });
 }).catch((err) => {
   console.error('❌ Erreur de connexion MongoDB :', err);
@@ -52,7 +65,6 @@ app.use('/api', testTTSRoutes);
 app.use('/api/assembly', assemblyRoute);
 app.use('/test-tts', testTtsRouter);
 
-
 // ✅ Route pour lister les modèles accessibles via l'API OpenAI
 app.get('/api/istModels', async (req, res) => {
   try {
@@ -63,7 +75,6 @@ app.get('/api/istModels', async (req, res) => {
     res.status(500).json({ error: "Erreur API OpenAI" });
   }
 });
-
 
 // ❌ Retiré car usermodel n’est pas une route
 // app.use("/api/user", userRoute);
