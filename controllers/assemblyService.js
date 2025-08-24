@@ -200,6 +200,5 @@ module.exports = {
   generateGoogleTTSMP3,
   processAudioAndReturnJSON,
   decodeBase64Audio,
-  setWebSocket,
   sendToFlutter,
 };
