@@ -8,29 +8,6 @@ const { sendToFlutter } = require('./ws');
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
 
-
-
-// ------------------------
-// WebSocket global
-// ------------------------
-// ------------------------
-// WebSocket global avec buffer
-// ------------------------
-let ws = null;
-const pendingSegments = []; // segments en attente si WS non connecté
-
-function setWebSocket(websocketInstance) {
-  ws = websocketInstance;
-  console.log("[setWebSocket] WS défini, envoi des segments en attente :", pendingSegments.length);
-  
-  // envoyer tous les segments mis en attente
-  pendingSegments.forEach(({ segmentAudio, index }) => {
-    ws.send(JSON.stringify({ index, audioBase64: segmentAudio }));
-  });
-  pendingSegments.length = 0; // vider le buffer
-}
-
-
 // ------------------------
 // Google TTS
 // ------------------------
