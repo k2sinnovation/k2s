@@ -198,6 +198,7 @@ for (let i = 0; i < sentences.length; i++) {
   }
 }
 
+// Nettoyage fichier temporaire
 try {
   if (fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
   console.log("[ProcessAudio] Fichier temporaire supprimé :", tempfilePath);
@@ -207,7 +208,7 @@ try {
 
 // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
 return { transcription: texteTranscrit, gptResponse, audioSegments };
-
+} // <-- Fermeture correcte de la fonction processAudioAndReturnJSON
 
 // ------------------------
 // Export
