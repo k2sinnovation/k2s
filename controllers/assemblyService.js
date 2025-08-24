@@ -208,8 +208,8 @@ try {
 
 // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
 return { transcription: texteTranscrit, gptResponse, audioSegments };
-} // <-- Fermeture correcte de la fonction processAudioAndReturnJSON
-
+  }
+}
 // ------------------------
 // Export
 // ------------------------
