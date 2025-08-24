@@ -10,8 +10,21 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 // ------------------------
 // WebSocket global
 // ------------------------
-const { sendToFlutter } = require('../websocket'); // Chemin selon ton projet
+let ws = null;
 
+// Fonction pour définir la connexion WebSocket
+function setWebSocket(websocketInstance) {
+  ws = websocketInstance;
+}
+
+// Fonction pour envoyer directement l'audio à Flutter
+function sendToFlutter(segmentAudio, index) {
+  if (!ws) {
+    console.error("[sendToFlutter] WebSocket non défini !");
+    return;
+  }
+  ws.send(JSON.stringify({ index, audioBase64: segmentAudio }));
+}
 
 // ------------------------
 // Google TTS
@@ -206,4 +219,5 @@ module.exports = {
   processAudioAndReturnJSON,
   decodeBase64Audio,
   setWebSocket,
+  sendToFlutter,
 };
