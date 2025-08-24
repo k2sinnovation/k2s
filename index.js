@@ -38,10 +38,20 @@ const server = http.createServer(app);
 // Attache WebSocket au serveur HTTP
 server.on('upgrade', (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit('connection', ws, request);
+    // Ajout du client
+    clients.add(ws);
     console.log("[WebSocket] Client connecté via upgrade");
+
+    ws.on('close', () => {
+      clients.delete(ws);
+      console.log("[WebSocket] Client déconnecté du WebSocket");
+    });
+
+    // Émet la connection pour tout handler sur wss
+    wss.emit('connection', ws, request);
   });
 });
+
 
 
 
