@@ -10,21 +10,32 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 // ------------------------
 // WebSocket global
 // ------------------------
+// ------------------------
+// WebSocket global avec buffer
+// ------------------------
 let ws = null;
+const pendingSegments = []; // segments en attente si WS non connecté
 
-// Fonction pour définir la connexion WebSocket
 function setWebSocket(websocketInstance) {
   ws = websocketInstance;
+  console.log("[setWebSocket] WS défini, envoi des segments en attente :", pendingSegments.length);
+  
+  // envoyer tous les segments mis en attente
+  pendingSegments.forEach(({ segmentAudio, index }) => {
+    ws.send(JSON.stringify({ index, audioBase64: segmentAudio }));
+  });
+  pendingSegments.length = 0; // vider le buffer
 }
 
-// Fonction pour envoyer directement l'audio à Flutter
 function sendToFlutter(segmentAudio, index) {
   if (!ws) {
-    console.error("[sendToFlutter] WebSocket non défini !");
+    console.warn("[sendToFlutter] WebSocket non défini, segment mis en attente");
+    pendingSegments.push({ segmentAudio, index });
     return;
   }
   ws.send(JSON.stringify({ index, audioBase64: segmentAudio }));
 }
+
 
 // ------------------------
 // Google TTS
