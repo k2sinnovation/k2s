@@ -169,6 +169,7 @@ for (let i = 0; i < sentences.length; i++) {
     audioSegments.push(payload);
 
     console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
+    console.log("[sendToFlutter] Nombre de clients connectés :", clients.size);
 
     // --- Envoi immédiat à Flutter ---
     sendToFlutter(payload);
