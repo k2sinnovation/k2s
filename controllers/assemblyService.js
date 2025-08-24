@@ -198,10 +198,17 @@ for (let i = 0; i < sentences.length; i++) {
 // WebSocket global pour envoyer des messages à Flutter
 // ------------------------
 let websocketInstance = null;
+let pendingSegments = []; // <--- buffer pour les segments avant WS
 
 function setWebSocket(ws) {
   websocketInstance = ws;
   console.log("[WebSocket] WS défini dans AssemblyService");
+
+  // Envoyer tous les segments pendants
+  if (pendingSegments.length > 0) {
+    pendingSegments.forEach(seg => websocketInstance.send(JSON.stringify(seg)));
+    pendingSegments = [];
+  }
 
   ws.on('message', (message) => {
     console.log("[WebSocket] Message reçu :", message);
@@ -212,6 +219,17 @@ function setWebSocket(ws) {
     websocketInstance = null;
   });
 }
+
+function sendToFlutter(payload) {
+  if (websocketInstance) {
+    websocketInstance.send(JSON.stringify(payload));
+  } else {
+    // Stocker les segments si WS pas encore définie
+    pendingSegments.push(payload);
+    console.log("[WebSocket] Segment bufferisé, WS pas encore défini");
+  }
+}
+
 
 
 // ------------------------
