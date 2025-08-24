@@ -34,6 +34,19 @@ const { wss } = require('./ws'); // Import WebSocket
 // Crée serveur HTTP pour attacher Express + WebSocket
 const server = http.createServer(app);
 
+const { setWebSocket } = require('./controllers/assemblyService');
+
+// Attache WebSocket au serveur HTTP
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+
+    // Ici on définit le ws pour AssemblyService
+    setWebSocket(ws);
+  });
+});
+
+
 // Attache WebSocket au serveur HTTP
 server.on('upgrade', (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
