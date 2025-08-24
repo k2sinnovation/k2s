@@ -1,28 +1,35 @@
-# Utiliser une image Node.js officielle
-FROM node:20-bullseye
+const WebSocket = require('ws');
 
-# Installer les dépendances système nécessaires pour TTS et audio
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    libsndfile1 \
-    libasound2 \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+// Serveur WS sur le même port que ton service HTTP
+const wss = new WebSocket.Server({ noServer: true });
 
-# Créer le dossier de travail
-WORKDIR /usr/src/app
+// Stocker les clients connectés
+const clients = new Set();
 
-# Copier les fichiers package.json et package-lock.json pour installer les dépendances
-COPY package*.json ./
+wss.on('connection', (ws) => {
+  clients.add(ws);
+  console.log('Client WebSocket connecté');
 
-# Installer uniquement les dépendances de production
-RUN npm install --production
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log('Client WebSocket déconnecté');
+  });
+});
 
-# Copier tout le reste du projet
-COPY . .
+// Si tu as un serveur HTTP existant (Express par ex.)
+const server = require('./app'); // ton app Express
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
+});
 
-# Exposer le port utilisé par ton serveur
-EXPOSE 3000
+// Fonction pour envoyer un segment à tous les clients
+function sendToFlutter(segmentAudio, index) {
+  const message = JSON.stringify({ index, audioBase64: segmentAudio });
+  clients.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(message);
+  });
+}
 
-# Commande pour démarrer ton serveur
-CMD ["node", "index.js"]
+module.exports = { sendToFlutter };
