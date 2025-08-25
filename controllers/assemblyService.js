@@ -283,8 +283,18 @@ try {
           audioSegments.push(payload);
           console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
-          // --- Envoi via service WebSocket Render ---
-         sendToFlutter(payload);
+       // --- Envoi conditionnel ---
+const wsSent = sendToFlutter(payload); // on renvoie true si au moins un client reçoit
+if (!wsSent) {
+  // Pas de client WS, envoi direct via HTTP
+  try {
+    await axios.post('http://ton-api-endpoint/send-audio', payload);
+    console.log(`[ProcessAudio] Phrase ${i+1} envoyée via HTTP`);
+  } catch (httpError) {
+    console.error(`[ProcessAudio] Erreur envoi HTTP phrase ${i+1} :`, httpError.message);
+  }
+}
+
 
         } else {
           console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
