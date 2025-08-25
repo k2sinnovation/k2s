@@ -29,29 +29,13 @@ app.locals.openai = openai;
 
 // ✅ WebSocket
 const http = require('http');
-const { wss } = require('./websocket'); // Import WebSocket
+const { attachWebSocketToServer } = require('./websocket'); // Import fonction
 
 // Crée serveur HTTP pour attacher Express + WebSocket
 const server = http.createServer(app);
 
-// Attache WebSocket au serveur HTTP
-// Attache WebSocket au serveur HTTP
-server.on('upgrade', (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    // Ajout du client
-    clients.add(ws);
-    console.log("[WebSocket] Client connecté via upgrade");
-
-    ws.on('close', () => {
-      clients.delete(ws);
-      console.log("[WebSocket] Client déconnecté du WebSocket");
-    });
-
-    // Émet la connection pour tout handler sur wss
-    wss.emit('connection', ws, request);
-  });
-});
-
+// Attache WebSocket au serveur HTTP (une seule fois)
+attachWebSocketToServer(server);
 
 
 
