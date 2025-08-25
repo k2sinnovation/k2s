@@ -126,15 +126,38 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   let gptResponse = "";
   let audioBase64 = null;
 
-  console.log("[ProcessAudio] Début traitement :", tempfilePath);
+const { getRandomWaitingMessage } = require('./waitingMessages'); // <-- Ajout import
 
-  // 1️⃣ Transcription
-  try {
-    texteTranscrit = await transcribeWithAssembly(tempfilePath);
-    console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
-  } catch (assemblyError) {
-    console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
-  }
+console.log("[ProcessAudio] Début traitement :", tempfilePath);
+
+// --- 0️⃣ Envoyer message d'attente aléatoire immédiatement ---
+try {
+  const waitingText = getRandomWaitingMessage();
+  console.log("[ProcessAudio] Message d'attente choisi :", waitingText);
+
+  const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
+
+  sendToFlutter({
+    index: -1,             // index négatif pour indiquer message d'attente
+    text: "",              // on n'envoie pas le texte
+    audioBase64: waitingAudioBase64,
+    mime: "audio/mpeg"
+  });
+
+  console.log("[ProcessAudio] Message d'attente envoyé via WebSocket");
+
+} catch (waitingError) {
+  console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
+}
+
+// 1️⃣ Transcription
+try {
+  texteTranscrit = await transcribeWithAssembly(tempfilePath);
+  console.log("[ProcessAudio] Texte transcrit :", texteTranscrit);
+} catch (assemblyError) {
+  console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
+}
+
 
   // 2️⃣ GPT
   try {
