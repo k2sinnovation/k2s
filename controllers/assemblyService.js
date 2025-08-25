@@ -10,36 +10,41 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
 
 // ------------------------
-// SerpAPI Google Search
+// SerpAPI Google Search (version compatible Node.js v24)
 // ------------------------
-const SerpApi = require('serpapi'); // <-- Import SerpAPI
-const search = new SerpApi.GoogleSearch(process.env.SERPAPI_API_KEY); // <-- Init avec clé Render
+const axios = require('axios'); // Utilisation directe de l'API SerpApi via HTTP
 
-console.log("[SerpAPI] Initialisé avec la clé d'environnement");
+console.log("[SerpAPI] Module axios prêt pour requêtes SerpAPI");
 
 // ------------------------
 // Fonction pour rechercher sur Google via SerpAPI
 // ------------------------
 async function googleSearch(query) {
   console.log("[SerpAPI] Recherche pour :", query);
-  return new Promise((resolve, reject) => {
-    const params = {
-      q: query,
-      hl: 'fr', // langue
-      gl: 'fr', // localisation
-    };
 
-    search.json(params, (data) => {
-      if (!data) {
-        console.error("[SerpAPI] Pas de données reçues");
-        return reject(new Error("Aucune donnée reçue de SerpAPI"));
+  try {
+    const response = await axios.get('https://serpapi.com/search', {
+      params: {
+        q: query,
+        hl: 'fr', // langue
+        gl: 'fr', // localisation
+        api_key: process.env.SERPAPI_API_KEY
       }
-      console.log("[SerpAPI] Résultats reçus, nombre approx. :", data.organic_results?.length || 0);
-      resolve(data);
     });
-  });
-}
 
+    if (!response.data) {
+      console.error("[SerpAPI] Pas de données reçues");
+      throw new Error("Aucune donnée reçue de SerpAPI");
+    }
+
+    console.log("[SerpAPI] Résultats reçus, nombre approx. :", response.data.organic_results?.length || 0);
+    return response.data;
+
+  } catch (err) {
+    console.error("[SerpAPI] Erreur lors de la recherche :", err.message);
+    throw err;
+  }
+}
 
 
 // ------------------------
@@ -290,4 +295,5 @@ module.exports = {
   processAudioAndReturnJSON,
   decodeBase64Audio,
   sendToFlutter,
+  googleSearch,
 };
