@@ -8,6 +8,40 @@ const { sendToFlutter } = require('../websocket'); // adapte le chemin si néces
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
+
+// ------------------------
+// SerpAPI Google Search
+// ------------------------
+const SerpApi = require('google-search-results-nodejs'); // <-- Import SerpAPI
+const search = new SerpApi.GoogleSearch(process.env.SERPAPI_API_KEY); // <-- Init avec clé Render
+
+console.log("[SerpAPI] Initialisé avec la clé d'environnement");
+
+// ------------------------
+// Fonction pour rechercher sur Google via SerpAPI
+// ------------------------
+async function googleSearch(query) {
+  console.log("[SerpAPI] Recherche pour :", query);
+  return new Promise((resolve, reject) => {
+    const params = {
+      q: query,
+      hl: 'fr', // langue
+      gl: 'fr', // localisation
+    };
+
+    search.json(params, (data) => {
+      if (!data) {
+        console.error("[SerpAPI] Pas de données reçues");
+        return reject(new Error("Aucune donnée reçue de SerpAPI"));
+      }
+      console.log("[SerpAPI] Résultats reçus, nombre approx. :", data.organic_results?.length || 0);
+      resolve(data);
+    });
+  });
+}
+
+
+
 // ------------------------
 // Google TTS
 // ------------------------
@@ -159,23 +193,37 @@ try {
 }
 
 
-  // 2️⃣ GPT
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5-chat-latest",
-      messages: [
-        { role: "system", content: promptTTSVocal },
-        { role: "user", content: texteTranscrit },
-      ],
-    });
+// 2️⃣ Recherche Google pour enrichir GPT
+let searchResultsSummary = '';
+try {
+  const searchData = await googleSearch(texteTranscrit);
+  const results = searchData.organic_results?.slice(0,3) || [];
+  searchResultsSummary = results.map(r => `Titre: ${r.title}\nLien: ${r.link}\nSnippet: ${r.snippet}`).join('\n\n');
+  console.log("[ProcessAudio] Résumés Google :", searchResultsSummary);
+} catch (err) {
+  console.error("[ProcessAudio] Erreur SerpAPI :", err.message);
+}
 
-    gptResponse = completion.choices[0].message.content;
-    console.log("[ProcessAudio] Réponse GPT :", gptResponse);
+// 3️⃣ GPT avec enrichissement Google
+try {
+  const enrichedPrompt = `${promptTTSVocal}\n\nVoici des informations Google pertinentes pour compléter la réponse :\n${searchResultsSummary}\n\nQuestion: ${texteTranscrit}`;
 
-  } catch (gptError) {
-    console.error("[ProcessAudio] Erreur GPT :", gptError.message);
-    gptResponse = "";
-  }
+  const completion = await openai.chat.completions.create({
+    model: "gpt-5-chat-latest",
+    messages: [
+      { role: "system", content: enrichedPrompt },
+      { role: "user", content: texteTranscrit },
+    ],
+  });
+
+  gptResponse = completion.choices[0].message.content;
+  console.log("[ProcessAudio] Réponse GPT enrichie :", gptResponse);
+
+} catch (gptError) {
+  console.error("[ProcessAudio] Erreur GPT :", gptError.message);
+  gptResponse = "";
+}
+
 
   // 3️⃣ TTS - SEGMENTATION PHRASE
   const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
