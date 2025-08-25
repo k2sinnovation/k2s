@@ -126,7 +126,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
   let gptResponse = "";
   let audioBase64 = null;
 
-const { getRandomWaitingMessage } = require('./waitingMessages'); // <-- Ajout import
+const { getRandomWaitingMessage } = require('../utils/waitingMessages'); // <-- Ajout import
 
 console.log("[ProcessAudio] Début traitement :", tempfilePath);
 
