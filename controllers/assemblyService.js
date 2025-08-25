@@ -208,7 +208,7 @@ Question : ${texteTranscrit}
 `;
 
   const checkCompletion = await openai.chat.completions.create({
-    model: "gpt-5-chat-latest",
+    model: "gpt-4o-mini",
     messages: [{ role: "user", content: checkSearchPrompt }],
   });
 
