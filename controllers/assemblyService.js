@@ -12,7 +12,6 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 // ------------------------
 // SerpAPI Google Search (version compatible Node.js v24)
 // ------------------------
-const axios = require('axios'); // Utilisation directe de l'API SerpApi via HTTP
 
 console.log("[SerpAPI] Module axios prêt pour requêtes SerpAPI");
 
