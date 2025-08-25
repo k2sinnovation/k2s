@@ -202,7 +202,7 @@ let searchResultsSummary = '';
 try {
   const checkSearchPrompt = `
 ${promptTTSVocal}
-Dis-moi simplement : cette question nécessite-t-elle une recherche Google pour répondre correctement ?
+Dis-moi simplement : Est-ce que cette question est une question technique ou contient un code de défaut machine équipement ? Réponds uniquement par OUI ou NON ?
 Répond uniquement par OUI ou NON.
 Question : ${texteTranscrit}
 `;
