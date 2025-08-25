@@ -197,20 +197,43 @@ try {
 }
 
 
-// 2️⃣ Recherche Google pour enrichir GPT
+// 2️⃣ Vérifier si une recherche Google est nécessaire
 let searchResultsSummary = '';
 try {
-  const searchData = await googleSearch(texteTranscrit);
-  const results = searchData.organic_results?.slice(0,3) || [];
-  searchResultsSummary = results.map(r => `Titre: ${r.title}\nLien: ${r.link}\nSnippet: ${r.snippet}`).join('\n\n');
-  console.log("[ProcessAudio] Résumés Google :", searchResultsSummary);
+  const checkSearchPrompt = `
+${promptTTSVocal}
+Dis-moi simplement : cette question nécessite-t-elle une recherche Google pour répondre correctement ?
+Répond uniquement par OUI ou NON.
+Question : ${texteTranscrit}
+`;
+
+  const checkCompletion = await openai.chat.completions.create({
+    model: "gpt-5-chat-latest",
+    messages: [{ role: "user", content: checkSearchPrompt }],
+  });
+
+  const doitChercher = checkCompletion.choices[0].message.content.trim().toUpperCase() === "OUI";
+
+  if (doitChercher) {
+    const searchData = await googleSearch(texteTranscrit);
+    const results = searchData.organic_results?.slice(0, 3) || [];
+    searchResultsSummary = results
+      .map(r => `Titre: ${r.title}\nLien: ${r.link}\nSnippet: ${r.snippet}`)
+      .join('\n\n');
+    console.log("[ProcessAudio] Résumés Google :", searchResultsSummary);
+  } else {
+    console.log("[ProcessAudio] Pas de recherche Google nécessaire.");
+  }
+
 } catch (err) {
-  console.error("[ProcessAudio] Erreur SerpAPI :", err.message);
+  console.error("[ProcessAudio] Erreur vérification/SerpAPI :", err.message);
 }
 
-// 3️⃣ GPT avec enrichissement Google
+// 3️⃣ GPT avec ou sans enrichissement Google
 try {
-  const enrichedPrompt = `${promptTTSVocal}\n\nVoici des informations Google pertinentes pour compléter la réponse :\n${searchResultsSummary}\n\nQuestion: ${texteTranscrit}`;
+  const enrichedPrompt = searchResultsSummary
+    ? `${promptTTSVocal}\n\nVoici des informations Google pertinentes pour compléter la réponse :\n${searchResultsSummary}\n\nQuestion: ${texteTranscrit}`
+    : `${promptTTSVocal}\n\nQuestion: ${texteTranscrit}`;
 
   const completion = await openai.chat.completions.create({
     model: "gpt-5-chat-latest",
@@ -221,7 +244,7 @@ try {
   });
 
   gptResponse = completion.choices[0].message.content;
-  console.log("[ProcessAudio] Réponse GPT enrichie :", gptResponse);
+  console.log("[ProcessAudio] Réponse GPT :", gptResponse);
 
 } catch (gptError) {
   console.error("[ProcessAudio] Erreur GPT :", gptError.message);
