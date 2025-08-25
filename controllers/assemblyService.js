@@ -12,7 +12,7 @@ console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 // ------------------------
 // SerpAPI Google Search
 // ------------------------
-const SerpApi = require('google-search-results-nodejs'); // <-- Import SerpAPI
+const SerpApi = require('serpapi'); // <-- Import SerpAPI
 const search = new SerpApi.GoogleSearch(process.env.SERPAPI_API_KEY); // <-- Init avec clé Render
 
 console.log("[SerpAPI] Initialisé avec la clé d'environnement");
