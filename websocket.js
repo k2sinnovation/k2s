@@ -11,6 +11,17 @@ const quotes = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8')
 );
 
+
+// Ping régulier pour garder les connexions WS actives
+setInterval(() => {
+  clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping(); // envoie un ping, le client répond automatiquement avec pong
+    }
+  });
+}, 5000); // toutes les 5 secondes
+
+
 // ------------------------
 // Fonction pour envoyer des messages à Flutter via WS
 // ------------------------
