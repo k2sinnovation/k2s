@@ -16,10 +16,19 @@ const quotes = JSON.parse(
 setInterval(() => {
   clients.forEach(ws => {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.ping(); // envoie un ping, le client répond automatiquement avec pong
+      ws.ping('keepalive'); // envoie un ping avec payload
+      console.log(`[WebSocket] Ping envoyé à client ${ws.clientId}`);
     }
   });
-}, 2000); // toutes les 5 secondes
+}, 2000); // toutes les 2 secondes
+
+// Événement pong pour chaque client
+wss.on('connection', (ws) => {
+  ws.on('pong', (data) => {
+    console.log(`[WebSocket] Pong reçu de client ${ws.clientId} :`, data.toString());
+  });
+});
+
 
 
 // ------------------------
