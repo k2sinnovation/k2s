@@ -19,5 +19,6 @@
     "@google-cloud/text-to-speech": "^4.2.3",
     "ws": "^8.14.0",
     "serpapi": "^2.1.0"
+    "uuid": "^9.0.0",
   }
 }
