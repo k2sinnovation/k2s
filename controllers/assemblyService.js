@@ -268,49 +268,45 @@ try {
 }
 
 
+  try {
   // 3️⃣ TTS - SEGMENTATION PHRASE
   const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
 
   if (gptResponse) {
-    try {
-      // 1️⃣ Découper le texte GPT en phrases
-      const sentences = gptResponse
-        .split(/(?<=[.!?])\s+/) // Regex pour couper sur . ! ? suivi d'espace
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
+    // 1️⃣ Découper le texte GPT en phrases
+    const sentences = gptResponse
+      .split(/(?<=[.!?])\s+/) // Regex pour couper sur . ! ? suivi d'espace
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
 
-      console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
+    console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
-      // 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter via service WS
-for (let i = 0; i < sentences.length; i++) {
-  const sentence = sentences[i];
-  const segmentAudio = await generateGoogleTTSMP3(sentence);
+    // 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter ou via HTTP
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i];
+      const segmentAudio = await generateGoogleTTSMP3(sentence);
 
-  if (segmentAudio) {
-    const payload = {
-      index: i,
-      text: sentence,
-      audioBase64: segmentAudio,
-      mime: 'audio/mpeg'
-    };
+      if (segmentAudio) {
+        const payload = {
+          index: i,
+          text: sentence,
+          audioBase64: segmentAudio,
+          mime: 'audio/mpeg'
+        };
 
-    audioSegments.push(payload);
-    console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
+        audioSegments.push(payload);
+        console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
-    // --- Envoi via WS ou fallback HTTP ---
-    await sendPayload(payload);
-  }
-}
-
-        } else {
-          console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
-        }
+        // --- Envoi via WS ou fallback HTTP ---
+        await sendPayload(payload);
+      } else {
+        console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
       }
-
-    } catch (ttsError) {
-      console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
     }
   }
+} catch (ttsError) {
+  console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+}
 
   // Nettoyage fichier temporaire
   try {
