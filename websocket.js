@@ -14,22 +14,25 @@ const quotes = JSON.parse(
 
 
 // Fonction pour attacher WebSocket au serveur HTTP
-function attachWebSocketToServer(server) {
-  server.on('upgrade', (request, socket, head) => {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      // Ajout du client connecté
-      clients.add(ws);
-      console.log("[WebSocket] Client connecté");
+function sendToFlutter(payload) {
+  const message = JSON.stringify(payload);
+  console.log("[WebSocket] Tentative d’envoi à", clients.size, "client(s) :", payload);
 
-      ws.on('close', () => {
-        clients.delete(ws);
-        console.log("[WebSocket] Client déconnecté");
-      });
+  let sent = false; // flag pour savoir si au moins 1 client a reçu
 
-      wss.emit('connection', ws, request);
-    });
+  clients.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(message);
+      console.log("[WebSocket] Message envoyé au client :", payload.index, payload.text);
+      sent = true; // au moins un envoi réussi
+    } else {
+      console.log("[WebSocket] Client non ouvert, message ignoré");
+    }
   });
+
+  return sent; // <-- ✅ retourne true/false
 }
+
 
 // Connexion WS (ici tu peux initialiser les messages entrants si tu veux)
 wss.on('connection', (ws) => {
