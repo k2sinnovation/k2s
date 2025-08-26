@@ -19,7 +19,7 @@ setInterval(() => {
       ws.ping(); // envoie un ping, le client répond automatiquement avec pong
     }
   });
-}, 5000); // toutes les 5 secondes
+}, 2000); // toutes les 5 secondes
 
 
 // ------------------------
