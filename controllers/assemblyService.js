@@ -9,6 +9,22 @@ const { sendToFlutter } = require('../websocket'); // adapte le chemin si néces
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
 
+//----------------------------------
+//fonction sendPayload()
+//---------------------------------
+async function sendPayload(payload) {
+  const wsSent = sendToFlutter(payload);
+  if (!wsSent) {
+    try {
+      await axios.post('http://ton-api-endpoint/send-audio', payload);
+      console.log(`[Fallback HTTP] Payload envoyé via HTTP, index: ${payload.index}`);
+    } catch (err) {
+      console.error(`[Fallback HTTP] Erreur envoi HTTP, index: ${payload.index}`, err.message);
+    }
+  }
+}
+
+
 // ------------------------
 // SerpAPI Google Search (version compatible Node.js v24)
 // ------------------------
@@ -173,14 +189,14 @@ try {
   const waitingText = getRandomWaitingMessage();
   console.log("[ProcessAudio] Message d'attente choisi :", waitingText);
 
-  const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
+const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
 
-  sendToFlutter({
-    index: -1,             // index négatif pour indiquer message d'attente
-    text: "",              // on n'envoie pas le texte
-    audioBase64: waitingAudioBase64,
-    mime: "audio/mpeg"
-  });
+await sendPayload({
+  index: -1,             
+  text: "",              
+  audioBase64: waitingAudioBase64,
+  mime: "audio/mpeg"
+});
 
   console.log("[ProcessAudio] Message d'attente envoyé via WebSocket");
 
@@ -266,35 +282,25 @@ try {
       console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
       // 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter via service WS
-      for (let i = 0; i < sentences.length; i++) {
-        const sentence = sentences[i];
-        console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
+for (let i = 0; i < sentences.length; i++) {
+  const sentence = sentences[i];
+  const segmentAudio = await generateGoogleTTSMP3(sentence);
 
-        const segmentAudio = await generateGoogleTTSMP3(sentence);
+  if (segmentAudio) {
+    const payload = {
+      index: i,
+      text: sentence,
+      audioBase64: segmentAudio,
+      mime: 'audio/mpeg'
+    };
 
-        if (segmentAudio) {
-          const payload = {
-            index: i,
-            text: sentence,
-            audioBase64: segmentAudio,
-            mime: 'audio/mpeg'
-          };
+    audioSegments.push(payload);
+    console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
-          audioSegments.push(payload);
-          console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
-
-       // --- Envoi conditionnel ---
-const wsSent = sendToFlutter(payload); // on renvoie true si au moins un client reçoit
-if (!wsSent) {
-  // Pas de client WS, envoi direct via HTTP
-  try {
-    await axios.post('http://ton-api-endpoint/send-audio', payload);
-    console.log(`[ProcessAudio] Phrase ${i+1} envoyée via HTTP`);
-  } catch (httpError) {
-    console.error(`[ProcessAudio] Erreur envoi HTTP phrase ${i+1} :`, httpError.message);
+    // --- Envoi via WS ou fallback HTTP ---
+    await sendPayload(payload);
   }
 }
-
 
         } else {
           console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
