@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
-const clients = new Set();
+const { v4: uuidv4 } = require('uuid');
+const clients = new Map(); // clientId -> { ws, canSend }
 const fs = require('fs');
 const path = require('path');
 
@@ -12,22 +13,51 @@ const quotes = JSON.parse(
 );
 
 
-// Ping régulier pour garder les connexions WS actives
-setInterval(() => {
-  clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.ping('keepalive'); // envoie un ping avec payload
-      console.log(`[WebSocket] Ping envoyé à client ${ws.clientId}`);
-    }
-  });
-}, 2000); // toutes les 2 secondes
-
-// Événement pong pour chaque client
 wss.on('connection', (ws) => {
+  // Attribuer un clientId unique pour l'instant
+  const clientId = uuidv4();
+
+  // Pour l'instant le quota est toujours true
+  const canSend = true;
+
+  // Stocker le ws et le quota
+  clients.set(clientId, { ws, canSend });
+  ws.clientId = clientId; // pratique pour logs
+
+  console.log(`[WebSocket] Client connecté : ${clientId}, canSend: ${canSend}`);
+
+  ws.on('close', () => {
+    clients.delete(clientId);
+    console.log(`[WebSocket] Client déconnecté : ${clientId}`);
+  });
+
   ws.on('pong', (data) => {
-    console.log(`[WebSocket] Pong reçu de client ${ws.clientId} :`, data.toString());
+    console.log(`[WebSocket] Pong reçu de client ${clientId} :`, data.toString());
+  });
+
+  ws.on('message', (message) => {
+    console.log(`[WebSocket] Message reçu de client ${clientId} :`, message.toString());
+
+    // Exemple futur : vérifier quota avant traitement
+    const client = clients.get(clientId);
+    if (!client.canSend) {
+      console.log(`[WebSocket] Client ${clientId} a atteint son quota, message ignoré.`);
+      return;
+    }
+
+    // Ici tu pourrais traiter le message (ex : audio) normalement
   });
 });
+
+// Ping régulier avec logs
+setInterval(() => {
+  clients.forEach(({ ws, canSend }, clientId) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping('keepalive');
+      console.log(`[WebSocket] Ping envoyé à client ${clientId}, canSend: ${canSend}`);
+    }
+  });
+}, 2000);
 
 
 
