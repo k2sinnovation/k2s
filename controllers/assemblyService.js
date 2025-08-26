@@ -218,7 +218,7 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
                     if (!wsSent) {
                         // Pas de client WS, envoi direct via HTTP
                         try {
-                            await axios.post('http://ton-api-endpoint/send-audio', payload);
+                            await axios.post('https://k2s.onrender.com/send-audio', payload);
                             console.log(`[ProcessAudio] Phrase ${i+1} envoyée via HTTP`);
                         } catch (httpError) {
                             console.error(`[ProcessAudio] Erreur envoi HTTP phrase ${i+1} :`, httpError.message);
