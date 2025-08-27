@@ -168,13 +168,14 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
 // 1️⃣ Transcription
 try {
     texteTranscrit = await transcribeWithAssembly(tempfilePath);
+    console.log("✅ Transcription AssemblyAI :", texteTranscrit || "[vide]");
 
     // ⚡ Envoi transcription texte brute au client
-    if (texteTranscrit && clientId) {
+    if (clientId) {
         sendToFlutter({
-            index: 0,                 // index 0 pour la transcription
-            text: texteTranscrit,
-            audioBase64: null,        // pas de son pour la transcription brute
+            index: 0,
+            text: texteTranscrit || "[vide]",
+            audioBase64: null,
             mime: "text/plain",
             clientId
         }, clientId);
@@ -205,48 +206,48 @@ try {
         console.error("[ProcessAudio] Erreur SerpAPI :", err.message);
     }
 
-    // 3️⃣ GPT
-    try {
-        const enrichedPrompt = searchResultsSummary
-            ? `${promptTTSVocal}\nInformations Google:\n${searchResultsSummary}\nQuestion: ${texteTranscrit}`
-            : `${promptTTSVocal}\nQuestion: ${texteTranscrit}`;
-        const completion = await openai.chat.completions.create({
-            model: "gpt-5-chat-latest",
-            messages: [
-                { role: "system", content: enrichedPrompt },
-                { role: "user", content: texteTranscrit },
-            ],
-        });
-        gptResponse = completion.choices[0].message.content;
-    } catch (gptError) {
-        console.error("[ProcessAudio] Erreur GPT :", gptError.message);
-        gptResponse = "";
-    }
+// 3️⃣ GPT
+try {
+    const completion = await openai.chat.completions.create({
+        model: "gpt-5-chat-latest",
+        messages: [
+            { role: "system", content: enrichedPrompt },
+            { role: "user", content: texteTranscrit },
+        ],
+    });
 
-    // 4️⃣ TTS - Segmentation phrase
-    if (gptResponse) {
-        try {
-            const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
-            for (let i = 0; i < sentences.length; i++) {
-                const sentence = sentences[i];
-                const segmentAudio = await generateGoogleTTSMP3(sentence);
-                if (segmentAudio) {
-                    const payload = {
-                        index: i,
-                        text: sentence,
-                        audioBase64: segmentAudio,
-                        mime: 'audio/mpeg',
-                        clientId
-                        
-                    };
-                    audioSegments.push(payload);
-                    sendToFlutter(payload, clientId);
-                }
-            }
-        } catch (ttsError) {
-            console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+    gptResponse = completion.choices[0].message.content;
+    console.log("💬 Réponse GPT :", gptResponse || "[vide]");
+
+} catch (gptError) {
+    console.error("[ProcessAudio] Erreur GPT :", gptError.message);
+    gptResponse = "";
+}
+
+// 4️⃣ TTS - Segmentation phrase
+if (gptResponse) {
+    try {
+        const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+
+        for (let i = 0; i < sentences.length; i++) {
+            console.log(`🔊 Segment ${i}:`, sentences[i]);
+            const segmentAudio = await generateGoogleTTSMP3(sentences[i]);
+
+            const payload = {
+                index: i,
+                text: sentences[i],
+                audioBase64: segmentAudio,
+                mime: 'audio/mpeg',
+                clientId
+            };
+
+            audioSegments.push(payload);
+            sendToFlutter(payload, clientId);
         }
+    } catch (ttsError) {
+        console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
     }
+}
 
     // Nettoyage fichier temporaire
     if (isBase64 && fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
