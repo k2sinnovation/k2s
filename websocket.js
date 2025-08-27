@@ -16,38 +16,29 @@ setInterval(() => {
   clients.forEach(({ ws, canSend }, clientId) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.ping('keepalive');
-      console.log(`[WebSocket] Ping envoyé à client ${clientId}, canSend: ${canSend}`);
     }
   });
 }, 2000);
 
 // Connexion
 wss.on('connection', (ws) => {
-  let clientId = null; // sera défini après réception du deviceId
-  const canSend = true;
+  let clientId = null;
 
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
 
-      // Si c'est le premier message avec deviceId, on l'utilise comme clientId
-      if (data.deviceId && !clientId) {
-        clientId = data.deviceId;
+      // Si c'est le premier message avec clientId
+      if (data.clientId && !clientId) {
+        clientId = data.clientId;
         ws.clientId = clientId;
-        clients.set(clientId, { ws, canSend });
-        console.log(`[WebSocket] Client connecté : ${clientId}, canSend: ${canSend}`);
-        return; // Ne pas traiter plus pour ce message
-      }
-
-      console.log(`[WebSocket] Message reçu de client ${clientId || "non identifié"} :`, message.toString());
-
-      const client = clients.get(clientId);
-      if (!client?.canSend) {
-        console.log(`[WebSocket] Client ${clientId} a atteint son quota, message ignoré.`);
+        clients.set(clientId, { ws, canSend: true });
+        console.log(`[WebSocket] Client connecté : ${clientId}`);
         return;
       }
 
-      // Ici tu traites les messages normalement
+      // Ici tu peux traiter les messages normalement
+      console.log(`[WebSocket] Message reçu de client ${clientId || "non identifié"} :`, message.toString());
     } catch (e) {
       console.log(`[WebSocket] Erreur parsing message :`, e);
     }
@@ -72,20 +63,18 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Fonction pour envoyer des messages à Flutter
-function sendToFlutter(payload, targetDeviceId = null) {
+// Fonction pour envoyer des messages à Flutter ou autre client
+function sendToFlutter(payload, targetClientId = null) {
   const message = JSON.stringify(payload);
-  console.log("[WebSocket] Tentative d’envoi à", clients.size, "client(s) :", payload);
-
   let sent = false;
   clients.forEach(({ ws }, clientId) => {
-    // Si targetDeviceId est défini, on n'envoie qu'à ce client
-    if ((targetDeviceId === null || clientId === targetDeviceId) && ws.readyState === WebSocket.OPEN) {
+    if ((targetClientId === null || clientId === targetClientId) && ws.readyState === WebSocket.OPEN) {
       ws.send(message);
       console.log(`[WebSocket] Message envoyé au client ${clientId} :`, payload.index, payload.text);
       sent = true;
     }
   });
+  if (!sent) console.warn("[WebSocket] Aucun client trouvé pour l'envoi :", targetClientId);
   return sent;
 }
 
