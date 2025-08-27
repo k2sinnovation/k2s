@@ -186,6 +186,7 @@ sendToFlutter({
 }, clientId);
 
 
+
         console.log("✅ Transcription AssemblyAI :", texteTranscrit ? texteTranscrit.slice(0,100) : "[vide]");
 
     } catch (assemblyError) {
