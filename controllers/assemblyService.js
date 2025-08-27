@@ -77,6 +77,11 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
                 throw new Error(`Fichier introuvable : ${audioInput}`);
             }
             fileData = fs.readFileSync(audioInput);
+console.log("[TRANSCRIBE] Lecture fichier :", audioInput, "taille:", fileData.length);
+if (fileData.length < 2000) {
+    console.warn("[TRANSCRIBE] Fichier très petit, la transcription risque d'être vide !");
+}
+
             console.log("[TRANSCRIBE] Lecture fichier :", audioInput, "taille:", fileData.length);
         }
 
@@ -152,6 +157,7 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
             text: waitingText,
             audioBase64: waitingAudioBase64,
             mime: "audio/mpeg",
+            clientId
             
         };
         sendToFlutter(waitingPayload, clientId);
@@ -217,6 +223,7 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
                         text: sentence,
                         audioBase64: segmentAudio,
                         mime: 'audio/mpeg',
+                        clientId
                         
                     };
                     audioSegments.push(payload);
