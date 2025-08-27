@@ -165,12 +165,25 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
         console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
     }
 
-    // 1️⃣ Transcription
-    try {
-        texteTranscrit = await transcribeWithAssembly(tempfilePath);
-    } catch (assemblyError) {
-        console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
+// 1️⃣ Transcription
+try {
+    texteTranscrit = await transcribeWithAssembly(tempfilePath);
+
+    // ⚡ Envoi transcription texte brute au client
+    if (texteTranscrit && clientId) {
+        sendToFlutter({
+            index: 0,                 // index 0 pour la transcription
+            text: texteTranscrit,
+            audioBase64: null,        // pas de son pour la transcription brute
+            mime: "text/plain",
+            clientId
+        }, clientId);
     }
+
+} catch (assemblyError) {
+    console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
+}
+
 
     // 2️⃣ Recherche Google si nécessaire
     let searchResultsSummary = '';
