@@ -8,29 +8,23 @@ const { sendToFlutter } = require('../websocket'); // adapte le chemin si néces
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
 // ------------------------
-// SerpAPI Google Search (version compatible Node.js v24)
+// SerpAPI Google Search
 // ------------------------
 console.log("[SerpAPI] Module axios prêt pour requêtes SerpAPI");
 
-// ------------------------
-// Fonction pour rechercher sur Google via SerpAPI
-// ------------------------
 async function googleSearch(query) {
     console.log("[SerpAPI] Recherche pour :", query);
     try {
         const response = await axios.get('https://serpapi.com/search', {
             params: {
                 q: query,
-                hl: 'fr', // langue
-                gl: 'fr', // localisation
+                hl: 'fr',
+                gl: 'fr',
                 api_key: process.env.SERPAPI_API_KEY
             }
         });
-        if (!response.data) {
-            console.error("[SerpAPI] Pas de données reçues");
-            throw new Error("Aucune donnée reçue de SerpAPI");
-        }
-        console.log("[SerpAPI] Résultats reçus, nombre approx. :", response.data.organic_results?.length || 0);
+        if (!response.data) throw new Error("Aucune donnée reçue de SerpAPI");
+        console.log("[SerpAPI] Résultats reçus :", response.data.organic_results?.length || 0);
         return response.data;
     } catch (err) {
         console.error("[SerpAPI] Erreur lors de la recherche :", err.message);
@@ -53,7 +47,7 @@ async function generateGoogleTTSMP3(text) {
                 audioConfig: { audioEncoding: "MP3" }
             }
         );
-        const base64 = response.data.audioContent; // MP3 en base64
+        const base64 = response.data.audioContent;
         console.log("[Google TTS] MP3 Base64 length:", base64?.length || 0);
         return base64;
     } catch (error) {
@@ -92,18 +86,11 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
         const transcriptId = transcriptResponse.data.id;
         console.log("[AssemblyAI] ID transcription :", transcriptId);
         const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
-        // Polling pour récupérer la transcription complète
         while (true) {
             const result = await axios.get(pollingEndpoint, { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } });
-            if (result.data.status === 'completed') {
-                console.log("[AssemblyAI] Transcription terminée :", result.data.text);
-                return result.data.text;
-            } else if (result.data.status === 'error') {
-                throw new Error(result.data.error);
-            } else {
-                console.log("[AssemblyAI] Transcription en cours...");
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
+            if (result.data.status === 'completed') return result.data.text;
+            else if (result.data.status === 'error') throw new Error(result.data.error);
+            else await new Promise(resolve => setTimeout(resolve, 3000));
         }
     } catch (err) {
         console.error("[AssemblyAI] Erreur transcription :", err.message);
@@ -124,29 +111,26 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
     let texteTranscrit = "";
     let gptResponse = "";
-    let audioBase64 = null;
-    const { getRandomWaitingMessage } = require('../utils/waitingMessages'); // <-- Ajout import
+    const { getRandomWaitingMessage } = require('../utils/waitingMessages');
 
     console.log("[ProcessAudio] Début traitement :", tempfilePath);
 
-// --- 0️⃣ Envoyer message d'attente aléatoire immédiatement avec deviceId ---
-try {
-    const waitingText = getRandomWaitingMessage();
-    console.log("[ProcessAudio] Message d'attente choisi :", waitingText);
-    const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
-    const waitingPayload = {
-        index: -1, // index négatif pour indiquer message d'attente
-        text: "", // on n'envoie pas le texte
-        audioBase64: waitingAudioBase64,
-        mime: "audio/mpeg",
-        deviceId: fileOrBase64.deviceId || null // <-- IMPORTANT: deviceId du client
-    };
-    sendToFlutter(waitingPayload, waitingPayload.deviceId);
-    console.log("[ProcessAudio] Message d'attente envoyé via WebSocket ciblé");
-} catch (waitingError) {
-    console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
-}
-
+    // --- 0️⃣ Message d'attente ---
+    try {
+        const waitingText = getRandomWaitingMessage();
+        const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
+        const waitingPayload = {
+            index: -1,
+            text: "",
+            audioBase64: waitingAudioBase64,
+            mime: "audio/mpeg",
+            clientId: fileOrBase64.clientId || null
+        };
+        sendToFlutter(waitingPayload, waitingPayload.clientId);
+        console.log("[ProcessAudio] Message d'attente envoyé via WebSocket ciblé");
+    } catch (waitingError) {
+        console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
+    }
 
     // 1️⃣ Transcription
     try {
@@ -159,7 +143,7 @@ try {
     // 2️⃣ Vérifier si une recherche Google est nécessaire
     let searchResultsSummary = '';
     try {
-        const checkSearchPrompt = `${promptTTSVocal} Dis-moi simplement : Est-ce que cette question est une question technique ou contient un code de défaut machine équipement ? Réponds uniquement par OUI ou NON ? Répond uniquement par OUI ou NON. Question : ${texteTranscrit} ;`;
+        const checkSearchPrompt = `${promptTTSVocal} Dis-moi simplement : Est-ce que cette question est une question technique ou contient un code de défaut machine équipement ? Réponds uniquement par OUI ou NON. Question : ${texteTranscrit}`;
         const checkCompletion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: "user", content: checkSearchPrompt }],
@@ -179,9 +163,11 @@ try {
         console.error("[ProcessAudio] Erreur vérification/SerpAPI :", err.message);
     }
 
-    // 3️⃣ GPT avec ou sans enrichissement Google
+    // 3️⃣ GPT
     try {
-        const enrichedPrompt = searchResultsSummary ? `${promptTTSVocal}\n\nVoici des informations Google pertinentes pour compléter la réponse :\n${searchResultsSummary}\n\nQuestion: ${texteTranscrit}` : `${promptTTSVocal}\n\nQuestion: ${texteTranscrit}`;
+        const enrichedPrompt = searchResultsSummary
+            ? `${promptTTSVocal}\n\nVoici des informations Google pertinentes pour compléter la réponse :\n${searchResultsSummary}\n\nQuestion: ${texteTranscrit}`
+            : `${promptTTSVocal}\n\nQuestion: ${texteTranscrit}`;
         const completion = await openai.chat.completions.create({
             model: "gpt-5-chat-latest",
             messages: [
@@ -196,44 +182,43 @@ try {
         gptResponse = "";
     }
 
-    // 3️⃣ TTS - SEGMENTATION PHRASE
-    const audioSegments = []; // Tableau pour stocker chaque segment audio Base64
+    // 4️⃣ TTS - Segmentation phrase
+    const audioSegments = [];
     if (gptResponse) {
         try {
-            // 1️⃣ Découper le texte GPT en phrases
             const sentences = gptResponse
-                .split(/(?<=[.!?])\s+/) // Regex pour couper sur . ! ? suivi d'espace
+                .split(/(?<=[.!?])\s+/)
                 .map(s => s.trim())
                 .filter(s => s.length > 0);
             console.log("[ProcessAudio] GPT découpé en phrases :", sentences);
 
-            // 2️⃣ Générer TTS pour chaque phrase et envoyer directement à Flutter via service WS
             for (let i = 0; i < sentences.length; i++) {
                 const sentence = sentences[i];
                 console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
                 const segmentAudio = await generateGoogleTTSMP3(sentence);
                 if (segmentAudio) {
-                    const payload = { index: i, text: sentence, audioBase64: segmentAudio, mime: 'audio/mpeg', deviceId: fileOrBase64.deviceId || null };
+                    const payload = {
+                        index: i,
+                        text: sentence,
+                        audioBase64: segmentAudio,
+                        mime: 'audio/mpeg',
+                        clientId: fileOrBase64.clientId
+                    };
                     audioSegments.push(payload);
-                    console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
-// --- Envoi conditionnel avec deviceId ---
-if (!payload.deviceId) {
-    console.warn("[ProcessAudio] ⚠️ Aucun deviceId fourni, envoi à tous les clients");
-}
+                    if (!payload.clientId) {
+                        console.warn("[ProcessAudio] ⚠️ Aucun clientId fourni, envoi à tous les clients");
+                    }
 
-// On envoie uniquement au client correspondant à deviceId
-const wsSent = sendToFlutter(payload, payload.deviceId); // targetDeviceId = payload.deviceId
-if (!wsSent) {
-    // Pas de client WS correspondant, envoi direct via HTTP
-    try {
-        await axios.post('https://k2s.onrender.com/send-audio', payload);
-        console.log(`[ProcessAudio] Phrase ${i+1} envoyée via HTTP`);
-    } catch (httpError) {
-        console.error(`[ProcessAudio] Erreur envoi HTTP phrase ${i+1} :`, httpError.message);
-    }
-}
-
+                    const wsSent = sendToFlutter(payload, payload.clientId);
+                    if (!wsSent) {
+                        try {
+                            await axios.post('https://k2s.onrender.com/send-audio', payload);
+                            console.log(`[ProcessAudio] Phrase ${i+1} envoyée via HTTP`);
+                        } catch (httpError) {
+                            console.error(`[ProcessAudio] Erreur envoi HTTP phrase ${i+1} :`, httpError.message);
+                        }
+                    }
                 } else {
                     console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
                 }
@@ -251,7 +236,6 @@ if (!wsSent) {
         console.error("[ProcessAudio] Erreur suppression fichier :", fsError.message);
     }
 
-    // On remplace audioBase64 par audioSegments pour l'envoi à Flutter
     return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
 
