@@ -28,14 +28,15 @@ wss.on('connection', (ws) => {
     try {
       const data = JSON.parse(message);
 
-      // Si c'est le premier message avec clientId
-      if (data.clientId && !clientId) {
-        clientId = data.clientId;
-        ws.clientId = clientId;
-        clients.set(clientId, { ws, canSend: true });
-        console.log(`[WebSocket] Client connecté : ${clientId}`);
-        return;
-      }
+// Si c'est le premier message avec deviceId
+if (data.deviceId && !clientId) {
+  clientId = data.deviceId;      // Prendre deviceId comme identifiant client
+  ws.clientId = clientId;
+  clients.set(clientId, { ws, canSend: true });
+  console.log(`[WebSocket] Client connecté : ${clientId}`);
+  return; // Ne pas traiter ce message comme un message normal
+}
+
 
       // Ici tu peux traiter les messages normalement
       console.log(`[WebSocket] Message reçu de client ${clientId || "non identifié"} :`, message.toString());
