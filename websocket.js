@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
-// const { v4: uuidv4 } = require('uuid'); // inutile ici, on s'appuie sur deviceId côté client
 const fs = require('fs');
 const path = require('path');
+const { processAudioAndReturnJSON } = require('./processAudio'); // adapter le chemin
 
 const clients = new Map(); // Map<clientId, { ws }>
 
@@ -31,51 +31,41 @@ setInterval(() => {
 wss.on('connection', (ws) => {
   let clientId = null;
 
-ws.on('message', async (message) => {
-  let data;
-  try {
-    data = JSON.parse(message);
-  } catch (e) {
-    console.log('[WebSocket] Erreur parsing message :', e.message);
-    return;
-  }
-
-  // Si le message contient audio et clientId, on l'associe immédiatement
-  if (data.audioBase64 && data.clientId && !clientId) {
-    clientId = String(data.clientId);
-    ws.clientId = clientId;
-    clients.set(clientId, { ws });
-    console.log(`[WebSocket] Client connecté via audio : ${clientId}`);
-  }
-
-  // Premier message: association deviceId -> clientId (fallback)
-  if (data.deviceId && !clientId) {
-    clientId = String(data.deviceId);
-    ws.clientId = clientId;
-    clients.set(clientId, { ws });
-    console.log(`[WebSocket] Client connecté : ${clientId}`);
-  }
-
-  // Traiter audio seulement si clientId défini
-  if (data.audioBase64) {
-    if (!clientId) {
-      console.warn('[WebSocket] Audio reçu mais clientId manquant, envoi annulé !');
+  ws.on('message', async (message) => {
+    let data;
+    try {
+      data = JSON.parse(message);
+    } catch (e) {
+      console.log('[WebSocket] Erreur parsing message :', e.message);
       return;
     }
-    try {
-      console.log(`[WebSocket] Audio reçu de ${clientId}, taille base64: ${data.audioBase64.length}`);
-      // Appel processAudioAndReturnJSON avec le clientId
-      await processAudioAndReturnJSON(data.audioBase64, clientId, true);
-    } catch (err) {
-      console.error('[WebSocket] Erreur traitement audio pour', clientId, err.message);
+
+    // Association clientId obligatoire dès le premier message contenant audio
+    if (!clientId && data.clientId) {
+      clientId = String(data.clientId);
+      ws.clientId = clientId;
+      clients.set(clientId, { ws });
+      console.log(`[WebSocket] Client connecté : ${clientId}`);
     }
-  }
-});
 
-  // Traiter d'autres messages applicatifs si besoin
-  console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
-});
+    // Si audio reçu sans clientId défini, on bloque
+    if (data.audioBase64) {
+      if (!clientId) {
+        console.warn('[WebSocket] Audio reçu mais clientId manquant, envoi annulé !');
+        return;
+      }
 
+      try {
+        console.log(`[WebSocket] Audio reçu de ${clientId}, taille base64: ${data.audioBase64.length}`);
+        await processAudioAndReturnJSON(data.audioBase64, clientId, true);
+      } catch (err) {
+        console.error('[WebSocket] Erreur traitement audio pour', clientId, err.message);
+      }
+    }
+
+    // Traiter d'autres messages applicatifs si besoin
+    console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
+  });
 
   // Citation aléatoire toutes les 15s, si dispo
   const interval = setInterval(() => {
@@ -105,9 +95,8 @@ ws.on('message', async (message) => {
 
 /**
  * Envoie un message UNIQUEMENT au client ciblé.
- * - targetClientId est OBLIGATOIRE (plus de broadcast implicite).
+ * - targetClientId est OBLIGATOIRE.
  * - payload NE DOIT PAS contenir clientId (routage via paramètre).
- * Retourne true si envoyé, false sinon.
  */
 function sendToFlutter(payload, targetClientId) {
   if (!targetClientId) {
@@ -123,7 +112,6 @@ function sendToFlutter(payload, targetClientId) {
 
   try {
     client.ws.send(JSON.stringify(payload));
-    // Logs courts pour éviter de spammer avec de longues chaînes audioBase64
     const shortText = typeof payload.text === 'string' ? payload.text.slice(0, 80) : '';
     console.log(`[WebSocket] -> ${targetClientId} | index=${payload.index} | text="${shortText}"`);
     return true;
