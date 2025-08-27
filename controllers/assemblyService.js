@@ -142,34 +142,39 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
     let gptResponse = "";
     const audioSegments = [];
 
-    // --- 0️⃣ Message d'attente ---
-    try {
-        const waitingText = getRandomWaitingMessage();
-        const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
-
-        console.log("⏳ Message d'attente :", waitingText);
-        console.log("🔊 Audio d'attente (base64) longueur :", waitingAudioBase64?.length || 0);
-
-        const waitingPayload = {
-            index: -1,
-            text: waitingText,
-            audioBase64: waitingAudioBase64,
-            mime: "audio/mpeg"
-        };
-
-        sendToFlutter(waitingPayload, clientId);
-    } catch (waitingError) {
-        console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
+// --- 0️⃣ Message d'attente ---
+try {
+    if (!clientId) {
+        console.warn("[ProcessAudio] clientId manquant, blocage message d'attente !");
+        return { transcription: "", gptResponse: "", audioSegments: [] };
     }
+
+    const waitingText = getRandomWaitingMessage();
+    const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
+
+    const waitingPayload = {
+        index: -1,
+        text: waitingText,
+        audioBase64: waitingAudioBase64,
+        mime: "audio/mpeg",
+        clientId  // ajout explicite pour garder le lien
+    };
+
+    sendToFlutter(waitingPayload, clientId);
+} catch (waitingError) {
+    console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
+}
+
 
     // 1️⃣ Transcription
     try {
         texteTranscrit = await transcribeWithAssembly(tempfilePath);
 
-        if (!clientId) {
-            console.warn("[ProcessAudio] clientId manquant, envoi annulé !");
-            return { transcription: texteTranscrit || "", gptResponse: "", audioSegments: [] };
-        }
+if (!clientId) {
+    console.warn("[ProcessAudio] clientId manquant, envoi annulé !");
+    return { transcription: texteTranscrit || "", gptResponse: "", audioSegments: [] };
+}
+
 
         // ⚡ Envoi transcription texte brute au client
         sendToFlutter({
@@ -177,6 +182,7 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
             text: texteTranscrit || "[transcription vide]",
             audioBase64: null,
             mime: "text/plain"
+            clientId
         }, clientId);
 
         console.log("✅ Transcription AssemblyAI :", texteTranscrit ? texteTranscrit.slice(0,100) : "[vide]");
