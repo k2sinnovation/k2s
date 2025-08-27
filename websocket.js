@@ -73,7 +73,6 @@ wss.on('connection', (ws) => {
     console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
   });
 
-
   // Citation aléatoire toutes les 15s
   const interval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
@@ -98,12 +97,9 @@ wss.on('connection', (ws) => {
   ws.on('pong', (data) => {
     console.log(`[WebSocket] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
   });
+}); // ✅ Fermeture correcte de wss.on('connection')
 
-/**
- * Envoie un message UNIQUEMENT au device ciblé.
- * - targetDeviceId est OBLIGATOIRE.
- * - payload NE DOIT PAS contenir deviceId (routage via paramètre).
- */
+// Envoie un message UNIQUEMENT au device ciblé.
 function sendToFlutter(payload, targetDeviceId) {
   if (!targetDeviceId) {
     console.warn('[WebSocket] Envoi bloqué : deviceId manquant !');
