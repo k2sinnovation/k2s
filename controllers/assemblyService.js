@@ -131,7 +131,7 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
 // ------------------------
 // Processus complet : Audio → AssemblyAI → GPT → TTS
 // ------------------------
-async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64 = false) {
+async function processAudioAndReturnJSON(fileOrBase64, deviceId = null, isBase64 = false) {
     let tempfilePath = fileOrBase64;
     if (isBase64) {
         tempfilePath = `./temp_${Date.now()}.mp3`;
@@ -144,8 +144,8 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
 
 // --- 0️⃣ Message d'attente ---
 try {
-    if (!clientId) {
-        console.warn("[ProcessAudio] clientId manquant, blocage message d'attente !");
+    if (!deviceId) {
+        console.warn("[ProcessAudio] deviceId manquant, blocage message d'attente !");
         return { transcription: "", gptResponse: "", audioSegments: [] };
     }
 
@@ -157,10 +157,10 @@ try {
         text: waitingText,
         audioBase64: waitingAudioBase64,
         mime: "audio/mpeg",
-        clientId  // ajout explicite pour garder le lien
+        deviceId  // ajout explicite pour garder le lien
     };
 
-    sendToFlutter(waitingPayload, clientId);
+    sendToFlutter(waitingPayload, deviceId);
 } catch (waitingError) {
     console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
 }
@@ -170,8 +170,8 @@ try {
     try {
         texteTranscrit = await transcribeWithAssembly(tempfilePath);
 
-if (!clientId) {
-    console.warn("[ProcessAudio] clientId manquant, envoi annulé !");
+if (!deviceId) {
+    console.warn("[ProcessAudio] deviceId manquant, envoi annulé !");
     return { transcription: texteTranscrit || "", gptResponse: "", audioSegments: [] };
 }
 
@@ -182,8 +182,8 @@ sendToFlutter({
     text: texteTranscrit || "[transcription vide]",
     audioBase64: null,
     mime: "text/plain",
-    clientId
-}, clientId);
+    deviceId
+}, deviceId);
 
 
 
@@ -248,11 +248,11 @@ sendToFlutter({
                     text: sentences[i],
                     audioBase64: segmentAudio,
                     mime: 'audio/mpeg',
-                    clientId
+                    deviceId
                 };
 
                 audioSegments.push(payload);
-                sendToFlutter(payload, clientId);
+                sendToFlutter(payload, deviceId);
             }
         } catch (ttsError) {
             console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
