@@ -28,48 +28,50 @@ setInterval(() => {
 }, 15000);
 
 // Connexion
-ws.on('message', async (message) => {
-  let data;
-  try {
-    data = JSON.parse(message);
-  } catch (e) {
-    console.log('[WebSocket] Erreur parsing message :', e.message);
-    return;
-  }
+wss.on('connection', (ws) => {
+  let deviceId = null; // ⚠️ Déclaré ici
 
-  // Toujours s'assurer que deviceId est défini
-  if (!deviceId && data.deviceId) {
-    deviceId = String(data.deviceId);
-    ws.deviceId = deviceId;
-    clients.set(deviceId, { ws });
-    console.log(`[WebSocket] Device connecté : ${deviceId}`);
-  }
+  ws.on('message', async (message) => {
+    let data;
+    try {
+      data = JSON.parse(message);
+    } catch (e) {
+      console.log('[WebSocket] Erreur parsing message :', e.message);
+      return;
+    }
 
-  // Si audio reçu
-  if (data.audioBase64) {
-    // 🔹 S'il n'était pas défini, essayer de le récupérer à nouveau
+    // Toujours s'assurer que deviceId est défini
     if (!deviceId && data.deviceId) {
       deviceId = String(data.deviceId);
       ws.deviceId = deviceId;
       clients.set(deviceId, { ws });
-      console.log(`[WebSocket] Device connecté tardivement : ${deviceId}`);
+      console.log(`[WebSocket] Device connecté : ${deviceId}`);
     }
 
-    if (!deviceId) {
-      console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
-      return;
+    // Si audio reçu
+    if (data.audioBase64) {
+      if (!deviceId && data.deviceId) {
+        deviceId = String(data.deviceId);
+        ws.deviceId = deviceId;
+        clients.set(deviceId, { ws });
+        console.log(`[WebSocket] Device connecté tardivement : ${deviceId}`);
+      }
+
+      if (!deviceId) {
+        console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
+        return;
+      }
+
+      try {
+        console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
+        await processAudioAndReturnJSON(data.audioBase64, deviceId, true); // ✅ Passer deviceId
+      } catch (err) {
+        console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
+      }
     }
 
-    try {
-      console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
-      await processAudioAndReturnJSON(data.audioBase64, deviceId, true); // ✅ Passer deviceId
-    } catch (err) {
-      console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
-    }
-  }
-
-  console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
-});
+    console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
+  });
 
 
   // Citation aléatoire toutes les 15s
