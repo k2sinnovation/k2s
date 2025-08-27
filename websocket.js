@@ -3,13 +3,12 @@ const fs = require('fs');
 const path = require('path');
 const { processAudioAndReturnJSON } = require('./controllers/assemblyService');
 
-
-const clients = new Map(); // Map<clientId, { ws }>
+const clients = new Map(); // Map<deviceId, { ws }>
 
 // WS server
 const wss = new WebSocket.Server({ noServer: true });
 
-// Lire les citations (try/catch pour éviter un crash si le fichier manque)
+// Lire les citations
 let quotes = [];
 try {
   const raw = fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8');
@@ -21,7 +20,7 @@ try {
 
 // Ping régulier
 setInterval(() => {
-  clients.forEach(({ ws }, clientId) => {
+  clients.forEach(({ ws }, deviceId) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.ping('keepalive');
     }
@@ -30,7 +29,7 @@ setInterval(() => {
 
 // Connexion
 wss.on('connection', (ws) => {
-  let clientId = null;
+  let deviceId = null;
 
   ws.on('message', async (message) => {
     let data;
@@ -41,90 +40,83 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // Association clientId obligatoire dès le premier message contenant audio
-// ⚡ Association clientId uniquement via Flutter
-if (!clientId) {
-  if (data.clientId) {
-    clientId = String(data.clientId);
-    ws.clientId = clientId;
-    clients.set(clientId, { ws });
-    console.log(`[WebSocket] Client connecté via Flutter : ${clientId}`);
-  } else {
-    console.warn('[WebSocket] Aucun clientId reçu depuis Flutter pour cette connexion');
-  }
-}
+    // Association deviceId obligatoire dès le premier message
+    if (!deviceId && data.deviceId) {
+      deviceId = String(data.deviceId);
+      ws.deviceId = deviceId;
+      clients.set(deviceId, { ws });
+      console.log(`[WebSocket] Device connecté : ${deviceId}`);
+    }
 
-// ⚡ Traitement audio uniquement si clientId est présent
-if (data.audioBase64) {
-  if (!clientId) {
-    console.warn('[WebSocket] Audio reçu mais clientId Flutter manquant, envoi annulé !');
-    return;
-  }
+    // Si audio reçu sans deviceId défini, on bloque
+    if (data.audioBase64) {
+      if (!deviceId) {
+        console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
+        return;
+      }
 
-  try {
-    console.log(`[WebSocket] Audio reçu de Flutter clientId=${clientId}, taille base64: ${data.audioBase64.length}`);
-    const result = await processAudioAndReturnJSON(data.audioBase64, clientId, true);
-    console.log(`[WebSocket] Audio traité pour clientId=${clientId}, transcription length=${result.transcription?.length || 0}`);
-  } catch (err) {
-    console.error(`[WebSocket] Erreur traitement audio pour clientId=${clientId}`, err.message);
-  }
-}
-
+      try {
+        console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
+        await processAudioAndReturnJSON(data.audioBase64, deviceId, true);
+      } catch (err) {
+        console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
+      }
+    }
 
     // Traiter d'autres messages applicatifs si besoin
-    console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
+    console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
   });
 
-  // Citation aléatoire toutes les 15s, si dispo
+  // Citation aléatoire toutes les 15s
   const interval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN && clientId && quotes.length > 0) {
+    if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
       const randomIndex = Math.floor(Math.random() * quotes.length);
       const payload = { quote: quotes[randomIndex].quote };
       try {
         ws.send(JSON.stringify(payload));
       } catch (e) {
-        console.warn('[WebSocket] Envoi citation échoué pour', clientId, e.message);
+        console.warn('[WebSocket] Envoi citation échoué pour', deviceId, e.message);
       }
     }
   }, 15000);
 
   ws.on('close', () => {
     clearInterval(interval);
-    if (clientId) {
-      clients.delete(clientId);
-      console.log(`[WebSocket] Client déconnecté : ${clientId}`);
+    if (deviceId) {
+      clients.delete(deviceId);
+      console.log(`[WebSocket] Device déconnecté : ${deviceId}`);
     }
   });
 
   ws.on('pong', (data) => {
-    console.log(`[WebSocket] Pong reçu de client ${clientId || 'inconnu'} :`, data.toString());
+    console.log(`[WebSocket] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
   });
 });
 
 /**
- * Envoie un message UNIQUEMENT au client ciblé.
- * - targetClientId est OBLIGATOIRE.
- * - payload NE DOIT PAS contenir clientId (routage via paramètre).
+ * Envoie un message UNIQUEMENT au device ciblé.
+ * - targetDeviceId est OBLIGATOIRE.
+ * - payload NE DOIT PAS contenir deviceId (routage via paramètre).
  */
-function sendToFlutter(payload, targetClientId) {
-  if (!targetClientId) {
-    console.warn('[WebSocket] Envoi bloqué : clientId manquant !');
+function sendToFlutter(payload, targetDeviceId) {
+  if (!targetDeviceId) {
+    console.warn('[WebSocket] Envoi bloqué : deviceId manquant !');
     return false;
   }
 
-  const client = clients.get(String(targetClientId));
+  const client = clients.get(String(targetDeviceId));
   if (!client || client.ws.readyState !== WebSocket.OPEN) {
-    console.warn('[WebSocket] Client introuvable ou socket fermé :', targetClientId);
+    console.warn('[WebSocket] Device introuvable ou socket fermé :', targetDeviceId);
     return false;
   }
 
   try {
     client.ws.send(JSON.stringify(payload));
     const shortText = typeof payload.text === 'string' ? payload.text.slice(0, 80) : '';
-    console.log(`[WebSocket] -> ${targetClientId} | index=${payload.index} | text="${shortText}"`);
+    console.log(`[WebSocket] -> ${targetDeviceId} | index=${payload.index} | text="${shortText}"`);
     return true;
   } catch (e) {
-    console.warn('[WebSocket] Échec envoi à', targetClientId, e.message);
+    console.warn('[WebSocket] Échec envoi à', targetDeviceId, e.message);
     return false;
   }
 }
