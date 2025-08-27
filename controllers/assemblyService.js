@@ -246,7 +246,7 @@ sendToFlutter({
                     index: i,
                     text: sentences[i],
                     audioBase64: segmentAudio,
-                    mime: 'audio/mpeg'
+                    mime: 'audio/mpeg',
                     clientId
                 };
 
