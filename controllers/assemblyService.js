@@ -152,7 +152,7 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
             text: waitingText,
             audioBase64: waitingAudioBase64,
             mime: "audio/mpeg",
-            clientId
+            
         };
         sendToFlutter(waitingPayload, clientId);
     } catch (waitingError) {
@@ -217,7 +217,7 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
                         text: sentence,
                         audioBase64: segmentAudio,
                         mime: 'audio/mpeg',
-                        clientId
+                        
                     };
                     audioSegments.push(payload);
                     sendToFlutter(payload, clientId);
