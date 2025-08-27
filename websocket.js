@@ -1,19 +1,26 @@
 const WebSocket = require('ws');
-const { v4: uuidv4 } = require('uuid');
+// const { v4: uuidv4 } = require('uuid'); // inutile ici, on s'appuie sur deviceId côté client
 const fs = require('fs');
 const path = require('path');
 
-const clients = new Map(); // clientId -> { ws, canSend }
+const clients = new Map(); // Map<clientId, { ws }>
 
 // WS server
 const wss = new WebSocket.Server({ noServer: true });
 
-// Lire les citations
-const quotes = JSON.parse(fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8'));
+// Lire les citations (try/catch pour éviter un crash si le fichier manque)
+let quotes = [];
+try {
+  const raw = fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8');
+  quotes = JSON.parse(raw);
+} catch (e) {
+  console.warn('[WebSocket] Impossible de charger les citations :', e.message);
+  quotes = [];
+}
 
 // Ping régulier
 setInterval(() => {
-  clients.forEach(({ ws, canSend }, clientId) => {
+  clients.forEach(({ ws }, clientId) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.ping('keepalive');
     }
@@ -25,58 +32,81 @@ wss.on('connection', (ws) => {
   let clientId = null;
 
   ws.on('message', (message) => {
+    let data;
     try {
-      const data = JSON.parse(message);
-
-// Si c'est le premier message avec deviceId
-if (data.deviceId && !clientId) {
-  clientId = data.deviceId;      // Prendre deviceId comme identifiant client
-  ws.clientId = clientId;
-  clients.set(clientId, { ws, canSend: true });
-  console.log(`[WebSocket] Client connecté : ${clientId}`);
-  return; // Ne pas traiter ce message comme un message normal
-}
-
-
-      // Ici tu peux traiter les messages normalement
-      console.log(`[WebSocket] Message reçu de client ${clientId || "non identifié"} :`, message.toString());
+      data = JSON.parse(message);
     } catch (e) {
-      console.log(`[WebSocket] Erreur parsing message :`, e);
+      console.log('[WebSocket] Erreur parsing message :', e.message);
+      return;
     }
+
+    // Premier message: association deviceId -> clientId
+    if (data.deviceId && !clientId) {
+      clientId = String(data.deviceId);
+      ws.clientId = clientId;
+      clients.set(clientId, { ws });
+      console.log(`[WebSocket] Client connecté : ${clientId}`);
+      return;
+    }
+
+    // Traiter d'autres messages applicatifs si besoin
+    console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
   });
 
-  // Citation aléatoire toutes les 15s
+  // Citation aléatoire toutes les 15s, si dispo
   const interval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN && clientId) {
+    if (ws.readyState === WebSocket.OPEN && clientId && quotes.length > 0) {
       const randomIndex = Math.floor(Math.random() * quotes.length);
-      ws.send(JSON.stringify({ quote: quotes[randomIndex].quote }));
+      const payload = { quote: quotes[randomIndex].quote };
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch (e) {
+        console.warn('[WebSocket] Envoi citation échoué pour', clientId, e.message);
+      }
     }
   }, 15000);
 
   ws.on('close', () => {
     clearInterval(interval);
-    if (clientId) clients.delete(clientId);
-    console.log(`[WebSocket] Client déconnecté : ${clientId}`);
+    if (clientId) {
+      clients.delete(clientId);
+      console.log(`[WebSocket] Client déconnecté : ${clientId}`);
+    }
   });
 
   ws.on('pong', (data) => {
-    console.log(`[WebSocket] Pong reçu de client ${clientId} :`, data.toString());
+    console.log(`[WebSocket] Pong reçu de client ${clientId || 'inconnu'} :`, data.toString());
   });
 });
 
-// Fonction pour envoyer des messages à Flutter ou autre client
-function sendToFlutter(payload, targetClientId = null) {
-  const message = JSON.stringify(payload);
-  let sent = false;
-  clients.forEach(({ ws }, clientId) => {
-    if ((targetClientId === null || clientId === targetClientId) && ws.readyState === WebSocket.OPEN) {
-      ws.send(message);
-      console.log(`[WebSocket] Message envoyé au client ${clientId} :`, payload.index, payload.text);
-      sent = true;
-    }
-  });
-  if (!sent) console.warn("[WebSocket] Aucun client trouvé pour l'envoi :", targetClientId);
-  return sent;
+/**
+ * Envoie un message UNIQUEMENT au client ciblé.
+ * - targetClientId est OBLIGATOIRE (plus de broadcast implicite).
+ * - payload NE DOIT PAS contenir clientId (routage via paramètre).
+ * Retourne true si envoyé, false sinon.
+ */
+function sendToFlutter(payload, targetClientId) {
+  if (!targetClientId) {
+    console.warn('[WebSocket] Envoi bloqué : clientId manquant !');
+    return false;
+  }
+
+  const client = clients.get(String(targetClientId));
+  if (!client || client.ws.readyState !== WebSocket.OPEN) {
+    console.warn('[WebSocket] Client introuvable ou socket fermé :', targetClientId);
+    return false;
+  }
+
+  try {
+    client.ws.send(JSON.stringify(payload));
+    // Logs courts pour éviter de spammer avec de longues chaînes audioBase64
+    const shortText = typeof payload.text === 'string' ? payload.text.slice(0, 80) : '';
+    console.log(`[WebSocket] -> ${targetClientId} | index=${payload.index} | text="${shortText}"`);
+    return true;
+  } catch (e) {
+    console.warn('[WebSocket] Échec envoi à', targetClientId, e.message);
+    return false;
+  }
 }
 
 // Attacher WS au serveur HTTP
