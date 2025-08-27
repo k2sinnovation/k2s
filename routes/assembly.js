@@ -17,7 +17,16 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
     fs.renameSync(req.file.path, newPath);
     console.log("[UPLOAD] Fichier renommé :", newPath);
 
-    const result = await processAudioAndReturnJSON(newPath);
+    // ✅ Récupération du deviceId depuis le body
+    const deviceId = req.body.deviceId;
+    if (!deviceId) {
+      console.warn("[TRANSCRIBE] deviceId manquant !");
+      return res.status(400).json({ error: 'deviceId manquant' });
+    }
+    console.log("[TRANSCRIBE] Device ID reçu :", deviceId);
+
+    // ✅ Appel de processAudioAndReturnJSON avec deviceId
+    const result = await processAudioAndReturnJSON(newPath, deviceId);
     console.log("[TRANSCRIBE] Transcription obtenue :", result.transcription);
 
     res.json(result);
