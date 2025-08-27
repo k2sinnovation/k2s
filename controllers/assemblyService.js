@@ -60,13 +60,11 @@ function decodeBase64Audio(base64String) {
     return Buffer.from(base64Data, 'base64');
 }
 
-
 // ------------------------
 // Transcription AssemblyAI
 // ------------------------
 async function transcribeWithAssembly(audioInput, isBase64 = false) {
     try {
-        // Préparer fileData et logs
         let fileData;
         if (isBase64) {
             fileData = decodeBase64Audio(audioInput);
@@ -77,15 +75,13 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
                 throw new Error(`Fichier introuvable : ${audioInput}`);
             }
             fileData = fs.readFileSync(audioInput);
-console.log("[TRANSCRIBE] Lecture fichier :", audioInput, "taille:", fileData.length);
-if (fileData.length < 2000) {
-    console.warn("[TRANSCRIBE] Fichier très petit, la transcription risque d'être vide !");
-}
-
             console.log("[TRANSCRIBE] Lecture fichier :", audioInput, "taille:", fileData.length);
+            if (fileData.length < 2000) {
+                console.warn("[TRANSCRIBE] Fichier très petit, la transcription risque d'être vide !");
+            }
         }
 
-        // Upload
+        // Upload audio
         const uploadResponse = await axios.post(
             'https://api.assemblyai.com/v2/upload',
             fileData,
@@ -94,23 +90,22 @@ if (fileData.length < 2000) {
         const uploadUrl = uploadResponse.data.upload_url;
         console.log("[TRANSCRIBE] Upload réussi :", uploadUrl);
 
-        // Créer transcription — on ne force pas language_code pour laisser l'auto-detect si possible
+        // Créer transcription
         const transcriptResponse = await axios.post(
             'https://api.assemblyai.com/v2/transcript',
-            { audio_url: uploadUrl, speech_model: 'universal' }, // remove language_code to let service auto-detect
+            { audio_url: uploadUrl, speech_model: 'universal' },
             { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
         );
         const transcriptId = transcriptResponse.data.id;
         console.log("[TRANSCRIBE] ID transcription :", transcriptId);
 
-        // Polling avec timeout (ex: 2 minutes)
+        // Polling transcription
         const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
         const start = Date.now();
-        const timeoutMs = 2 * 60 * 1000; // 2 minutes
+        const timeoutMs = 2 * 60 * 1000;
 
         while (true) {
             const result = await axios.get(pollingEndpoint, { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } });
-            // log succinct (ne pas spammer)
             console.log("[TRANSCRIBE] Polling status:", result.data.status);
 
             if (result.data.status === 'completed') {
@@ -121,7 +116,7 @@ if (fileData.length < 2000) {
                 throw new Error(result.data.error || "Erreur transcription AssemblyAI");
             } else {
                 if (Date.now() - start > timeoutMs) {
-                    console.error("[TRANSCRIBE] Timeout transcription (> 2min) pour id:", transcriptId);
+                    console.error("[TRANSCRIBE] Timeout transcription (>2min) pour id:", transcriptId);
                     throw new Error("Timeout transcription AssemblyAI");
                 }
                 await new Promise(resolve => setTimeout(resolve, 3000));
@@ -132,7 +127,6 @@ if (fileData.length < 2000) {
         throw err;
     }
 }
-
 
 // ------------------------
 // Processus complet : Audio → AssemblyAI → GPT → TTS
@@ -148,52 +142,48 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
     let gptResponse = "";
     const audioSegments = [];
 
-// --- 0️⃣ Message d'attente ---
-try {
-    const waitingText = getRandomWaitingMessage();
-    const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
+    // --- 0️⃣ Message d'attente ---
+    try {
+        const waitingText = getRandomWaitingMessage();
+        const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
 
-    console.log("⏳ Message d'attente :", waitingText);        // log du texte
-    console.log("🔊 Audio d'attente (base64) longueur :", waitingAudioBase64?.length || 0); // log audio
+        console.log("⏳ Message d'attente :", waitingText);
+        console.log("🔊 Audio d'attente (base64) longueur :", waitingAudioBase64?.length || 0);
 
-    const waitingPayload = {
-        index: -1,
-        text: waitingText,
-        audioBase64: waitingAudioBase64,
-        mime: "audio/mpeg",
-        clientId
-    };
+        const waitingPayload = {
+            index: -1,
+            text: waitingText,
+            audioBase64: waitingAudioBase64,
+            mime: "audio/mpeg"
+        };
 
-    sendToFlutter(waitingPayload, clientId);
-
-} catch (waitingError) {
-    console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
-}
-
-
-// 1️⃣ Transcription
-try {
-    texteTranscrit = await transcribeWithAssembly(tempfilePath);
-
-    if (!clientId) {
-        console.warn("[ProcessAudio] clientId manquant, envoi annulé !");
-        return { transcription: texteTranscrit || "", gptResponse: "", audioSegments: [] };
+        sendToFlutter(waitingPayload, clientId);
+    } catch (waitingError) {
+        console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
     }
 
-    // ⚡ Envoi transcription texte brute au client, même si vide
-    sendToFlutter({
-        index: 0,                 // index 0 pour la transcription
-        text: texteTranscrit || "[transcription vide]",
-        audioBase64: null,        // pas de son pour la transcription brute
-        mime: "text/plain"
-    }, clientId);
+    // 1️⃣ Transcription
+    try {
+        texteTranscrit = await transcribeWithAssembly(tempfilePath);
 
-    console.log("✅ Transcription AssemblyAI :", texteTranscrit ? texteTranscrit.slice(0,100) : "[vide]");
+        if (!clientId) {
+            console.warn("[ProcessAudio] clientId manquant, envoi annulé !");
+            return { transcription: texteTranscrit || "", gptResponse: "", audioSegments: [] };
+        }
 
-} catch (assemblyError) {
-    console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
-}
+        // ⚡ Envoi transcription texte brute au client
+        sendToFlutter({
+            index: 0,
+            text: texteTranscrit || "[transcription vide]",
+            audioBase64: null,
+            mime: "text/plain"
+        }, clientId);
 
+        console.log("✅ Transcription AssemblyAI :", texteTranscrit ? texteTranscrit.slice(0,100) : "[vide]");
+
+    } catch (assemblyError) {
+        console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
+    }
 
     // 2️⃣ Recherche Google si nécessaire
     let searchResultsSummary = '';
@@ -215,52 +205,50 @@ try {
         console.error("[ProcessAudio] Erreur SerpAPI :", err.message);
     }
 
-// 3️⃣ GPT
-try {
-    const enrichedPrompt = texteTranscrit
-        ? `${promptTTSVocal}\nQuestion: ${texteTranscrit}`
-        : `${promptTTSVocal}\nQuestion: [transcription vide]`;
-
-    const completion = await openai.chat.completions.create({
-        model: "gpt-5-chat-latest",
-        messages: [
-            { role: "system", content: enrichedPrompt },
-            { role: "user", content: texteTranscrit || "[vide]" },
-        ],
-    });
-
-    gptResponse = completion.choices[0].message.content;
-    console.log("✅ Réponse GPT :", gptResponse ? gptResponse.slice(0,100) : "[vide]");
-
-} catch (gptError) {
-    console.error("[ProcessAudio] Erreur GPT :", gptError.message);
-    gptResponse = "";
-}
-
-// 4️⃣ TTS - Segmentation phrase
-if (gptResponse) {
+    // 3️⃣ GPT
     try {
-        const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+        const enrichedPrompt = searchResultsSummary
+            ? `${promptTTSVocal}\n\nVoici des informations Google pertinentes pour compléter la réponse :\n${searchResultsSummary}\n\nQuestion: ${texteTranscrit}`
+            : `${promptTTSVocal}\n\nQuestion: ${texteTranscrit}`;
 
-        for (let i = 0; i < sentences.length; i++) {
-            console.log(`🔊 Segment ${i}:`, sentences[i]);
-            const segmentAudio = await generateGoogleTTSMP3(sentences[i]);
+        const completion = await openai.chat.completions.create({
+            model: "gpt-5-chat-latest",
+            messages: [
+                { role: "system", content: enrichedPrompt },
+                { role: "user", content: texteTranscrit || "[vide]" },
+            ],
+        });
 
-            const payload = {
-                index: i,
-                text: sentences[i],
-                audioBase64: segmentAudio,
-                mime: 'audio/mpeg',
-                clientId
-            };
+        gptResponse = completion.choices[0].message.content;
+        console.log("✅ Réponse GPT :", gptResponse ? gptResponse.slice(0,100) : "[vide]");
 
-            audioSegments.push(payload);
-            sendToFlutter(payload, clientId);
-        }
-    } catch (ttsError) {
-        console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+    } catch (gptError) {
+        console.error("[ProcessAudio] Erreur GPT :", gptError.message);
+        gptResponse = "";
     }
-}
+
+    // 4️⃣ TTS - Segmentation phrase
+    if (gptResponse) {
+        try {
+            const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+            for (let i = 0; i < sentences.length; i++) {
+                console.log(`🔊 Segment ${i}:`, sentences[i]);
+                const segmentAudio = await generateGoogleTTSMP3(sentences[i]);
+
+                const payload = {
+                    index: i,
+                    text: sentences[i],
+                    audioBase64: segmentAudio,
+                    mime: 'audio/mpeg'
+                };
+
+                audioSegments.push(payload);
+                sendToFlutter(payload, clientId);
+            }
+        } catch (ttsError) {
+            console.error("[ProcessAudio] Erreur TTS segmentée :", ttsError.message);
+        }
+    }
 
     // Nettoyage fichier temporaire
     if (isBase64 && fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
@@ -271,4 +259,11 @@ if (gptResponse) {
 // ------------------------
 // Export
 // ------------------------
-module.exports = { transcribeWithAssembly, generateGoogleTTSMP3, processAudioAndReturnJSON, decodeBase64Audio, sendToFlutter, googleSearch };
+module.exports = {
+    transcribeWithAssembly,
+    generateGoogleTTSMP3,
+    processAudioAndReturnJSON,
+    decodeBase64Audio,
+    sendToFlutter,
+    googleSearch
+};
