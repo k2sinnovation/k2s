@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
-const { processAudioAndReturnJSON } = require('./assemblyService');
+const { processAudioAndReturnJSON } = require('./controllers/assemblyService');
 
 
 const clients = new Map(); // Map<clientId, { ws }>
