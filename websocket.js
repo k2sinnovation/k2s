@@ -49,19 +49,29 @@ wss.on('connection', (ws) => {
     }
 
     // Si audio reçu sans deviceId défini, on bloque
-    if (data.audioBase64) {
-      if (!deviceId) {
-        console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
-        return;
-      }
+// s'assurer que le deviceId est toujours défini avant d'appeler processAudio
+if (!deviceId && data.deviceId) {
+  deviceId = String(data.deviceId);
+  ws.deviceId = deviceId;
+  clients.set(deviceId, { ws });
+  console.log(`[WebSocket] Device connecté : ${deviceId}`);
+}
 
-      try {
-        console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
-        await processAudioAndReturnJSON(data.audioBase64, deviceId, true);
-      } catch (err) {
-        console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
-      }
-    }
+if (data.audioBase64) {
+  if (!deviceId) {
+    console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
+    return;
+  }
+
+  try {
+    console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
+    // ✅ Passer explicitement deviceId
+    await processAudioAndReturnJSON(data.audioBase64, deviceId, true);
+  } catch (err) {
+    console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
+  }
+}
+
 
     // Traiter d'autres messages applicatifs si besoin
     console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
