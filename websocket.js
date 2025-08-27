@@ -25,7 +25,7 @@ setInterval(() => {
       ws.ping('keepalive');
     }
   });
-}, 2000);
+}, 15000);
 
 // Connexion
 wss.on('connection', (ws) => {
