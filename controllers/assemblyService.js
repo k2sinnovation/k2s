@@ -174,18 +174,21 @@ try {
 // 1️⃣ Transcription
 try {
     texteTranscrit = await transcribeWithAssembly(tempfilePath);
-    console.log("✅ Transcription AssemblyAI :", texteTranscrit || "[vide]");
 
-    // ⚡ Envoi transcription texte brute au client
-    if (clientId) {
-        sendToFlutter({
-            index: 0,
-            text: texteTranscrit || "[vide]",
-            audioBase64: null,
-            mime: "text/plain",
-            clientId
-        }, clientId);
+    if (!clientId) {
+        console.warn("[ProcessAudio] clientId manquant, envoi annulé !");
+        return { transcription: texteTranscrit || "", gptResponse: "", audioSegments: [] };
     }
+
+    // ⚡ Envoi transcription texte brute au client, même si vide
+    sendToFlutter({
+        index: 0,                 // index 0 pour la transcription
+        text: texteTranscrit || "[transcription vide]",
+        audioBase64: null,        // pas de son pour la transcription brute
+        mime: "text/plain"
+    }, clientId);
+
+    console.log("✅ Transcription AssemblyAI :", texteTranscrit ? texteTranscrit.slice(0,100) : "[vide]");
 
 } catch (assemblyError) {
     console.error("[ProcessAudio] Erreur AssemblyAI :", assemblyError.message);
@@ -214,16 +217,20 @@ try {
 
 // 3️⃣ GPT
 try {
+    const enrichedPrompt = texteTranscrit
+        ? `${promptTTSVocal}\nQuestion: ${texteTranscrit}`
+        : `${promptTTSVocal}\nQuestion: [transcription vide]`;
+
     const completion = await openai.chat.completions.create({
         model: "gpt-5-chat-latest",
         messages: [
             { role: "system", content: enrichedPrompt },
-            { role: "user", content: texteTranscrit },
+            { role: "user", content: texteTranscrit || "[vide]" },
         ],
     });
 
     gptResponse = completion.choices[0].message.content;
-    console.log("💬 Réponse GPT :", gptResponse || "[vide]");
+    console.log("✅ Réponse GPT :", gptResponse ? gptResponse.slice(0,100) : "[vide]");
 
 } catch (gptError) {
     console.error("[ProcessAudio] Erreur GPT :", gptError.message);
