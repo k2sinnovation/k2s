@@ -96,7 +96,6 @@ ws.on('message', async (message) => {
   ws.on('pong', (data) => {
     console.log(`[WebSocket] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
   });
-});
 
 /**
  * Envoie un message UNIQUEMENT au device ciblé.
