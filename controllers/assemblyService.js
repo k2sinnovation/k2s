@@ -129,20 +129,24 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
 
     console.log("[ProcessAudio] Début traitement :", tempfilePath);
 
-    // --- 0️⃣ Envoyer message d'attente aléatoire immédiatement ---
-    try {
-        const waitingText = getRandomWaitingMessage();
-        console.log("[ProcessAudio] Message d'attente choisi :", waitingText);
-        const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
-        sendToFlutter({ index: -1, // index négatif pour indiquer message d'attente
-            text: "", // on n'envoie pas le texte
-            audioBase64: waitingAudioBase64,
-            mime: "audio/mpeg"
-        });
-        console.log("[ProcessAudio] Message d'attente envoyé via WebSocket");
-    } catch (waitingError) {
-        console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
-    }
+// --- 0️⃣ Envoyer message d'attente aléatoire immédiatement avec deviceId ---
+try {
+    const waitingText = getRandomWaitingMessage();
+    console.log("[ProcessAudio] Message d'attente choisi :", waitingText);
+    const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
+    const waitingPayload = {
+        index: -1, // index négatif pour indiquer message d'attente
+        text: "", // on n'envoie pas le texte
+        audioBase64: waitingAudioBase64,
+        mime: "audio/mpeg",
+        deviceId: fileOrBase64.deviceId || null // <-- IMPORTANT: deviceId du client
+    };
+    sendToFlutter(waitingPayload, waitingPayload.deviceId);
+    console.log("[ProcessAudio] Message d'attente envoyé via WebSocket ciblé");
+} catch (waitingError) {
+    console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
+}
+
 
     // 1️⃣ Transcription
     try {
@@ -209,21 +213,27 @@ async function processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
                 console.log(`[ProcessAudio] Envoi phrase ${i + 1}/${sentences.length} à TTS :`, sentence);
                 const segmentAudio = await generateGoogleTTSMP3(sentence);
                 if (segmentAudio) {
-                    const payload = { index: i, text: sentence, audioBase64: segmentAudio, mime: 'audio/mpeg' };
+                    const payload = { index: i, text: sentence, audioBase64: segmentAudio, mime: 'audio/mpeg', deviceId: fileOrBase64.deviceId || null };
                     audioSegments.push(payload);
                     console.log(`[ProcessAudio] MP3 Base64 size phrase ${i + 1}:`, segmentAudio.length);
 
-                    // --- Envoi conditionnel ---
-                    const wsSent = sendToFlutter(payload); // on renvoie true si au moins un client reçoit
-                    if (!wsSent) {
-                        // Pas de client WS, envoi direct via HTTP
-                        try {
-                            await axios.post('https://k2s.onrender.com/send-audio', payload);
-                            console.log(`[ProcessAudio] Phrase ${i+1} envoyée via HTTP`);
-                        } catch (httpError) {
-                            console.error(`[ProcessAudio] Erreur envoi HTTP phrase ${i+1} :`, httpError.message);
-                        }
-                    }
+// --- Envoi conditionnel avec deviceId ---
+if (!payload.deviceId) {
+    console.warn("[ProcessAudio] ⚠️ Aucun deviceId fourni, envoi à tous les clients");
+}
+
+// On envoie uniquement au client correspondant à deviceId
+const wsSent = sendToFlutter(payload, payload.deviceId); // targetDeviceId = payload.deviceId
+if (!wsSent) {
+    // Pas de client WS correspondant, envoi direct via HTTP
+    try {
+        await axios.post('https://k2s.onrender.com/send-audio', payload);
+        console.log(`[ProcessAudio] Phrase ${i+1} envoyée via HTTP`);
+    } catch (httpError) {
+        console.error(`[ProcessAudio] Erreur envoi HTTP phrase ${i+1} :`, httpError.message);
+    }
+}
+
                 } else {
                     console.error(`[ProcessAudio] Erreur TTS phrase ${i + 1}`);
                 }
