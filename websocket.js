@@ -23,16 +23,39 @@ setInterval(() => {
 
 // Connexion
 wss.on('connection', (ws) => {
-  const clientId = uuidv4();
+  let clientId = null; // sera défini après réception du deviceId
   const canSend = true;
-  ws.clientId = clientId;
 
-  clients.set(clientId, { ws, canSend });
-  console.log(`[WebSocket] Client connecté : ${clientId}, canSend: ${canSend}`);
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message);
+
+      // Si c'est le premier message avec deviceId, on l'utilise comme clientId
+      if (data.deviceId && !clientId) {
+        clientId = data.deviceId;
+        ws.clientId = clientId;
+        clients.set(clientId, { ws, canSend });
+        console.log(`[WebSocket] Client connecté : ${clientId}, canSend: ${canSend}`);
+        return; // Ne pas traiter plus pour ce message
+      }
+
+      console.log(`[WebSocket] Message reçu de client ${clientId || "non identifié"} :`, message.toString());
+
+      const client = clients.get(clientId);
+      if (!client?.canSend) {
+        console.log(`[WebSocket] Client ${clientId} a atteint son quota, message ignoré.`);
+        return;
+      }
+
+      // Ici tu traites les messages normalement
+    } catch (e) {
+      console.log(`[WebSocket] Erreur parsing message :`, e);
+    }
+  });
 
   // Citation aléatoire toutes les 15s
   const interval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
+    if (ws.readyState === WebSocket.OPEN && clientId) {
       const randomIndex = Math.floor(Math.random() * quotes.length);
       ws.send(JSON.stringify({ quote: quotes[randomIndex].quote }));
     }
@@ -40,35 +63,24 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     clearInterval(interval);
-    clients.delete(clientId);
+    if (clientId) clients.delete(clientId);
     console.log(`[WebSocket] Client déconnecté : ${clientId}`);
   });
 
   ws.on('pong', (data) => {
     console.log(`[WebSocket] Pong reçu de client ${clientId} :`, data.toString());
   });
-
-  ws.on('message', (message) => {
-    console.log(`[WebSocket] Message reçu de client ${clientId} :`, message.toString());
-
-    const client = clients.get(clientId);
-    if (!client.canSend) {
-      console.log(`[WebSocket] Client ${clientId} a atteint son quota, message ignoré.`);
-      return;
-    }
-
-    // Ici tu traites les messages normalement
-  });
 });
 
 // Fonction pour envoyer des messages à Flutter
-function sendToFlutter(payload) {
+function sendToFlutter(payload, targetDeviceId = null) {
   const message = JSON.stringify(payload);
   console.log("[WebSocket] Tentative d’envoi à", clients.size, "client(s) :", payload);
 
   let sent = false;
   clients.forEach(({ ws }, clientId) => {
-    if (ws.readyState === WebSocket.OPEN) {
+    // Si targetDeviceId est défini, on n'envoie qu'à ce client
+    if ((targetDeviceId === null || clientId === targetDeviceId) && ws.readyState === WebSocket.OPEN) {
       ws.send(message);
       console.log(`[WebSocket] Message envoyé au client ${clientId} :`, payload.index, payload.text);
       sent = true;
