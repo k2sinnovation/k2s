@@ -9,7 +9,7 @@ const clients = new Map(); // Map<deviceId, { ws }>
 const wss = new WebSocket.Server({ noServer: true });
 
 // Lire les citations
-let quotes = [];
+let quotes = []; 
 try {
   const raw = fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8');
   quotes = JSON.parse(raw);
