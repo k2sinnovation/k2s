@@ -66,18 +66,24 @@ const fileData = isBase64
     : fs.readFileSync(audioInput);     // lire le fichier directement
 
 // Upload vers AssemblyAI
+// Upload vers AssemblyAI
 const uploadResponse = await axios.post(
-    'https://api.assemblyai.com/v2/upload',
-    fileData, // Buffer correct
-    { headers: { authorization: process.env.ASSEMBLYAI_API_KEY, 'content-type': 'application/octet-stream' } }
+  'https://api.assemblyai.com/v2/upload',
+  fileData,
+  { headers: { authorization: process.env.ASSEMBLYAI_API_KEY, 'content-type': 'application/octet-stream' } }
 );
 
-        // Création transcription
+// ⚠️ Ici, il faut bien extraire l’URL renvoyée
+const uploadUrl = uploadResponse.data.upload_url;
+if (!uploadUrl) throw new Error("AssemblyAI n’a pas retourné d’upload_url");
+
+// Création transcription
 const transcriptResponse = await axios.post(
-    'https://api.assemblyai.com/v2/transcript',
-    { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
-    { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
+  'https://api.assemblyai.com/v2/transcript',
+  { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
+  { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
 );
+
 
 const transcriptId = transcriptResponse.data?.id;
 if (!transcriptId) throw new Error("Impossible de récupérer l'ID de transcription");
