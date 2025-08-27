@@ -148,22 +148,28 @@ async function processAudioAndReturnJSON(fileOrBase64, clientId = null, isBase64
     let gptResponse = "";
     const audioSegments = [];
 
-    // --- 0️⃣ Message d'attente ---
-    try {
-        const waitingText = getRandomWaitingMessage();
-        const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
-        const waitingPayload = {
-            index: -1,
-            text: waitingText,
-            audioBase64: waitingAudioBase64,
-            mime: "audio/mpeg",
-            clientId
-            
-        };
-        sendToFlutter(waitingPayload, clientId);
-    } catch (waitingError) {
-        console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
-    }
+// --- 0️⃣ Message d'attente ---
+try {
+    const waitingText = getRandomWaitingMessage();
+    const waitingAudioBase64 = await generateGoogleTTSMP3(waitingText);
+
+    console.log("⏳ Message d'attente :", waitingText);        // log du texte
+    console.log("🔊 Audio d'attente (base64) longueur :", waitingAudioBase64?.length || 0); // log audio
+
+    const waitingPayload = {
+        index: -1,
+        text: waitingText,
+        audioBase64: waitingAudioBase64,
+        mime: "audio/mpeg",
+        clientId
+    };
+
+    sendToFlutter(waitingPayload, clientId);
+
+} catch (waitingError) {
+    console.error("[ProcessAudio] Erreur envoi message d'attente :", waitingError.message);
+}
+
 
 // 1️⃣ Transcription
 try {
