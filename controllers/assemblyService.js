@@ -53,41 +53,81 @@ async function generateGoogleTTSMP3(text) {
 // Décodage Base64
 // ------------------------
 function decodeBase64Audio(base64String) {
-    const base64Data = base64String.replace(/^data:audio\/\w+;base64,/, '');
+    if (!base64String) return Buffer.alloc(0);
+    const base64Data = base64String.includes(',')
+        ? base64String.split(',')[1]
+        : base64String;
     return Buffer.from(base64Data, 'base64');
 }
+
 
 // ------------------------
 // Transcription AssemblyAI
 // ------------------------
 async function transcribeWithAssembly(audioInput, isBase64 = false) {
     try {
-        const fileData = isBase64 ? decodeBase64Audio(audioInput) : fs.readFileSync(audioInput);
+        // Préparer fileData et logs
+        let fileData;
+        if (isBase64) {
+            fileData = decodeBase64Audio(audioInput);
+            console.log("[TRANSCRIBE] Input is base64 - bytes:", fileData.length);
+        } else {
+            if (!fs.existsSync(audioInput)) {
+                console.error("[TRANSCRIBE] Fichier introuvable :", audioInput);
+                throw new Error(`Fichier introuvable : ${audioInput}`);
+            }
+            fileData = fs.readFileSync(audioInput);
+            console.log("[TRANSCRIBE] Lecture fichier :", audioInput, "taille:", fileData.length);
+        }
+
+        // Upload
         const uploadResponse = await axios.post(
             'https://api.assemblyai.com/v2/upload',
             fileData,
             { headers: { authorization: process.env.ASSEMBLYAI_API_KEY, 'content-type': 'application/octet-stream' } }
         );
         const uploadUrl = uploadResponse.data.upload_url;
+        console.log("[TRANSCRIBE] Upload réussi :", uploadUrl);
+
+        // Créer transcription — on ne force pas language_code pour laisser l'auto-detect si possible
         const transcriptResponse = await axios.post(
             'https://api.assemblyai.com/v2/transcript',
-            { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
+            { audio_url: uploadUrl, speech_model: 'universal' }, // remove language_code to let service auto-detect
             { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
         );
         const transcriptId = transcriptResponse.data.id;
+        console.log("[TRANSCRIBE] ID transcription :", transcriptId);
+
+        // Polling avec timeout (ex: 2 minutes)
         const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
+        const start = Date.now();
+        const timeoutMs = 2 * 60 * 1000; // 2 minutes
 
         while (true) {
             const result = await axios.get(pollingEndpoint, { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } });
-            if (result.data.status === 'completed') return result.data.text;
-            else if (result.data.status === 'error') throw new Error(result.data.error);
-            else await new Promise(resolve => setTimeout(resolve, 3000));
+            // log succinct (ne pas spammer)
+            console.log("[TRANSCRIBE] Polling status:", result.data.status);
+
+            if (result.data.status === 'completed') {
+                console.log("[TRANSCRIBE] Transcription obtenue :", String(result.data.text).slice(0, 200));
+                return result.data.text || "";
+            } else if (result.data.status === 'error') {
+                console.error("[TRANSCRIBE] Erreur AssemblyAI:", result.data.error);
+                throw new Error(result.data.error || "Erreur transcription AssemblyAI");
+            } else {
+                if (Date.now() - start > timeoutMs) {
+                    console.error("[TRANSCRIBE] Timeout transcription (> 2min) pour id:", transcriptId);
+                    throw new Error("Timeout transcription AssemblyAI");
+                }
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
         }
     } catch (err) {
-        console.error("[AssemblyAI] Erreur transcription :", err.message);
+        console.error("[AssemblyAI] Erreur transcription :", err && err.message ? err.message : err);
         throw err;
     }
 }
+
 
 // ------------------------
 // Processus complet : Audio → AssemblyAI → GPT → TTS
