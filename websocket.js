@@ -42,27 +42,34 @@ wss.on('connection', (ws) => {
     }
 
     // Association clientId obligatoire dès le premier message contenant audio
-    if (!clientId && data.clientId) {
-      clientId = String(data.clientId);
-      ws.clientId = clientId;
-      clients.set(clientId, { ws });
-      console.log(`[WebSocket] Client connecté : ${clientId}`);
-    }
+// ⚡ Association clientId uniquement via Flutter
+if (!clientId) {
+  if (data.clientId) {
+    clientId = String(data.clientId);
+    ws.clientId = clientId;
+    clients.set(clientId, { ws });
+    console.log(`[WebSocket] Client connecté via Flutter : ${clientId}`);
+  } else {
+    console.warn('[WebSocket] Aucun clientId reçu depuis Flutter pour cette connexion');
+  }
+}
 
-    // Si audio reçu sans clientId défini, on bloque
-    if (data.audioBase64) {
-      if (!clientId) {
-        console.warn('[WebSocket] Audio reçu mais clientId manquant, envoi annulé !');
-        return;
-      }
+// ⚡ Traitement audio uniquement si clientId est présent
+if (data.audioBase64) {
+  if (!clientId) {
+    console.warn('[WebSocket] Audio reçu mais clientId Flutter manquant, envoi annulé !');
+    return;
+  }
 
-      try {
-        console.log(`[WebSocket] Audio reçu de ${clientId}, taille base64: ${data.audioBase64.length}`);
-        await processAudioAndReturnJSON(data.audioBase64, clientId, true);
-      } catch (err) {
-        console.error('[WebSocket] Erreur traitement audio pour', clientId, err.message);
-      }
-    }
+  try {
+    console.log(`[WebSocket] Audio reçu de Flutter clientId=${clientId}, taille base64: ${data.audioBase64.length}`);
+    const result = await processAudioAndReturnJSON(data.audioBase64, clientId, true);
+    console.log(`[WebSocket] Audio traité pour clientId=${clientId}, transcription length=${result.transcription?.length || 0}`);
+  } catch (err) {
+    console.error(`[WebSocket] Erreur traitement audio pour clientId=${clientId}`, err.message);
+  }
+}
+
 
     // Traiter d'autres messages applicatifs si besoin
     console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
