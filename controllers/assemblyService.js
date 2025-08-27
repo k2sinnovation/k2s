@@ -177,13 +177,14 @@ if (!clientId) {
 
 
         // ⚡ Envoi transcription texte brute au client
-        sendToFlutter({
-            index: 0,
-            text: texteTranscrit || "[transcription vide]",
-            audioBase64: null,
-            mime: "text/plain"
-            clientId
-        }, clientId);
+sendToFlutter({
+    index: 0,
+    text: texteTranscrit || "[transcription vide]",
+    audioBase64: null,
+    mime: "text/plain",
+    clientId
+}, clientId);
+
 
         console.log("✅ Transcription AssemblyAI :", texteTranscrit ? texteTranscrit.slice(0,100) : "[vide]");
 
@@ -246,6 +247,7 @@ if (!clientId) {
                     text: sentences[i],
                     audioBase64: segmentAudio,
                     mime: 'audio/mpeg'
+                    clientId
                 };
 
                 audioSegments.push(payload);
