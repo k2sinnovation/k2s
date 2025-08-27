@@ -40,7 +40,15 @@ ws.on('message', async (message) => {
     return;
   }
 
-  // Premier message: association deviceId -> clientId
+  // Si le message contient audio et clientId, on l'associe immédiatement
+  if (data.audioBase64 && data.clientId && !clientId) {
+    clientId = String(data.clientId);
+    ws.clientId = clientId;
+    clients.set(clientId, { ws });
+    console.log(`[WebSocket] Client connecté via audio : ${clientId}`);
+  }
+
+  // Premier message: association deviceId -> clientId (fallback)
   if (data.deviceId && !clientId) {
     clientId = String(data.deviceId);
     ws.clientId = clientId;
@@ -62,6 +70,7 @@ ws.on('message', async (message) => {
       console.error('[WebSocket] Erreur traitement audio pour', clientId, err.message);
     }
   }
+});
 
   // Traiter d'autres messages applicatifs si besoin
   console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
