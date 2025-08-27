@@ -31,27 +31,42 @@ setInterval(() => {
 wss.on('connection', (ws) => {
   let clientId = null;
 
-  ws.on('message', (message) => {
-    let data;
+ws.on('message', async (message) => {
+  let data;
+  try {
+    data = JSON.parse(message);
+  } catch (e) {
+    console.log('[WebSocket] Erreur parsing message :', e.message);
+    return;
+  }
+
+  // Premier message: association deviceId -> clientId
+  if (data.deviceId && !clientId) {
+    clientId = String(data.deviceId);
+    ws.clientId = clientId;
+    clients.set(clientId, { ws });
+    console.log(`[WebSocket] Client connecté : ${clientId}`);
+  }
+
+  // Traiter audio seulement si clientId défini
+  if (data.audioBase64) {
+    if (!clientId) {
+      console.warn('[WebSocket] Audio reçu mais clientId manquant, envoi annulé !');
+      return;
+    }
     try {
-      data = JSON.parse(message);
-    } catch (e) {
-      console.log('[WebSocket] Erreur parsing message :', e.message);
-      return;
+      console.log(`[WebSocket] Audio reçu de ${clientId}, taille base64: ${data.audioBase64.length}`);
+      // Appel processAudioAndReturnJSON avec le clientId
+      await processAudioAndReturnJSON(data.audioBase64, clientId, true);
+    } catch (err) {
+      console.error('[WebSocket] Erreur traitement audio pour', clientId, err.message);
     }
+  }
 
-    // Premier message: association deviceId -> clientId
-    if (data.deviceId && !clientId) {
-      clientId = String(data.deviceId);
-      ws.clientId = clientId;
-      clients.set(clientId, { ws });
-      console.log(`[WebSocket] Client connecté : ${clientId}`);
-      return;
-    }
+  // Traiter d'autres messages applicatifs si besoin
+  console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
+});
 
-    // Traiter d'autres messages applicatifs si besoin
-    console.log(`[WebSocket] Message reçu de ${clientId || 'non identifié'} :`, data);
-  });
 
   // Citation aléatoire toutes les 15s, si dispo
   const interval = setInterval(() => {
