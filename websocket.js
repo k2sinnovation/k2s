@@ -1,80 +1,126 @@
 const WebSocket = require('ws');
-const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+const { processAudioAndReturnJSON } = require('./controllers/assemblyService');
 
-const clients = new Map(); // clientId -> { ws, canSend }
+const clients = new Map(); // Map<deviceId, { ws }>
 
 // WS server
 const wss = new WebSocket.Server({ noServer: true });
 
 // Lire les citations
-const quotes = JSON.parse(fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8'));
+let quotes = []; 
+try {
+  const raw = fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8');
+  quotes = JSON.parse(raw);
+} catch (e) {
+  console.warn('[WebSocket] Impossible de charger les citations :', e.message);
+  quotes = [];
+}
 
 // Ping régulier
 setInterval(() => {
-  clients.forEach(({ ws, canSend }, clientId) => {
+  clients.forEach(({ ws }, deviceId) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.ping('keepalive');
-      console.log(`[WebSocket] Ping envoyé à client ${clientId}, canSend: ${canSend}`);
     }
   });
-}, 2000);
+}, 15000);
 
 // Connexion
 wss.on('connection', (ws) => {
-  const clientId = uuidv4();
-  const canSend = true;
-  ws.clientId = clientId;
+  let deviceId = null; // ⚠️ Déclaré ici
 
-  clients.set(clientId, { ws, canSend });
-  console.log(`[WebSocket] Client connecté : ${clientId}, canSend: ${canSend}`);
+  ws.on('message', async (message) => {
+    let data;
+    try {
+      data = JSON.parse(message);
+    } catch (e) {
+      console.log('[WebSocket] Erreur parsing message :', e.message);
+      return;
+    }
+
+    // Toujours s'assurer que deviceId est défini
+    if (!deviceId && data.deviceId) {
+      deviceId = String(data.deviceId);
+      ws.deviceId = deviceId;
+      clients.set(deviceId, { ws });
+      console.log(`[WebSocket] Device connecté : ${deviceId}`);
+    }
+
+    // Si audio reçu
+    if (data.audioBase64) {
+      if (!deviceId && data.deviceId) {
+        deviceId = String(data.deviceId);
+        ws.deviceId = deviceId;
+        clients.set(deviceId, { ws });
+        console.log(`[WebSocket] Device connecté tardivement : ${deviceId}`);
+      }
+
+      if (!deviceId) {
+        console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
+        return;
+      }
+
+      try {
+        console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
+        await processAudioAndReturnJSON(data.audioBase64, deviceId, true); // ✅ Passer deviceId
+      } catch (err) {
+        console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
+      }
+    }
+
+    console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
+  });
 
   // Citation aléatoire toutes les 15s
   const interval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
+    if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
       const randomIndex = Math.floor(Math.random() * quotes.length);
-      ws.send(JSON.stringify({ quote: quotes[randomIndex].quote }));
+      const payload = { quote: quotes[randomIndex].quote };
+      try {
+        ws.send(JSON.stringify(payload));
+      } catch (e) {
+        console.warn('[WebSocket] Envoi citation échoué pour', deviceId, e.message);
+      }
     }
   }, 15000);
 
   ws.on('close', () => {
     clearInterval(interval);
-    clients.delete(clientId);
-    console.log(`[WebSocket] Client déconnecté : ${clientId}`);
+    if (deviceId) {
+      clients.delete(deviceId);
+      console.log(`[WebSocket] Device déconnecté : ${deviceId}`);
+    }
   });
 
   ws.on('pong', (data) => {
-    console.log(`[WebSocket] Pong reçu de client ${clientId} :`, data.toString());
+    console.log(`[WebSocket] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
   });
+}); // ✅ Fermeture correcte de wss.on('connection')
 
-  ws.on('message', (message) => {
-    console.log(`[WebSocket] Message reçu de client ${clientId} :`, message.toString());
+// Envoie un message UNIQUEMENT au device ciblé.
+function sendToFlutter(payload, targetDeviceId) {
+  if (!targetDeviceId) {
+    console.warn('[WebSocket] Envoi bloqué : deviceId manquant !');
+    return false;
+  }
 
-    const client = clients.get(clientId);
-    if (!client.canSend) {
-      console.log(`[WebSocket] Client ${clientId} a atteint son quota, message ignoré.`);
-      return;
-    }
+  const client = clients.get(String(targetDeviceId));
+  if (!client || client.ws.readyState !== WebSocket.OPEN) {
+    console.warn('[WebSocket] Device introuvable ou socket fermé :', targetDeviceId);
+    return false;
+  }
 
-    // Ici tu traites les messages normalement
-  });
-});
-
-// Fonction pour envoyer des messages à Flutter
-function sendToFlutter(payload) {
-  const message = JSON.stringify(payload);
-  console.log("[WebSocket] Tentative d’envoi à", clients.size, "client(s) :", payload);
-
-  let sent = false;
-  clients.forEach(({ ws }, clientId) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(message);
-      console.log(`[WebSocket] Message envoyé au client ${clientId} :`, payload.index, payload.text);
-      sent = true;
-    }
-  });
-  return sent;
+  try {
+    client.ws.send(JSON.stringify(payload));
+    const shortText = typeof payload.text === 'string' ? payload.text.slice(0, 80) : '';
+    console.log(`[WebSocket] -> ${targetDeviceId} | index=${payload.index} | text="${shortText}"`);
+    return true;
+  } catch (e) {
+    console.warn('[WebSocket] Échec envoi à', targetDeviceId, e.message);
+    return false;
+  }
 }
 
 // Attacher WS au serveur HTTP
