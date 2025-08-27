@@ -72,8 +72,18 @@ const uploadResponse = await axios.post(
     { headers: { authorization: process.env.ASSEMBLYAI_API_KEY, 'content-type': 'application/octet-stream' } }
 );
 
-        const transcriptId = transcriptResponse.data.id;
-        const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
+        // Création transcription
+const transcriptResponse = await axios.post(
+    'https://api.assemblyai.com/v2/transcript',
+    { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
+    { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
+);
+
+const transcriptId = transcriptResponse.data?.id;
+if (!transcriptId) throw new Error("Impossible de récupérer l'ID de transcription");
+
+const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
+
 
         const timeoutMs = 2 * 60 * 1000;
         const start = Date.now();
