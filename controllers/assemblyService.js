@@ -131,7 +131,7 @@ async function transcribeWithAssembly(audioInput, isBase64 = false) {
 // ------------------------
 // Processus complet : Audio → AssemblyAI → GPT → TTS
 // ------------------------
-async function processAudioAndReturnJSON(fileOrBase64, deviceId = true, isBase64 = false) {
+async function processAudioAndReturnJSON(fileOrBase64, deviceId = null, isBase64 = false) {
     let tempfilePath = fileOrBase64;
     if (isBase64) {
         tempfilePath = `./temp_${Date.now()}.mp3`;
