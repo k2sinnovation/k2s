@@ -66,11 +66,13 @@ const fileData = isBase64
     : fs.readFileSync(audioInput);     // lire le fichier directement
 
 // Upload vers AssemblyAI
-const uploadResponse = await axios.post(
-    'https://api.assemblyai.com/v2/upload',
-    fileData, // Buffer correct
-    { headers: { authorization: process.env.ASSEMBLYAI_API_KEY, 'content-type': 'application/octet-stream' } }
-);
+// Récupération de l'URL de l'upload
+const uploadUrl = uploadResponse.data?.upload_url;
+if (!uploadUrl) {
+  throw new Error("uploadUrl non reçu d'AssemblyAI");
+}
+
+console.log("[AssemblyAI] uploadUrl reçu :", uploadUrl);
 
         // Création transcription
 const transcriptResponse = await axios.post(
