@@ -1,71 +1,57 @@
-const axios = require('axios');
 const fs = require('fs');
+const axios = require('axios');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
-const { sendToFlutter } = require('../websocket');
-const { getRandomWaitingMessage } = require('../utils/waitingMessages');
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
-// ------------------------
-// Google / SerpAPI Search
-// ------------------------
-async function googleSearch(query) {
-    try {
-        const response = await axios.get('https://serpapi.com/search', {
-            params: { q: query, hl: 'fr', gl: 'fr', api_key: process.env.SERPAPI_API_KEY }
-        });
-        return response.data;
-    } catch (err) {
-        console.error("[SerpAPI] Erreur :", err.message);
-        throw err;
-    }
+// Initialisation de Google TTS
+// Nouvelle version compatible clé API simple (REST)
+fonction asynchrone generateGoogleTTSMP3(texte) {
+  essayer {
+    const apiKey = process.env.K2S_IQ_Speech_API ; // même nom que dans Render
+
+    console.log("[Google TTS] Texte envoyé :", text);
+    const réponse = await axios.post(
+      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+      {
+    entrée : { texte },
+    voix: {
+      Code de langue : 'fr-FR',
+      nom : 'fr-FR-Chirp3-HD-Leda', // Voix féminine naturelle et douce
+      ssmlGender : « FEMME »
+    },
+    audioConfig: { audioEncoding: "LINEAR16" } // reste identique
+  }
+);
+    console.log("[Google TTS] Réponse reçue. Taille Base64 :", réponse.data.audioContent.length);
+
+    // La réponse contient maintenant le TTS en Base64 wav
+    renvoyer response.data.audioContent;
+  } catch (erreur) {
+    console.error("Erreur TTS Google :", erreur);
+    renvoie null;
+  }
 }
 
-// ------------------------
-// Google TTS
-// ------------------------
-async function generateGoogleTTSMP3(text) {
-    try {
-        const apiKey = process.env.K2S_IQ_Speech_API;
-        const response = await axios.post(
-            `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-            {
-                input: { text },
-                voice: { languageCode: 'fr-FR', name: 'fr-FR-Chirp3-HD-Leda', ssmlGender: 'FEMALE' },
-                audioConfig: { audioEncoding: "MP3" }
-            }
-        );
-        return response.data.audioContent;
-    } catch (error) {
-        console.error("[Google TTS] Erreur :", error.message);
-        return null;
-    }
-}
+
+
+
 
 // ------------------------
-// Décodage Base64
+// Assemblage de transcription AI
 // ------------------------
-function decodeBase64Audio(base64String) {
-    if (!base64String) return Buffer.alloc(0);
-    const base64Data = base64String.includes(',')
-        ? base64String.split(',')[1]
-        : base64String;
-    return Buffer.from(base64Data, 'base64');
-}
 
 // ------------------------
-// Transcription AssemblyAI
+// AJOUT : décodage Base64 → Buffer
 // ------------------------
-function decodeBase64Audio(base64String) {
-    if (!base64String) return Buffer.alloc(0);
-    const base64Data = base64String.includes(',')
-        ? base64String.split(',')[1]
-        : base64String;
-    return Buffer.from(base64Data, 'base64');
-}
 
+fonction decodeBase64Audio(base64String) {
+  // Supprime le préfixe si présent (ex: "data:audio/mp3;base64,")
+  const base64Data = base64String.replace(/^data:audio\/\w+;base64,/, '');
+  renvoie Buffer.from(base64Data, 'base64');
+}
 
 fonction asynchrone transcribeWithAssembly(audioInput, isBase64 = false) {
   essayer {
@@ -122,107 +108,89 @@ fonction asynchrone transcribeWithAssembly(audioInput, isBase64 = false) {
 
 
 // ------------------------
-// Processus complet : Audio → AssemblyAI → GPT → TTS
+// Processus complet Audio → AssemblyAI → GPT → TTS
 // ------------------------
-async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = false) {
-    let tempfilePath = fileOrBase64;
-    if (isBase64) {
-        tempfilePath = `./temp_${Date.now()}.mp3`;
-        fs.writeFileSync(tempfilePath, decodeBase64Audio(fileOrBase64));
-    }
+fonction asynchrone processAudioAndReturnJSON(fileOrBase64, isBase64 = false) {
+  laissez tempfilePath = fileOrBase64;
 
-    let texteTranscrit = "";
-    let gptResponse = "";
-    const audioSegments = [];
+  si (isBase64) {
+    // Création d'un fichier temporaire à partir du Base64
+    tempfilePath = `./temp_${Date.now()}.mp3`;
+    fs.writeFileSync(tempfilePath , decodeBase64Audio(fileOrBase64));
+    console.log(`[ProcessAudio] Fichier temporaire créé à partir du Base64 : ${tempfilePath }`);
+  }
+  laissez texteTranscrit = "";
+  laissez gptResponse = "";
+  laissez audioBase64 = null;
 
-    // --- 0️⃣ Message d'intro / attente ---
-    try {
-        const waitingText = getRandomWaitingMessage();
-        const waitingAudio = await generateGoogleTTSMP3(waitingText);
-        sendToFlutter({
-            index: -1,
-            text: waitingText,
-            audioBase64: waitingAudio,
-            mime: "audio/mpeg",
-            deviceId
-        }, deviceId);
-    } catch (e) {
-        console.error("[ProcessAudio] Message d'attente :", e.message);
-    }
+  console.log(`[ProcessAudio] Début traitement du fichier : ${tempfilePath }`);
 
-    // --- 1️⃣ Transcription ---
-    try {
-        texteTranscrit = await transcribeWithAssembly(tempfilePath);
-        sendToFlutter({
-            index: 0,
-            text: texteTranscrit || "[transcription vide]",
-            audioBase64: null,
-            mime: "text/plain",
-            deviceId
-        }, deviceId);
-    } catch (e) {
-        console.error("[ProcessAudio] Transcription :", e.message);
-    }
+  // 1️⃣ Transcription AssemblyAI
+  essayer {
+    texteTranscrit = await transcribeWithAssembly(tempfilePath );
+    console.log(`[ProcessAudio] Texte transcrit : ${texteTranscrit}`);
+  } catch (assemblyError) {
+    console.error("Erreur AssemblyAI :", assemblyError.message);
+    // on continue malgré l'erreur pour renvoyer ce qu'on a pu récupérer
+  }
 
-    // --- 2️⃣ Recherche Google approfondie ---
-    let searchResultsSummary = '';
-    try {
-        const checkPrompt = `${promptTTSVocal} Est-ce une question technique ? Question: ${texteTranscrit}`;
-        const checkCompletion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [{ role: "user", content: checkPrompt }]
-        });
-        const doitChercher = checkCompletion.choices[0].message.content.trim().toUpperCase() === "OUI";
-        if (doitChercher) {
-            const searchData = await googleSearch(texteTranscrit);
-            const results = searchData.organic_results?.slice(0, 3) || [];
-            searchResultsSummary = results.map(r => `Titre: ${r.title}\nLien: ${r.link}\nSnippet: ${r.snippet}`).join('\n\n');
-        }
-    } catch (e) { console.error("[ProcessAudio] SerpAPI :", e.message); }
+  // 2️⃣ GPT
+// 2️⃣ GPT
+essayer {
+  const completion = await openai.chat.completions.create({
+    modèle : "chatgpt-4o-latest",
+    messages : [
+      { rôle : « système », contenu : promptTTSVocal },
+      { rôle : « utilisateur », contenu : texteTranscrit },
+    ],
+  });
 
-    // --- 3️⃣ GPT ---
-    try {
-        const enrichedPrompt = searchResultsSummary
-            ? `${promptTTSVocal}\n\nInfos Google :\n${searchResultsSummary}\n\nQuestion: ${texteTranscrit}`
-            : `${promptTTSVocal}\n\nQuestion: ${texteTranscrit}`;
-
-        const completion = await openai.chat.completions.create({
-            model: "gpt-5-chat-latest",
-            messages: [
-                { role: "system", content: enrichedPrompt },
-                { role: "user", content: texteTranscrit || "[vide]" }
-            ]
-        });
-        gptResponse = completion.choices[0].message.content;
-    } catch (e) { console.error("[ProcessAudio] GPT :", e.message); }
-
-    // --- 4️⃣ TTS segmenté ---
-    if (gptResponse) {
-        const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
-        for (let i = 0; i < sentences.length; i++) {
-            try {
-                const audio = await generateGoogleTTSMP3(sentences[i]);
-                const payload = { index: i, text: sentences[i], audioBase64: audio, mime: 'audio/mpeg', deviceId };
-                audioSegments.push(payload);
-                sendToFlutter(payload, deviceId);
-            } catch (e) { console.error(`[ProcessAudio] TTS segment ${i}:`, e.message); }
-        }
-    }
-
-    // --- Nettoyage ---
-    if (isBase64 && fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
-
-    return { transcription: texteTranscrit, gptResponse, audioSegments };
+  gptResponse = completion.choices[0].message.content;
+  console.log(`[ProcessAudio] Réponse GPT : ${gptResponse}`);
+} catch (gptError) {
+  console.error("Erreur GPT (à la poursuite) :", gptError.message);
+  gptResponse = "";
 }
 
+
+// 3️⃣ TTS
+si (gptResponse) {
+  essayer {
+    // Nettoyage optionnel du texte GPT
+    const cleanedText = gptResponse.trim();
+
+    console.log(`[ProcessAudio] Texte envoyé à Google TTS : "${cleanedText}"`);
+    audioBase64 = await generateGoogleTTSMP3(cleanedText);
+    console.log(`[ProcessAudio] Audio Base64 généré. Taille : ${audioBase64.length}`);
+
+  } catch (ttsError) {
+    console.error("Erreur Google TTS (à la suite) :", ttsError.message);
+    audioBase64 = null;
+  }
+}
+
+
+
+
+  // Suppression du fichier temporaire
+  essayer {
+    si (fs.existsSync(tempfilePath )) fs.unlinkSync(tempfilePath );
+    console.log(`[ProcessAudio] Fichier temporaire supprimé : ${tempfilePath }`);
+  } catch (fsError) {
+    console.error("Erreur suppression fichier :", fsError.message);
+  }
+
+  retour { transcription: texteTranscrit, gptResponse, audioBase64 };
+}
+
+
+
+
 // ------------------------
-// Export
+// Exporter
 // ------------------------
 module.exports = {
-    transcribeWithAssembly,
-    generateGoogleTTSMP3,
-    decodeBase64Audio,
-    googleSearch,
-    sendToFlutter,
-    processAudioAndReturnJSON
+  transcrireAvecAssembly,
+  générerGoogleTTSMP3,
+  processAudioAndReturnJSON,
 };
