@@ -58,76 +58,63 @@ function decodeBase64Audio(base64String) {
 // ------------------------
 // Transcription AssemblyAI
 // ------------------------
-async function transcribeWithAssembly(audioInput, isBase64 = false) {
-    try {
-        console.log("[AssemblyAI] Début transcription, isBase64 =", isBase64);
+fonction decodeBase64Audio(base64String) {
+  // Supprime le préfixe si présent (ex: "data:audio/mp3;base64,")
+  const base64Data = base64String.replace(/^data:audio\/\w+;base64,/, '');
+  renvoie Buffer.from(base64Data, 'base64');
+}
 
-        // --- Préparation du buffer audio ---
-        let fileData;
-        if (isBase64) {
-            console.log("[AssemblyAI] Décodage Base64...");
-            fileData = decodeBase64Audio(audioInput);
-            console.log("[AssemblyAI] Taille buffer après décodage Base64 :", fileData.length);
-        } else {
-            console.log("[AssemblyAI] Lecture fichier depuis le disque :", audioInput);
-            if (!fs.existsSync(audioInput)) throw new Error("Fichier introuvable : " + audioInput);
-            fileData = fs.readFileSync(audioInput);
-            console.log("[AssemblyAI] Taille fichier lu :", fileData.length, "octets");
-        }
+fonction asynchrone transcribeWithAssembly(audioInput, isBase64 = false) {
+  essayer {
+    console.log("[AssemblyAI] Préparation de l'audio...");
+    const fileData = isBase64 ? decodeBase64Audio(audioInput) : fs.readFileSync(audioInput);
 
-        // --- Upload vers AssemblyAI ---
-        console.log("[AssemblyAI] Upload du fichier vers AssemblyAI...");
-        const uploadResponse = await axios.post(
-            'https://api.assemblyai.com/v2/upload',
-            fileData,
-            { headers: { authorization: process.env.ASSEMBLYAI_API_KEY, 'content-type': 'application/octet-stream' } }
-        );
+    const uploadResponse = await axios.post(
+      'https://api.assemblyai.com/v2/upload',
+      fichierData,
+      {
+        en-têtes : {
+          autorisation : process.env.ASSEMBLYAI_API_KEY,
+          'type-de-contenu' : 'application/octet-stream',
+        },
+      }
+    );
 
-        const uploadUrl = uploadResponse.data.upload_url;
-        console.log("[AssemblyAI] Upload terminé, URL :", uploadUrl);
-        if (!uploadUrl) throw new Error("AssemblyAI n’a pas retourné d’upload_url");
+    const uploadUrl = uploadResponse.data.upload_url;
+    console.log(`[AssemblyAI] Audio uploadé : ${uploadUrl}`);
 
-        // --- Création transcription ---
-        console.log("[AssemblyAI] Création transcription...");
-        const transcriptResponse = await axios.post(
-            'https://api.assemblyai.com/v2/transcript',
-            { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
-            { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
-        );
+    console.log("[AssemblyAI] Création de la transcription...");
+    const transcriptResponse = await axios.post(
+      'https://api.assemblyai.com/v2/transcript',
+      { audio_url: uploadUrl, speech_model: 'universal', language_code: 'fr' },
+      { en-têtes : { autorisation : process.env.ASSEMBLYAI_API_KEY } }
+    );
 
-        const transcriptId = transcriptResponse.data?.id;
-        console.log("[AssemblyAI] ID transcription :", transcriptId);
-        if (!transcriptId) throw new Error("Impossible de récupérer l'ID de transcription");
+    const transcriptId = transcriptResponse.data.id;
+    console.log(`[AssemblyAI] ID transcription : ${transcriptId}`);
+    const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
 
-        // --- Polling transcription ---
-        const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
-        console.log("[AssemblyAI] Polling sur :", pollingEndpoint);
+    // --- Polling pour récupérer la transcription ---
+    tandis que (vrai) {
+      const résultat = await axios.get(pollingEndpoint, {
+        en-têtes : { autorisation : process.env.ASSEMBLYAI_API_KEY },
+      });
 
-        const timeoutMs = 2 * 60 * 1000; // 2 minutes
-        const start = Date.now();
-
-        while (true) {
-            const result = await axios.get(pollingEndpoint, { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } });
-            console.log("[AssemblyAI] Statut :", result.data.status);
-
-            if (result.data.status === 'completed') {
-                console.log("[AssemblyAI] Transcription terminée :", result.data.text);
-                return result.data.text || "";
-            }
-            if (result.data.status === 'error') {
-                console.error("[AssemblyAI] Erreur transcription :", result.data.error);
-                throw new Error(result.data.error || "Erreur transcription AssemblyAI");
-            }
-            if (Date.now() - start > timeoutMs) {
-                throw new Error("Timeout transcription AssemblyAI");
-            }
-            await new Promise(resolve => setTimeout(resolve, 3000));
-        }
-
-    } catch (err) {
-        console.error("[AssemblyAI] Exception :", err.message || err);
-        throw err;
+      si (result.data.status === 'terminé') {
+        console.log(`[AssemblyAI] Transcription terminée : ${result.data.text}`);
+        renvoyer result.data.text;
+      } sinon si (result.data.status === 'erreur') {
+        throw new Error(`Transcription échouée : ${result.data.error}`);
+      } autre {
+        console.log("[AssemblyAI] Transcription en cours...");
+        attendre une nouvelle promesse (résolution => setTimeout (résolution, 3000));
+      }
     }
+
+  } attraper (err) {
+    console.error("[AssemblyAI] Erreur lors du polling :", err.message);
+    lancer une erreur;
+  }
 }
 
 
