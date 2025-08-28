@@ -58,11 +58,14 @@ function decodeBase64Audio(base64String) {
 // ------------------------
 // Transcription AssemblyAI
 // ------------------------
-fonction decodeBase64Audio(base64String) {
-  // Supprime le préfixe si présent (ex: "data:audio/mp3;base64,")
-  const base64Data = base64String.replace(/^data:audio\/\w+;base64,/, '');
-  renvoie Buffer.from(base64Data, 'base64');
+function decodeBase64Audio(base64String) {
+    if (!base64String) return Buffer.alloc(0);
+    const base64Data = base64String.includes(',')
+        ? base64String.split(',')[1]
+        : base64String;
+    return Buffer.from(base64Data, 'base64');
 }
+
 
 fonction asynchrone transcribeWithAssembly(audioInput, isBase64 = false) {
   essayer {
