@@ -3,7 +3,6 @@ const fs = require('fs');
 const OpenAI = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const { promptTTSVocal } = require('../utils/promptsTTSVocal');
-const { sendToFlutter } = require('../websocket');
 const { getRandomWaitingMessage } = require('../utils/waitingMessages');
 
 console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
@@ -106,6 +105,8 @@ const pollingEndpoint = `https://api.assemblyai.com/v2/transcript/${transcriptId
 // Processus complet : Audio → AssemblyAI → GPT → TTS
 // ------------------------
 async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = false) {
+    const { sendToFlutter } = require('../websocket');
+    
     let tempfilePath = fileOrBase64;
     if (isBase64) {
         tempfilePath = `./temp_${Date.now()}.mp3`;
@@ -116,7 +117,7 @@ async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = fals
     let gptResponse = "";
     const audioSegments = [];
 
-    // --- 0️⃣ Message d'intro / attente ---
+    // --- 0️⃣ Message d'attente ---
     try {
         const waitingText = getRandomWaitingMessage();
         const waitingAudio = await generateGoogleTTSMP3(waitingText);
@@ -204,6 +205,5 @@ module.exports = {
     generateGoogleTTSMP3,
     decodeBase64Audio,
     googleSearch,
-    sendToFlutter,
     processAudioAndReturnJSON
 };
