@@ -64,14 +64,26 @@ const fileData = isBase64
     ? decodeBase64Audio(audioInput)    // conversion Base64 -> Buffer
     : fs.readFileSync(audioInput);     // lire le fichier directement
 
-// Upload vers AssemblyAI
 // Récupération de l'URL de l'upload
+// ✅ Upload vers AssemblyAI
+const uploadResponse = await axios.post(
+    'https://api.assemblyai.com/v2/upload',
+    fileData,
+    {
+        headers: {
+            authorization: process.env.ASSEMBLYAI_API_KEY,
+            'Content-Type': 'application/octet-stream'
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+    }
+);
+
 const uploadUrl = uploadResponse.data?.upload_url;
-if (!uploadUrl) {
-  throw new Error("uploadUrl non reçu d'AssemblyAI");
-}
+if (!uploadUrl) throw new Error("uploadUrl non reçu d'AssemblyAI");
 
 console.log("[AssemblyAI] uploadUrl reçu :", uploadUrl);
+
 
         // Création transcription
 const transcriptResponse = await axios.post(
