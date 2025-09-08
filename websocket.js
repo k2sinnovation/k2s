@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
-const { processAudioAndReturnJSON } = require('./controllers/assemblyService');
+const assemblyService = require('./controllers/assemblyService');
 
 const clients = new Map(); // Map<deviceId, { ws }>
 
@@ -64,7 +64,7 @@ wss.on('connection', (ws) => {
 
       try {
         console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
-        await processAudioAndReturnJSON(data.audioBase64, deviceId, true); // ✅ Passer deviceId
+       await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);  // ✅ Passer deviceId
       } catch (err) {
         console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
       }
