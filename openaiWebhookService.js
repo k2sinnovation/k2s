@@ -75,6 +75,10 @@ function verifySignature(rawBody, signature) {
   hmac.update(rawBody);
   const digest = hmac.digest('hex');
 
+  console.log('--- Vérification Webhook ---');
+  console.log('Signature reçue:', signature);
+  console.log('Digest attendu:', digest);
+
   try {
     return crypto.timingSafeEqual(
       Buffer.from(signature, 'hex'),
