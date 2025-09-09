@@ -17,6 +17,7 @@ const webhookSecret = process.env.OPENAI_WEBHOOK_SECRET;
 // Stockage WebSocket par deviceId (multi-utilisateurs)
 // =========================
 const clients = {}; // deviceId => websocket
+const wss = new WebSocket.Server({ noServer: true });
 
 function registerClient(deviceId, ws) {
   clients[deviceId] = ws;
@@ -32,11 +33,6 @@ function sendToFlutter(payload, deviceId) {
   ws.send(JSON.stringify(payload));
 }
 
-// =========================
-// WebSocket serveur pour Flutter
-// =========================
-const wss = new WebSocket.Server({ noServer: true });
-
 function handleWebSocket(server) {
   server.on('upgrade', (request, socket, head) => {
     const urlParams = new URLSearchParams(request.url.replace('/?', ''));
@@ -48,7 +44,6 @@ function handleWebSocket(server) {
 
     wss.handleUpgrade(request, socket, head, (ws) => {
       registerClient(deviceId, ws);
-
       ws.on('close', () => {
         delete clients[deviceId];
         console.log(`[WebSocket] Client déconnecté : ${deviceId}`);
@@ -58,75 +53,72 @@ function handleWebSocket(server) {
 }
 
 // =========================
-// Fonction HMAC pour valider le webhook
+// Vérification signature HMAC
 // =========================
-function verifySignature(req) {
-  const signature = req.headers['x-openai-signature'];
-  if (!signature) return false;
+function verifySignature(rawBody, signature) {
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  hmac.update(rawBody);
+  const digest = hmac.digest('hex');
 
-  const payload = JSON.stringify(req.body);
-  const computedHmac = crypto
-    .createHmac('sha256', webhookSecret)
-    .update(payload)
-    .digest('hex');
-
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(computedHmac)
-  );
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+  } catch {
+    return false;
+  }
 }
 
 // =========================
 // Webhook OpenAI pour completions
 // =========================
-router.post('/openai-webhook', express.json(), async (req, res) => {
-  try {
-    if (!verifySignature(req)) {
-      console.warn('[Webhook] Signature invalide');
-      return res.status(403).send('Unauthorized');
+router.post(
+  '/openai-webhook',
+  express.raw({ type: 'application/json' }), // ⚠️ corps brut
+  async (req, res) => {
+    try {
+      const signature = req.headers['x-openai-signature'];
+      if (!signature || !verifySignature(req.body, signature)) {
+        console.warn('[Webhook] Signature invalide');
+        return res.status(403).send('Unauthorized');
+      }
+
+      const event = JSON.parse(req.body.toString()); // JSON depuis raw
+      const deviceId = event.metadata?.deviceId;
+      if (!deviceId) return res.status(400).send('DeviceId manquant');
+
+      if (event.event_type === 'completion.completed') {
+        const sentences = event.completion.output_text
+          .split(/(?<=[.!?])\s+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        await Promise.all(
+          sentences.map(async (sentence, i) => {
+            try {
+              const audioBase64 = await generateGoogleTTSMP3(sentence);
+              sendToFlutter(
+                {
+                  index: i,
+                  text: sentence,
+                  audioBase64,
+                  mime: 'audio/mpeg',
+                  deviceId,
+                },
+                deviceId
+              );
+            } catch (err) {
+              console.error(`[Webhook TTS] Erreur phrase ${i}:`, err.message);
+            }
+          })
+        );
+      }
+
+      res.status(200).send('Webhook reçu');
+    } catch (err) {
+      console.error('[Webhook] Erreur:', err.message);
+      res.status(500).send('Erreur serveur');
     }
-
-    const event = req.body;
-    const deviceId = event.metadata?.deviceId;
-    if (!deviceId) return res.status(400).send('DeviceId manquant');
-
-    if (event.event_type === 'completion.completed') {
-      const outputText = event.completion.output_text;
-
-      // Split phrases pour TTS
-      const sentences = outputText
-        .split(/(?<=[.!?])\s+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      // Génération TTS et envoi à Flutter
-      await Promise.all(
-        sentences.map(async (sentence, i) => {
-          try {
-            const audioBase64 = await generateGoogleTTSMP3(sentence);
-            sendToFlutter(
-              {
-                index: i,
-                text: sentence,
-                audioBase64,
-                mime: 'audio/mpeg',
-                deviceId,
-              },
-              deviceId
-            );
-          } catch (err) {
-            console.error(`[Webhook TTS] Erreur phrase ${i} :`, err.message);
-          }
-        })
-      );
-    }
-
-    res.status(200).send('Webhook reçu');
-  } catch (err) {
-    console.error('[Webhook] Erreur :', err.message);
-    res.status(500).send('Erreur serveur');
   }
-});
+);
 
 // =========================
 // Fonction pour envoyer une requête GPT avec webhook
