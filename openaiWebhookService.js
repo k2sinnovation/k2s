@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const OpenAI = require('openai');
-const { generateGoogleTTSMP3 } = requiree('../controllers/assemblyService');
+const { generateGoogleTTSMP3 } = require('../controllers/assemblyService');
 const router = express.Router();
 
 // =========================
