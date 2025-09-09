@@ -1,9 +1,10 @@
 // openaiWebhookService.js
 const express = require('express');
-const axios = require('axios');
-const fs = require('fs');
+const crypto = require('crypto');
 const OpenAI = require('openai');
-const { generateGoogleTTSMP3 } = require('./controllers/assemblyService');
+const { generateGoogleTTSMP3 } = require('./controllers/assemblyService'); // ton fichier TTS
+const WebSocket = require('ws');
+
 const router = express.Router();
 
 // =========================
@@ -34,7 +35,6 @@ function sendToFlutter(payload, deviceId) {
 // =========================
 // WebSocket serveur pour Flutter
 // =========================
-const WebSocket = require('ws');
 const wss = new WebSocket.Server({ noServer: true });
 
 function handleWebSocket(server) {
@@ -58,13 +58,30 @@ function handleWebSocket(server) {
 }
 
 // =========================
+// Fonction HMAC pour valider le webhook
+// =========================
+function verifySignature(req) {
+  const signature = req.headers['x-openai-signature'];
+  if (!signature) return false;
+
+  const payload = JSON.stringify(req.body);
+  const computedHmac = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(payload)
+    .digest('hex');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(computedHmac)
+  );
+}
+
+// =========================
 // Webhook OpenAI pour completions
 // =========================
-router.post('/openai-webhook', async (req, res) => {
+router.post('/openai-webhook', express.json(), async (req, res) => {
   try {
-    // 🔐 Vérification du secret
-    const signature = req.headers['x-openai-signature'];
-    if (!signature || signature !== webhookSecret) {
+    if (!verifySignature(req)) {
       console.warn('[Webhook] Signature invalide');
       return res.status(403).send('Unauthorized');
     }
@@ -79,24 +96,29 @@ router.post('/openai-webhook', async (req, res) => {
       // Split phrases pour TTS
       const sentences = outputText
         .split(/(?<=[.!?])\s+/)
-        .map(s => s.trim())
+        .map((s) => s.trim())
         .filter(Boolean);
 
       // Génération TTS et envoi à Flutter
-      await Promise.all(sentences.map(async (sentence, i) => {
-        try {
-          const audioBase64 = await generateGoogleTTSMP3(sentence);
-          sendToFlutter({
-            index: i,
-            text: sentence,
-            audioBase64,
-            mime: 'audio/mpeg',
-            deviceId
-          }, deviceId);
-        } catch (err) {
-          console.error(`[Webhook TTS] Erreur phrase ${i} :`, err.message);
-        }
-      }));
+      await Promise.all(
+        sentences.map(async (sentence, i) => {
+          try {
+            const audioBase64 = await generateGoogleTTSMP3(sentence);
+            sendToFlutter(
+              {
+                index: i,
+                text: sentence,
+                audioBase64,
+                mime: 'audio/mpeg',
+                deviceId,
+              },
+              deviceId
+            );
+          } catch (err) {
+            console.error(`[Webhook TTS] Erreur phrase ${i} :`, err.message);
+          }
+        })
+      );
     }
 
     res.status(200).send('Webhook reçu');
@@ -115,11 +137,11 @@ async function requestGPTWithWebhook(userText, deviceId, promptSystem) {
       model: 'gpt-5-chat-latest',
       messages: [
         { role: 'system', content: promptSystem },
-        { role: 'user', content: userText }
+        { role: 'user', content: userText },
       ],
       webhook: 'https://k2s.onrender.com/openai-webhook',
-      webhook_secret: webhookSecret, // 🔐 Passe le secret ici
-      metadata: { deviceId }
+      webhook_secret: webhookSecret,
+      metadata: { deviceId },
     });
   } catch (err) {
     console.error('[GPT Webhook] Erreur création completion :', err.message);
@@ -130,5 +152,5 @@ module.exports = {
   router,
   handleWebSocket,
   requestGPTWithWebhook,
-  sendToFlutter
+  sendToFlutter,
 };
