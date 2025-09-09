@@ -23,8 +23,8 @@ const subscribeRoute = require("./routes/subscribe");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(express.json());
 app.use('/', openaiWebhookRouter); 
+app.use(express.json());
 
 // ✅ OpenAI initialisé
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
