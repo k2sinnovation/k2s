@@ -73,7 +73,7 @@ function verifySignature(rawBody, signature) {
 function verifySignature(rawBody, signature) {
   const hmac = crypto.createHmac('sha256', webhookSecret);
   hmac.update(rawBody);
-  const digest = hmac.digest('hex');
+  const digest = hmac.digest('base64'); // ⚠️ pas "hex", mais "base64"
 
   console.log('--- Vérification Webhook ---');
   console.log('Signature reçue:', signature);
@@ -81,13 +81,15 @@ function verifySignature(rawBody, signature) {
 
   try {
     return crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(digest, 'hex')
+      Buffer.from(signature, 'base64'),
+      Buffer.from(digest, 'base64')
     );
-  } catch {
+  } catch (e) {
+    console.error('Erreur comparaison HMAC:', e.message);
     return false;
   }
 }
+
 
 router.post(
   '/openai-webhook',
