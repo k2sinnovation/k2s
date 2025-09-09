@@ -91,10 +91,8 @@ function verifySignature(rawBody, signature) {
 }
 
 
-router.post(
-  '/openai-webhook',
-  express.raw({ type: 'application/json' }),
-  async (req, res) => {
+router.post('/', express.raw({ type: 'application/json' }), async (req, res) =>
+  {
     try {
       const signature = req.headers['x-openai-signature'];
       if (!signature || !verifySignature(req.body, signature)) {
