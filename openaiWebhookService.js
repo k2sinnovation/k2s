@@ -76,7 +76,7 @@ router.post(
   async (req, res) => {
     try {
       const signature = req.headers['x-openai-signature'];
-      if (!signature || !verifySignature(req.body, signature)) {
+      if (signature || !verifySignature(req.body, signature)) {
         console.warn('[Webhook] Signature invalide');
         return res.status(403).send('Unauthorized');
       }
