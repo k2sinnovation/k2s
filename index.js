@@ -8,6 +8,8 @@ const assemblyRoute = require('./routes/assembly');
 const testAudioRoutes = require('./routes/testAudio');
 const testTTSRoutes = require('./routes/testTTS');
 const testTtsRouter = require('./controllers/test_google_tts');
+const { router: openaiWebhookRouter, handleWebSocket: handleOpenAIWebSocket } = require('./openaiWebhookService'); 
+
 
 require('dotenv').config();
 
@@ -22,6 +24,7 @@ const subscribeRoute = require("./routes/subscribe");
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
+app.use('/', openaiWebhookRouter); 
 
 // ✅ OpenAI initialisé
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -36,7 +39,7 @@ const server = http.createServer(app);
 
 // Attache WebSocket au serveur HTTP (une seule fois)
 attachWebSocketToServer(server);
-
+handleOpenAIWebSocket(server);   
 
 
 // ✅ Connexion MongoDB
