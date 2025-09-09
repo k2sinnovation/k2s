@@ -70,18 +70,33 @@ function verifySignature(rawBody, signature) {
 // =========================
 // Webhook OpenAI pour completions
 // =========================
+function verifySignature(rawBody, signature) {
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  hmac.update(rawBody);
+  const digest = hmac.digest('hex');
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(signature, 'hex'),
+      Buffer.from(digest, 'hex')
+    );
+  } catch {
+    return false;
+  }
+}
+
 router.post(
   '/openai-webhook',
-  express.raw({ type: 'application/json' }), // ⚠️ corps brut
+  express.raw({ type: 'application/json' }),
   async (req, res) => {
     try {
       const signature = req.headers['x-openai-signature'];
-      if (signature || !verifySignature(req.body, signature)) {
+      if (!signature || !verifySignature(req.body, signature)) {
         console.warn('[Webhook] Signature invalide');
         return res.status(403).send('Unauthorized');
       }
 
-      const event = JSON.parse(req.body.toString()); // JSON depuis raw
+      const event = JSON.parse(req.body.toString());
       const deviceId = event.metadata?.deviceId;
       if (!deviceId) return res.status(400).send('DeviceId manquant');
 
@@ -96,13 +111,7 @@ router.post(
             try {
               const audioBase64 = await generateGoogleTTSMP3(sentence);
               sendToFlutter(
-                {
-                  index: i,
-                  text: sentence,
-                  audioBase64,
-                  mime: 'audio/mpeg',
-                  deviceId,
-                },
+                { index: i, text: sentence, audioBase64, mime: 'audio/mpeg', deviceId },
                 deviceId
               );
             } catch (err) {
@@ -119,7 +128,6 @@ router.post(
     }
   }
 );
-
 // =========================
 // Fonction pour envoyer une requête GPT avec webhook
 // =========================
