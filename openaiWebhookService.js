@@ -3,7 +3,6 @@ const express = require('express');
 const crypto = require('crypto');
 const OpenAI = require('openai');
 const { generateGoogleTTSMP3 } = require('./controllers/assemblyService'); // TTS
-const WebSocket = require('ws');
 
 const router = express.Router();
 
@@ -16,57 +15,7 @@ const webhookSecret = process.env.OPENAI_WEBHOOK_SECRET;
 // =========================
 // Stockage WebSocket par deviceId (multi-utilisateurs)
 // =========================
-const clients = {}; // deviceId => websocket
-const wss = new WebSocket.Server({ noServer: true });
-
-function registerClient(deviceId, ws) {
-  clients[deviceId] = ws;
-  console.log(`[WebSocket] Client enregistré : ${deviceId}`);
-}
-
-function sendToFlutter(payload, deviceId) {
-  const ws = clients[deviceId];
-  if (!ws || ws.readyState !== ws.OPEN) {
-    console.warn(`[WebSocket] Pas de client actif pour ${deviceId}`);
-    return;
-  }
-  ws.send(JSON.stringify(payload));
-}
-
-function handleWebSocket(server) {
-server.on('upgrade', (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    let deviceId = null;
-
-    // n'accepte qu'un seul premier message
-    ws.once('message', (msg) => {
-      try {
-        const data = JSON.parse(msg.toString());
-        if (data.deviceId) {
-          deviceId = data.deviceId;
-          registerClient(deviceId, ws);
-          console.log(`[WebSocket] Client enregistré : ${deviceId}`);
-        } else {
-          console.warn('[WebSocket] DeviceId manquant, fermeture...');
-          ws.close();
-        }
-      } catch (e) {
-        console.error('[WebSocket] Message initial invalide :', e.message);
-        ws.close();
-      }
-    });
-
-    ws.on('close', () => {
-      if (deviceId) {
-        delete clients[deviceId];
-        console.log(`[WebSocket] Client déconnecté : ${deviceId}`);
-      }
-    });
-  });
-});
-}
-
-
+const { sendToFlutter } = require('./websocket');
 
 
 // =========================
@@ -175,7 +124,5 @@ async function requestGPTWithWebhook(userText, deviceId, promptSystem) {
 
 module.exports = {
   router,
-  handleWebSocket,
   requestGPTWithWebhook,
-  sendToFlutter,
 };
