@@ -190,31 +190,32 @@ async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = fals
         gptResponse = completion.choices[0].message.content;
     } catch (e) { console.error("[ProcessAudio] GPT :", e.message); }
 
-// --- 4️⃣ TTS segmenté (ordre garanti) ---
+// --- 4️⃣ TTS segmenté ---
 if (gptResponse) {
-    const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+    const sentences = gptResponse
+        .split(/(?<=[.!?])\s+/)
+        .map(s => s.trim())
+        .filter(Boolean);
 
-    const ttsSegments = new Array(sentences.length); // Tableau temporaire pour garder l'ordre
-
-    for (let i = 0; i < sentences.length; i++) {
-        try {
-            const audio = await generateGoogleTTSMP3(sentences[i]);
-            ttsSegments[i] = { index: i, text: sentences[i], audioBase64: audio, mime: 'audio/mpeg', deviceId };
-
-            // Envoi à Flutter **dans l’ordre** (au fur et à mesure)
-            for (let j = 0; j < ttsSegments.length; j++) {
-                if (ttsSegments[j]) {
-                    sendToFlutter(ttsSegments[j], deviceId);
-                    ttsSegments[j] = null; // Marqué comme envoyé
-                } else {
-                    break; // Stop à la première phrase non prête
-                }
+    const ttsSegments = await Promise.all(
+        sentences.map(async (sentence, i) => {
+            try {
+                const audio = await generateGoogleTTSMP3(sentence);
+                const payload = {
+                    index: i,
+                    text: sentence,
+                    audioBase64: audio,
+                    mime: 'audio/mpeg',
+                    deviceId
+                };
+                sendToFlutter(payload, deviceId);
+                return payload;
+            } catch (e) {
+                console.error([ProcessAudio] TTS segment ${i}:, e.message);
+                return null;
             }
-        } catch (e) {
-            console.error(`[ProcessAudio] TTS segment ${i}:`, e.message);
-            ttsSegments[i] = null; // Marqué comme erreur
-        }
-    }
+        })
+    );
 
     // Ajoute uniquement les segments valides à audioSegments
     audioSegments.push(...ttsSegments.filter(Boolean));
