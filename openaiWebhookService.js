@@ -35,23 +35,37 @@ function sendToFlutter(payload, deviceId) {
 
 function handleWebSocket(server) {
   server.on('upgrade', (request, socket, head) => {
-    const urlParams = new URLSearchParams(request.url.replace('/?', ''));
-    const deviceId = urlParams.get('deviceId');
-    if (!deviceId) {
-      console.warn('[WebSocket] deviceId manquant dans la requête upgrade');
-      socket.destroy();
-      return;
-    }
-
     wss.handleUpgrade(request, socket, head, (ws) => {
-      registerClient(deviceId, ws);
+      ws.once('message', (message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          const deviceId = data.deviceId;
+          if (!deviceId) {
+            console.warn('[WebSocket] deviceId manquant dans le message initial');
+            ws.close();
+            return;
+          }
+          registerClient(deviceId, ws);
+          console.log(`[WebSocket] Client connecté : ${deviceId}`);
+        } catch (e) {
+          console.error('[WebSocket] Erreur parsing message initial:', e.message);
+          ws.close();
+        }
+      });
+
       ws.on('close', () => {
-        delete clients[deviceId];
-        console.log(`[WebSocket] Client déconnecté : ${deviceId}`);
+        // Supprimer le client si deviceId connu
+        for (const [key, client] of Object.entries(clients)) {
+          if (client === ws) {
+            delete clients[key];
+            console.log(`[WebSocket] Client déconnecté : ${key}`);
+          }
+        }
       });
     });
   });
 }
+
 
 // =========================
 // Vérification signature HMAC
