@@ -144,20 +144,20 @@ async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = fals
         console.error("[ProcessAudio] Message d'attente :", e.message);
     }
 
-  // --- 1️⃣ Transcription ---
-try {
-  texteTranscrit = await transcribeWithAssembly(tempfilePath);
-  // Envoi immédiat de la transcription
-  sendToFlutter({
-    index: 0,
-    text: texteTranscrit || "[transcription vide]",
-    audioBase64: null,
-    mime: "text/plain",
-    deviceId
-  }, deviceId);
-} catch (e) {
-  console.error("[ProcessAudio] Transcription :", e.message);
-}
+    // --- 1️⃣ Transcription ---
+    try {
+        texteTranscrit = await transcribeWithAssembly(tempfilePath);
+        sendToFlutter({
+            index: 0,
+            text: texteTranscrit || "[transcription vide]",
+            audioBase64: null,
+            mime: "text/plain",
+            deviceId
+        }, deviceId);
+    } catch (e) {
+        console.error("[ProcessAudio] Transcription :", e.message);
+    }
+
     // --- 2️⃣ Recherche Google approfondie ---
     let searchResultsSummary = '';
     try {
@@ -190,26 +190,26 @@ try {
         gptResponse = completion.choices[0].message.content;
     } catch (e) { console.error("[ProcessAudio] GPT :", e.message); }
 
-// --- 4️⃣ TTS segmenté non bloquant ---
+    // --- 4️⃣ TTS segmenté ---
 if (gptResponse) {
-  const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
-  
-  sentences.forEach(async (sentence, i) => {
-    try {
-      const audio = await generateGoogleTTSMP3(sentence);
-      const payload = { index: i, text: sentence, audioBase64: audio, mime: 'audio/mpeg', deviceId };
-      audioSegments.push(payload);
-      sendToFlutter(payload, deviceId);
-    } catch (e) {
-      console.error(`[ProcessAudio] TTS segment ${i}:`, e.message);
-    }
-  });
-}
+    const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
 
-    // --- Nettoyage ---
-    if (isBase64 && fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
+    const audioSegments = await Promise.all(
+        sentences.map(async (sentence, i) => {
+            try {
+                const audio = await generateGoogleTTSMP3(sentence);
+                const payload = { index: i, text: sentence, audioBase64: audio, mime: 'audio/mpeg', deviceId };
+                sendToFlutter(payload, deviceId);
+                return payload;
+            } catch (e) {
+                console.error(`[ProcessAudio] TTS segment ${i}:`, e.message);
+                return null;
+            }
+        })
+    );
 
-    return { transcription: texteTranscrit, gptResponse, audioSegments };
+    // Nettoyage des segments échoués
+    audioSegments.filter(Boolean).forEach(segment => audioSegments.push(segment));
 }
 
 // ------------------------
