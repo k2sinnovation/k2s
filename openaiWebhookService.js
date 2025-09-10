@@ -69,7 +69,7 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
     if (!deviceId) console.warn('[Webhook] DeviceId absent, traitement TTS impossible');
 
     // Exemple traitement pour response.completed
-  if (event.type === 'response.completed' && deviceId) {
+if (event.type === 'response.completed' && deviceId) {
   const outputText = event.data?.output_text || '';
   const sentences = outputText
     .split(/(?<=[.!?])\s+/)
@@ -78,23 +78,23 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
 
   console.log(`[Webhook] Nombre de phrases à traiter : ${sentences.length}`);
 
-  // Envoi phrase par phrase dès que prête, non bloquant
-// Envoi phrase par phrase en parallèle mais avec ordre garanti
-await Promise.all(
-  sentences.map(async (sentence, i) => {
-    try {
-      const audioBase64 = await generateGoogleTTSMP3(sentence);
-      sendToFlutter(
-        { index: i, text: sentence, audioBase64, mime: 'audio/mpeg', deviceId },
-        deviceId
-      );
-    } catch (err) {
-      console.error(`[Webhook TTS] Erreur phrase ${i}:`, err.message);
-    }
-  })
-);
+  await Promise.all(
+    sentences.map(async (sentence, i) => {
+      try {
+        const audioBase64 = await generateGoogleTTSMP3(sentence);
+        sendToFlutter(
+          { index: i, text: sentence, audioBase64, mime: 'audio/mpeg', deviceId },
+          deviceId
+        );
+      } catch (err) {
+        console.error(`[Webhook TTS] Erreur phrase ${i}:`, err.message);
+      }
+    })
+  );
+} // <- fermeture du if manquante
 
-    res.status(200).send('Webhook reçu');
+res.status(200).send('Webhook reçu');
+
   } catch (err) {
     console.error('[Webhook] Erreur serveur :', err.message);
     res.status(500).send('Erreur serveur');
