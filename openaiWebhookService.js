@@ -36,30 +36,25 @@ function sendToFlutter(payload, deviceId) {
 function handleWebSocket(server) {
   server.on('upgrade', (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, (ws) => {
-      ws.once('message', (message) => {
+      let deviceId;
+
+      ws.on('message', (msg) => {
         try {
-          const data = JSON.parse(message.toString());
-          const deviceId = data.deviceId;
-          if (!deviceId) {
-            console.warn('[WebSocket] deviceId manquant dans le message initial');
-            ws.close();
-            return;
+          const data = JSON.parse(msg.toString());
+          if (data.deviceId && !deviceId) {
+            deviceId = data.deviceId;
+            registerClient(deviceId, ws);
+            console.log(`[WebSocket] Client enregistré : ${deviceId}`);
           }
-          registerClient(deviceId, ws);
-          console.log(`[WebSocket] Client connecté : ${deviceId}`);
         } catch (e) {
-          console.error('[WebSocket] Erreur parsing message initial:', e.message);
-          ws.close();
+          console.error('Message WebSocket invalide:', e.message);
         }
       });
 
       ws.on('close', () => {
-        // Supprimer le client si deviceId connu
-        for (const [key, client] of Object.entries(clients)) {
-          if (client === ws) {
-            delete clients[key];
-            console.log(`[WebSocket] Client déconnecté : ${key}`);
-          }
+        if (deviceId) {
+          delete clients[deviceId];
+          console.log(`[WebSocket] Client déconnecté : ${deviceId}`);
         }
       });
     });
