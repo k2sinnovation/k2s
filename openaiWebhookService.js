@@ -34,36 +34,36 @@ function sendToFlutter(payload, deviceId) {
 }
 
 function handleWebSocket(server) {
-  server.on('upgrade', (request, socket, head) => {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      let deviceId = null;
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    let deviceId = null;
 
-      // On attend uniquement le premier message contenant le deviceId
-      ws.once('message', (msg) => {
-        try {
-          const data = JSON.parse(msg.toString());
-          if (data.deviceId) {
-            deviceId = data.deviceId;
-            clients[deviceId] = ws;
-            console.log(`[WebSocket] Client enregistré : ${deviceId}`);
-          } else {
-            console.warn('[WebSocket] DeviceId manquant dans le premier message');
-            ws.close();
-          }
-        } catch (e) {
-          console.error('[WebSocket] Message initial invalide :', e.message);
+    // n'accepte qu'un seul premier message
+    ws.once('message', (msg) => {
+      try {
+        const data = JSON.parse(msg.toString());
+        if (data.deviceId) {
+          deviceId = data.deviceId;
+          registerClient(deviceId, ws);
+          console.log(`[WebSocket] Client enregistré : ${deviceId}`);
+        } else {
+          console.warn('[WebSocket] DeviceId manquant, fermeture...');
           ws.close();
         }
-      });
+      } catch (e) {
+        console.error('[WebSocket] Message initial invalide :', e.message);
+        ws.close();
+      }
+    });
 
-      ws.on('close', () => {
-        if (deviceId) {
-          delete clients[deviceId];
-          console.log(`[WebSocket] Client déconnecté : ${deviceId}`);
-        }
-      });
+    ws.on('close', () => {
+      if (deviceId) {
+        delete clients[deviceId];
+        console.log(`[WebSocket] Client déconnecté : ${deviceId}`);
+      }
     });
   });
+});
 }
 
 
