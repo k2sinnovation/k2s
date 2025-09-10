@@ -190,11 +190,11 @@ async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = fals
         gptResponse = completion.choices[0].message.content;
     } catch (e) { console.error("[ProcessAudio] GPT :", e.message); }
 
-    // --- 4️⃣ TTS segmenté ---
+// --- 4️⃣ TTS segmenté ---
 if (gptResponse) {
     const sentences = gptResponse.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
 
-    const audioSegments = await Promise.all(
+    const ttsSegments = await Promise.all(
         sentences.map(async (sentence, i) => {
             try {
                 const audio = await generateGoogleTTSMP3(sentence);
@@ -208,8 +208,14 @@ if (gptResponse) {
         })
     );
 
-    // Nettoyage des segments échoués
-    audioSegments.filter(Boolean).forEach(segment => audioSegments.push(segment));
+    // Ajoute uniquement les segments valides à audioSegments
+    audioSegments.push(...ttsSegments.filter(Boolean));
+}
+// --- 5️⃣ Nettoyage temporaire ---
+if (isBase64 && fs.existsSync(tempfilePath)) fs.unlinkSync(tempfilePath);
+
+// --- Retour final ---
+return { transcription: texteTranscrit, gptResponse, audioSegments };
 }
 
 // ------------------------
