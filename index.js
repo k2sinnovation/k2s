@@ -8,7 +8,7 @@ const assemblyRoute = require('./routes/assembly');
 const testAudioRoutes = require('./routes/testAudio');
 const testTTSRoutes = require('./routes/testTTS');
 const testTtsRouter = require('./controllers/test_google_tts');
-const { router: openaiWebhookRouter, handleWebSocket: handleOpenAIWebSocket } = require('./openaiWebhookService'); 
+const { router: openaiWebhookRouter } = require('./openaiWebhookService'); 
 
 
 require('dotenv').config();
@@ -38,8 +38,7 @@ const { attachWebSocketToServer } = require('./websocket'); // Import fonction
 const server = http.createServer(app);
 
 // Attache WebSocket au serveur HTTP (une seule fois)
-attachWebSocketToServer(server);
-handleOpenAIWebSocket(server);   
+attachWebSocketToServer(server); 
 
 
 // ✅ Connexion MongoDB
