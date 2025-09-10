@@ -2,7 +2,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const OpenAI = require('openai');
-const { generateGoogleTTSMP3 } = require('./controllers/assemblyService'); // ton fichier TTS
+const { generateGoogleTTSMP3 } = require('./controllers/assemblyService'); // TTS
 const WebSocket = require('ws');
 
 const router = express.Router();
@@ -38,6 +38,7 @@ function handleWebSocket(server) {
     const urlParams = new URLSearchParams(request.url.replace('/?', ''));
     const deviceId = urlParams.get('deviceId');
     if (!deviceId) {
+      console.warn('[WebSocket] deviceId manquant dans la requête upgrade');
       socket.destroy();
       return;
     }
@@ -58,26 +59,11 @@ function handleWebSocket(server) {
 function verifySignature(rawBody, signature) {
   const hmac = crypto.createHmac('sha256', webhookSecret);
   hmac.update(rawBody);
-  const digest = hmac.digest('hex');
-
-  try {
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
-  } catch {
-    return false;
-  }
-}
-
-// =========================
-// Webhook OpenAI pour completions
-// =========================
-function verifySignature(rawBody, signature) {
-  const hmac = crypto.createHmac('sha256', webhookSecret);
-  hmac.update(rawBody);
-  const digest = hmac.digest('base64'); // ⚠️ pas "hex", mais "base64"
+  const digest = hmac.digest('base64'); // ⚠️ OpenAI utilise base64 pour webhook
 
   console.log('--- Vérification Webhook ---');
-  console.log('Signature reçue:', signature);
-  console.log('Digest attendu:', digest);
+  console.log('Signature reçue  :', signature);
+  console.log('Digest attendu   :', digest);
 
   try {
     return crypto.timingSafeEqual(
@@ -90,53 +76,69 @@ function verifySignature(rawBody, signature) {
   }
 }
 
+// =========================
+// Webhook OpenAI pour completions
+// =========================
+router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const signature = req.headers['x-openai-signature'];
+    const rawBody = req.body.toString(); // Corps brut en string
 
-router.post('/', express.raw({ type: 'application/json' }), async (req, res) =>
-  {
-    try {
-      const signature = req.headers['x-openai-signature'];
-      if (!signature || !verifySignature(req.body, signature)) {
-        console.warn('[Webhook] Signature invalide');
-        return res.status(403).send('Unauthorized');
-      }
+    console.log('--- Webhook reçu ---');
+    console.log('Signature reçue  :', signature);
+    console.log('Raw body         :', rawBody);
 
-      const event = JSON.parse(req.body.toString());
-      const deviceId = event.metadata?.deviceId;
-      if (!deviceId) return res.status(400).send('DeviceId manquant');
-
-      if (event.event_type === 'completion.completed') {
-        const sentences = event.completion.output_text
-          .split(/(?<=[.!?])\s+/)
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-        await Promise.all(
-          sentences.map(async (sentence, i) => {
-            try {
-              const audioBase64 = await generateGoogleTTSMP3(sentence);
-              sendToFlutter(
-                { index: i, text: sentence, audioBase64, mime: 'audio/mpeg', deviceId },
-                deviceId
-              );
-            } catch (err) {
-              console.error(`[Webhook TTS] Erreur phrase ${i}:`, err.message);
-            }
-          })
-        );
-      }
-
-      res.status(200).send('Webhook reçu');
-    } catch (err) {
-      console.error('[Webhook] Erreur:', err.message);
-      res.status(500).send('Erreur serveur');
+    if (!signature || !verifySignature(rawBody, signature)) {
+      console.warn('[Webhook] Signature invalide');
+      return res.status(403).send('Unauthorized');
     }
+
+    const event = JSON.parse(rawBody);
+    const deviceId = event.metadata?.deviceId;
+    if (!deviceId) {
+      console.warn('[Webhook] DeviceId manquant dans metadata');
+      return res.status(400).send('DeviceId manquant');
+    }
+
+    console.log(`[Webhook] Event type : ${event.event_type}, deviceId : ${deviceId}`);
+
+    if (event.event_type === 'completion.completed') {
+      const sentences = event.completion.output_text
+        .split(/(?<=[.!?])\s+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      console.log(`[Webhook] Nombre de phrases à traiter : ${sentences.length}`);
+
+      await Promise.all(
+        sentences.map(async (sentence, i) => {
+          try {
+            const audioBase64 = await generateGoogleTTSMP3(sentence);
+            console.log(`[Webhook] Phrase ${i} traitée :`, sentence);
+            sendToFlutter(
+              { index: i, text: sentence, audioBase64, mime: 'audio/mpeg', deviceId },
+              deviceId
+            );
+          } catch (err) {
+            console.error(`[Webhook TTS] Erreur phrase ${i}:`, err.message);
+          }
+        })
+      );
+    }
+
+    res.status(200).send('Webhook reçu');
+  } catch (err) {
+    console.error('[Webhook] Erreur serveur :', err.message);
+    res.status(500).send('Erreur serveur');
   }
-);
+});
+
 // =========================
 // Fonction pour envoyer une requête GPT avec webhook
 // =========================
 async function requestGPTWithWebhook(userText, deviceId, promptSystem) {
   try {
+    console.log(`[GPT Webhook] Envoi requête GPT pour deviceId : ${deviceId}`);
     await openai.chat.completions.create({
       model: 'gpt-5-chat-latest',
       messages: [
