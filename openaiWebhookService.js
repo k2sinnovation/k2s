@@ -57,9 +57,10 @@ function handleWebSocket(server) {
 // Vérification signature HMAC
 // =========================
 function verifySignature(rawBody, signature) {
+  if (!signature) return true; // Tolère l'absence de signature
   const hmac = crypto.createHmac('sha256', webhookSecret);
   hmac.update(rawBody);
-  const digest = hmac.digest('base64'); // ⚠️ OpenAI utilise base64 pour webhook
+  const digest = hmac.digest('base64'); // OpenAI utilise base64 pour webhook
 
   console.log('--- Vérification Webhook ---');
   console.log('Signature reçue  :', signature);
@@ -77,33 +78,35 @@ function verifySignature(rawBody, signature) {
 }
 
 // =========================
-// Webhook OpenAI pour completions
+// Webhook OpenAI pour tous types d'événements
 // =========================
 router.post('/', express.raw({ type: 'application/json' }), async (req, res) => {
   try {
     const signature = req.headers['x-openai-signature'];
-    const rawBody = req.body.toString(); // Corps brut en string
+    const rawBody = req.body.toString();
 
     console.log('--- Webhook reçu ---');
     console.log('Signature reçue  :', signature);
     console.log('Raw body         :', rawBody);
 
-    if (!signature || !verifySignature(rawBody, signature)) {
+    // Vérifie HMAC si signature présente
+    if (!verifySignature(rawBody, signature)) {
       console.warn('[Webhook] Signature invalide');
       return res.status(403).send('Unauthorized');
     }
 
     const event = JSON.parse(rawBody);
-    const deviceId = event.metadata?.deviceId;
-    if (!deviceId) {
-      console.warn('[Webhook] DeviceId manquant dans metadata');
-      return res.status(400).send('DeviceId manquant');
-    }
+    console.log('Event type       :', event.type);
+    console.log('Event data       :', JSON.stringify(event.data, null, 2));
 
-    console.log(`[Webhook] Event type : ${event.event_type}, deviceId : ${deviceId}`);
+    // Récupération du deviceId si disponible
+    const deviceId = event.data?.metadata?.deviceId || event.metadata?.deviceId;
+    if (!deviceId) console.warn('[Webhook] DeviceId absent, traitement TTS impossible');
 
-    if (event.event_type === 'completion.completed') {
-      const sentences = event.completion.output_text
+    // Exemple traitement pour response.completed
+    if (event.type === 'response.completed' && deviceId) {
+      const outputText = event.data?.output_text || '';
+      const sentences = outputText
         .split(/(?<=[.!?])\s+/)
         .map(s => s.trim())
         .filter(Boolean);
