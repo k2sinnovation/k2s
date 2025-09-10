@@ -79,7 +79,9 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
   console.log(`[Webhook] Nombre de phrases à traiter : ${sentences.length}`);
 
   // Envoi phrase par phrase dès que prête, non bloquant
-  sentences.forEach(async (sentence, i) => {
+// Envoi phrase par phrase en parallèle mais avec ordre garanti
+await Promise.all(
+  sentences.map(async (sentence, i) => {
     try {
       const audioBase64 = await generateGoogleTTSMP3(sentence);
       sendToFlutter(
@@ -89,8 +91,8 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
     } catch (err) {
       console.error(`[Webhook TTS] Erreur phrase ${i}:`, err.message);
     }
-  });
-}
+  })
+);
 
     res.status(200).send('Webhook reçu');
   } catch (err) {
