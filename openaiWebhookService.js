@@ -35,19 +35,25 @@ function sendToFlutter(payload, deviceId) {
 
 function handleWebSocket(server) {
   server.on('upgrade', (request, socket, head) => {
+    // handleUpgrade une seule fois par connexion
     wss.handleUpgrade(request, socket, head, (ws) => {
-      let deviceId;
+      let deviceId = null;
 
-      ws.on('message', (msg) => {
+      // Attente du message initial contenant le deviceId
+      ws.once('message', (msg) => {
         try {
           const data = JSON.parse(msg.toString());
-          if (data.deviceId && !deviceId) {
+          if (data.deviceId) {
             deviceId = data.deviceId;
             registerClient(deviceId, ws);
             console.log(`[WebSocket] Client enregistré : ${deviceId}`);
+          } else {
+            console.warn('[WebSocket] DeviceId manquant dans le premier message');
+            ws.close();
           }
         } catch (e) {
-          console.error('Message WebSocket invalide:', e.message);
+          console.error('[WebSocket] Message initial invalide :', e.message);
+          ws.close();
         }
       });
 
@@ -60,6 +66,7 @@ function handleWebSocket(server) {
     });
   });
 }
+
 
 
 // =========================
