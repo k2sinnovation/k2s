@@ -211,7 +211,7 @@ if (gptResponse) {
                 sendToFlutter(payload, deviceId);
                 return payload;
             } catch (e) {
-                console.error([ProcessAudio] TTS segment ${i}:, e.message);
+                console.error(`[ProcessAudio] TTS segment ${i}:`, e.message);
                 return null;
             }
         })
