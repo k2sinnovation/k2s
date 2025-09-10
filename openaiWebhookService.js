@@ -149,5 +149,5 @@ async function requestGPTDirect(userText, deviceId, promptSystem) {
 
 module.exports = {
   router,
-  requestGPTWithWebhook,
+  requestGPTDirect, 
 };
