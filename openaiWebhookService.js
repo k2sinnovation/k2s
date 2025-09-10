@@ -35,17 +35,16 @@ function sendToFlutter(payload, deviceId) {
 
 function handleWebSocket(server) {
   server.on('upgrade', (request, socket, head) => {
-    // handleUpgrade une seule fois par connexion
     wss.handleUpgrade(request, socket, head, (ws) => {
       let deviceId = null;
 
-      // Attente du message initial contenant le deviceId
+      // On attend uniquement le premier message contenant le deviceId
       ws.once('message', (msg) => {
         try {
           const data = JSON.parse(msg.toString());
           if (data.deviceId) {
             deviceId = data.deviceId;
-            registerClient(deviceId, ws);
+            clients[deviceId] = ws;
             console.log(`[WebSocket] Client enregistré : ${deviceId}`);
           } else {
             console.warn('[WebSocket] DeviceId manquant dans le premier message');
@@ -66,6 +65,7 @@ function handleWebSocket(server) {
     });
   });
 }
+
 
 
 
