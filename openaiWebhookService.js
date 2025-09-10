@@ -104,23 +104,48 @@ await Promise.all(
 // =========================
 // Fonction pour envoyer une requête GPT avec webhook
 // =========================
-async function requestGPTWithWebhook(userText, deviceId, promptSystem) {
+async function requestGPTDirect(userText, deviceId, promptSystem) {
   try {
-    console.log(`[GPT Webhook] Envoi requête GPT pour deviceId : ${deviceId}`);
-    await openai.chat.completions.create({
+    console.log(`[GPT Direct] Envoi requête GPT pour deviceId : ${deviceId}`);
+
+    const completion = await openai.chat.completions.create({
       model: 'gpt-5-chat-latest',
       messages: [
         { role: 'system', content: promptSystem },
         { role: 'user', content: userText },
       ],
-      webhook: 'https://k2s.onrender.com/openai-webhook',
-      webhook_secret: webhookSecret,
-      metadata: { deviceId },
     });
+
+    const outputText = completion.choices[0].message.content || '';
+
+    // Découpage en phrases et génération TTS en parallèle
+    const sentences = outputText
+      .split(/(?<=[.!?])\s+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    await Promise.all(
+      sentences.map(async (sentence, i) => {
+        try {
+          const audioBase64 = await generateGoogleTTSMP3(sentence);
+          sendToFlutter(
+            { index: i, text: sentence, audioBase64, mime: 'audio/mpeg', deviceId },
+            deviceId
+          );
+        } catch (err) {
+          console.error(`[GPT Direct TTS] Erreur phrase ${i}:`, err.message);
+        }
+      })
+    );
+
+    return outputText;
+
   } catch (err) {
-    console.error('[GPT Webhook] Erreur création completion :', err.message);
+    console.error('[GPT Direct] Erreur création completion :', err.message);
+    return '';
   }
 }
+
 
 module.exports = {
   router,
