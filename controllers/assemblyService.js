@@ -5,7 +5,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 /**
  * Processus complet : Audio → GPT-Realtime → réponse audio cohérente
  */
-async function processAudioAndReturnJSONRealtime(fileOrBase64, deviceId, isBase64 = false) {
+async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = false) {
     const { sendToFlutter } = require('../websocket');
 
     // 1️⃣ Préparer le buffer audio
