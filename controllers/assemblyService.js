@@ -56,4 +56,4 @@ async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = fals
     }
 }
 
-module.exports = { processAudioAndReturnJSONRealtime };
+module.exports = { processAudioAndReturnJSON };
