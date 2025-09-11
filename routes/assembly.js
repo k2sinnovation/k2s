@@ -1,53 +1,33 @@
 const express = require('express');
 const router = express.Router();
-const { processAudioAndReturnJSON, generateGoogleTTSBase64 } = require('../controllers/assemblyService');
+const { processAudioAndReturnJSONRealtime } = require('../controllers/realtimeService');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 
 const upload = multer({ dest: 'uploads/' });
 
-// Route pour uploader et transcrire un audio
+// Route pour uploader et traiter un audio via GPT-Realtime
 router.post('/transcribe', upload.single('audio'), async (req, res) => {
   try {
+    const deviceId = req.body.deviceId;
+    if (!deviceId) return res.status(400).json({ error: 'deviceId manquant' });
+
+    // Renommer le fichier uploadé
     const ext = path.extname(req.file.originalname) || '.wav';
     const newFilename = `${Date.now()}${ext}`;
     const newPath = path.join('uploads', newFilename);
-
     fs.renameSync(req.file.path, newPath);
-    console.log("[UPLOAD] Fichier renommé :", newPath);
 
-    // ✅ Récupération du deviceId depuis le body
-    const deviceId = req.body.deviceId;
-    if (!deviceId) {
-      console.warn("[TRANSCRIBE] deviceId manquant !");
-      return res.status(400).json({ error: 'deviceId manquant' });
-    }
-    console.log("[TRANSCRIBE] Device ID reçu :", deviceId);
-
-    // ✅ Appel de processAudioAndReturnJSON avec deviceId
-    const result = await processAudioAndReturnJSON(newPath, deviceId);
-    console.log("[TRANSCRIBE] Transcription obtenue :", result.transcription);
-
+    // Appel à GPT-Realtime
+    const result = await processAudioAndReturnJSONRealtime(newPath, deviceId);
     res.json(result);
 
-  } catch (err) {
-    console.error("[TRANSCRIBE] Erreur :", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
+    // Nettoyage
+    fs.unlinkSync(newPath);
 
-// Route pour générer un TTS Google (optionnel)
-router.get('/tts', async (req, res) => {
-  const { text } = req.query;
-  if (!text) return res.status(400).send('Paramètre text manquant');
-
-  try {
-    console.log("[TTS] Texte reçu :", text);
-    const audioBase64 = await generateGoogleTTSBase64(text);
-    res.json({ audioBase64 });
   } catch (err) {
-    console.error("[TTS] Erreur :", err.message);
+    console.error("[TRANSCRIBE Realtime] Erreur :", err.message);
     res.status(500).json({ error: err.message });
   }
 });
