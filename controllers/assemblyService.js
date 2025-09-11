@@ -8,44 +8,49 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = false) {
     const { sendToFlutter } = require('../websocket');
 
-    // 1️⃣ Préparer le buffer audio
+    // 1️⃣ Préparer le buffer audio segmenté
     let audioBuffer;
     if (isBase64) {
-        audioBuffer = Buffer.from(fileOrBase64.split(',')[1], 'base64');
+        const parts = fileOrBase64.split(',');
+        if (!parts[1]) {
+            console.warn('[Realtime] Audio Base64 vide ou mal formé');
+            return;
+        }
+        audioBuffer = Buffer.from(parts[1], 'base64');
     } else {
         audioBuffer = fs.readFileSync(fileOrBase64);
     }
 
-    // 2️⃣ Envoyer l’audio à GPT-Realtime et récupérer la réponse audio complète
+    // 2️⃣ Envoyer le segment à GPT-Realtime
     try {
         const response = await openai.chat.completions.create({
             model: "gpt-realtime-2025-08-28",
-            modalities: ["audio"],      // audio input + output
-            audio: audioBuffer,          // ton fichier audio
-            audio_format: "mp3",         // ou "wav" si besoin
-            audio_voice: "Cedar",        // ou "Marin"
+            modalities: ["audio"],
+            audio: audioBuffer,
+            audio_format: "mp3",
+            audio_voice: "Cedar",
             messages: [
                 { role: "system", content: "Tu es un assistant vocal en français." },
-                { role: "user", content: "Réponds à l'audio reçu" }
+                { role: "user", content: "Réponds à ce segment audio" }
             ],
-            stream: false                // réponse complète et cohérente
+            stream: false
         });
 
         const gptAudioBase64 = response.choices[0].message.audio;
         const gptText = response.choices[0].message.content || "";
 
-        // 3️⃣ Envoi vers Flutter
+        // 3️⃣ Envoi segment par segment vers Flutter
         sendToFlutter({
-            index: 0,
+            index: Date.now(), // timestamp unique pour chaque segment
             text: gptText,
             audioBase64: gptAudioBase64,
             mime: 'audio/mpeg',
             deviceId
         }, deviceId);
 
-        // 4️⃣ Retour final pour Express
+        // 4️⃣ Retour segment
         return {
-            transcription: "[Direct Realtime]",  
+            transcription: "[Segment Realtime]",
             gptResponse: gptText,
             audioSegments: [{ audioBase64: gptAudioBase64, text: gptText }]
         };
@@ -55,5 +60,6 @@ async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = fals
         return { transcription: "", gptResponse: "", audioSegments: [] };
     }
 }
+
 
 module.exports = { processAudioAndReturnJSON };
