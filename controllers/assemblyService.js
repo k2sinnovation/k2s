@@ -1,69 +1,222 @@
 // controllers/assemblyService.js
-const { OpenAI } = require('openai');
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const fs = require('fs');
+const axios = require('axios');
+const textToSpeech = require('@google-cloud/text-to-speech');
+const { PassThrough } = require('stream');
+console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
 
-/**
- * Processus complet : segment audio → GPT-Realtime → réponse audio cohérente
- * @param {string} base64Segment - Segment audio encodé en Base64
- * @param {string} deviceId - ID du device
- * @param {function} sendToFlutter - Fonction pour envoyer le message au client (passée depuis websocket.js)
- */
-async function processAudioSegment(base64Segment, deviceId, sendToFlutter) {
-  if (!base64Segment || base64Segment.length === 0) {
-    console.warn('[Realtime] Audio Base64 vide ou mal formé');
-    return;
-  }
-  if (typeof sendToFlutter !== 'function') {
-    console.warn('[Realtime] sendToFlutter non fourni ou invalide — abort');
-    return;
-  }
+// Initialisation Google TTS
+const ttsClient = new textToSpeech.TextToSpeechClient();
 
-  // Supprimer un éventuel préfixe "data:audio/wav;base64," si présent
-  let base64Data = base64Segment.includes(',') ? base64Segment.split(',')[1] : base64Segment;
-
+// ------------------------
+// Transcription AssemblyAI
+// ------------------------
+async function transcribeWithAssembly(audioPath) {
   try {
-    const audioBuffer = Buffer.from(base64Data, 'base64');
-
-    // Envoi au modèle (traitement d'un segment)
-    const response = await openai.chat.completions.create({
-      model: "gpt-realtime-2025-08-28",
-      modalities: ["audio"],
-      audio: audioBuffer,
-      audio_format: "mp3",
-      audio_voice: "Cedar",
-      messages: [
-        { role: "system", content: "Tu es un assistant vocal en français." },
-        { role: "user", content: "Réponds à l'audio reçu" }
-      ],
-      stream: false
-    });
-
-    const gptAudioBase64 = response.choices?.[0]?.message?.audio;
-    const gptText = response.choices?.[0]?.message?.content || "";
-
-    if (!gptAudioBase64) {
-      console.warn('[Realtime] Aucun audio retourné par GPT-Realtime');
-    } else {
-      // Envoi immédiat vers Flutter via la fonction passée
-      sendToFlutter({
-        index: Date.now(),
-        text: gptText,
-        audioBase64: gptAudioBase64,
-        mime: 'audio/mpeg',
-        deviceId
-      }, deviceId);
+    console.log([AssemblyAI] Lecture du fichier audio : ${audioPath});
+    const fileData = fs.readFileSync(audioPath);
+    console.log("[AssemblyAI] Upload audio en cours...");
+    const uploadResponse = await axios.post(
+      'https://api.assemblyai.com/v2/upload',
+      fileData,
+      {
+        headers: {
+          authorization: process.env.ASSEMBLYAI_API_KEY,
+          'content-type': 'application/octet-stream',
+        },
+      }
+    );
+    const uploadUrl = uploadResponse.data.upload_url;
+    console.log([AssemblyAI] Audio uploadé : ${uploadUrl});
+    // Créer la transcription
+    console.log("[AssemblyAI] Création de la transcription...");
+    const transcriptResponse = await axios.post(
+      'https://api.assemblyai.com/v2/transcript',
+      {
+        audio_url: uploadUrl,
+        speech_model: 'universal',
+        language_code: 'fr',
+      },
+      {
+        headers: {
+          authorization: process.env.ASSEMBLYAI_API_KEY,
+        },
+      }
+    );
+    const transcriptId = transcriptResponse.data.id;
+    console.log([AssemblyAI] ID transcription : ${transcriptId});
+    const pollingEndpoint = https://api.assemblyai.com/v2/transcript/${transcriptId};
+    // Polling pour attendre la fin
+    while (true) {
+      const result = await axios.get(pollingEndpoint, {
+        headers: {
+          authorization: process.env.ASSEMBLYAI_API_KEY,
+        },
+      });
+      if (result.data.status === 'completed') {
+        console.log([AssemblyAI] Transcription terminée : ${result.data.text});
+        return result.data.text;
+      } else if (result.data.status === 'error') {
+        throw new Error(Transcription échouée: ${result.data.error});
+      } else {
+        console.log("[AssemblyAI] Transcription en cours...");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     }
-
-    return {
-      transcription: "[Direct Realtime]",
-      gptResponse: gptText,
-      audioSegments: gptAudioBase64 ? [{ audioBase64: gptAudioBase64, text: gptText }] : []
-    };
-
-  } catch (err) {
-    console.error("[Realtime] GPT error :", err?.message || err);
-    return { transcription: "", gptResponse: "", audioSegments: [] };
+  } catch (error) {
+    console.error("Erreur transcrire avec AssemblyAI :", error.message);
+    throw error;
   }
 }
 
-module.exports = { processAudioSegment };
+// ------------------------
+// Streaming TTS Google Cloud
+// ------------------------
+async function streamGoogleTTS(text, res) {
+  try {
+    console.log([Google TTS] Génération TTS pour : ${text});
+    const request = {
+      input: { text },
+      voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
+      audioConfig: { audioEncoding: 'MP3' },
+    };
+    const [response] = await ttsClient.synthesizeSpeech(request);
+    console.log("[Google TTS] Audio généré (taille en bytes) :", response.audioContent.length);
+    const stream = new PassThrough();
+    stream.end(response.audioContent);
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Disposition': 'inline; filename="tts.mp3"',
+    });
+    stream.pipe(res);
+  } catch (error) {
+    console.error("Erreur Google TTS :", error.message);
+    res.status(500).send('Erreur génération TTS');
+  }
+}
+
+// ------------------------
+// Processus central Audio → AssemblyAI → GPT → TTS
+// ------------------------
+async function processAudio(filePath, gptResponse) {
+  try {
+    console.log([ProcessAudio] Début traitement du fichier : ${filePath});
+    const texte = await transcribeWithAssembly(filePath);
+    console.log([ProcessAudio] Texte transcrit : ${texte});
+    if (gptResponse) {
+      console.log([ProcessAudio] Réponse GPT : ${gptResponse});
+    }
+    // Supprimer le fichier audio temporaire
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log([ProcessAudio] Fichier temporaire supprimé : ${filePath});
+    }
+    return { texte, gptResponse };
+  } catch (error) {
+    console.error("Erreur processAudio :", error.message);
+    throw error;
+  }
+}
+
+module.exports = {
+  transcribeWithAssembly,
+  streamGoogleTTS,
+  processAudio,
+};
+
+// controllers/assemblyService.js
+const fs = require('fs');
+const axios = require('axios');
+const textToSpeech = require('@google-cloud/text-to-speech');
+const { PassThrough } = require('stream');
+const path = require('path');
+console.log("ASSEMBLYAI_API_KEY:", process.env.ASSEMBLYAI_API_KEY);
+
+// Initialisation Google TTS
+const ttsClient = new textToSpeech.TextToSpeechClient();
+
+// ------------------------
+// Transcription AssemblyAI
+// ------------------------
+async function transcribeWithAssembly(audioPath) {
+  try {
+    const fileData = fs.readFileSync(audioPath);
+    // Upload audio sur AssemblyAI
+    const uploadResponse = await axios.post(
+      'https://api.assemblyai.com/v2/upload',
+      fileData,
+      {
+        headers: {
+          authorization: process.env.ASSEMBLYAI_API_KEY,
+          'content-type': 'application/octet-stream',
+        },
+      }
+    );
+    const uploadUrl = uploadResponse.data.upload_url;
+    // Créer la transcription
+    const transcriptResponse = await axios.post(
+      'https://api.assemblyai.com/v2/transcript',
+      { audio_url: uploadUrl, speech_model: 'universal' },
+      { headers: { authorization: process.env.ASSEMBLYAI_API_KEY } }
+    );
+    const transcriptId = transcriptResponse.data.id;
+    const pollingEndpoint = https://api.assemblyai.com/v2/transcript/${transcriptId};
+    // Polling pour attendre la fin
+    while (true) {
+      const result = await axios.get(pollingEndpoint, {
+        headers: { authorization: process.env.ASSEMBLYAI_API_KEY },
+      });
+      if (result.data.status === 'completed') {
+        return result.data.text;
+      } else if (result.data.status === 'error') {
+        throw new Error(Transcription échouée: ${result.data.error});
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    }
+  } catch (error) {
+    console.error("Erreur transcrire avec AssemblyAI :", error.message);
+    throw error;
+  }
+}
+
+// ------------------------
+// Streaming TTS Google Cloud
+// ------------------------
+async function streamGoogleTTS(text, res) {
+  try {
+    const request = {
+      input: { text },
+      voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
+      audioConfig: { audioEncoding: 'MP3' },
+    };
+    const [response] = await ttsClient.synthesizeSpeech(request);
+    const stream = new PassThrough();
+    stream.end(response.audioContent);
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Disposition': 'inline; filename="tts.mp3"',
+    });
+    stream.pipe(res);
+  } catch (error) {
+    console.error("Erreur Google TTS :", error.message);
+    res.status(500).send('Erreur génération TTS');
+  }
+}
+
+// ------------------------
+// Processus central Audio → AssemblyAI → Google TTS
+// ------------------------
+async function processAudio(filePath) {
+  try {
+    const texte = await transcribeWithAssembly(filePath);
+    // Supprimer le fichier audio temporaire
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return { texte };
+  } catch (error) {
+    console.error("Erreur processAudio :", error.message);
+    throw error;
+  }
+}
+
+module.exports = { transcribeWithAssembly, streamGoogleTTS, processAudio };
