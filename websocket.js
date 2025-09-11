@@ -1,4 +1,3 @@
-// websocket.js
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +9,7 @@ const clients = new Map(); // Map<deviceId, { ws }>
 const wss = new WebSocket.Server({ noServer: true });
 
 // Lire les citations
-let quotes = [];
+let quotes = []; 
 try {
   const raw = fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8');
   quotes = JSON.parse(raw);
@@ -30,7 +29,7 @@ setInterval(() => {
 
 // Connexion
 wss.on('connection', (ws) => {
-  let deviceId = null;
+  let deviceId = null; // ⚠️ Déclaré ici
 
   ws.on('message', async (message) => {
     let data;
@@ -41,7 +40,7 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // Assurer que deviceId est défini (premier message du client)
+    // Toujours s'assurer que deviceId est défini
     if (!deviceId && data.deviceId) {
       deviceId = String(data.deviceId);
       ws.deviceId = deviceId;
@@ -49,28 +48,28 @@ wss.on('connection', (ws) => {
       console.log(`[WebSocket] Device connecté : ${deviceId}`);
     }
 
-    // Gestion segment audio
+    // Si audio reçu
     if (data.audioBase64) {
+      if (!deviceId && data.deviceId) {
+        deviceId = String(data.deviceId);
+        ws.deviceId = deviceId;
+        clients.set(deviceId, { ws });
+        console.log(`[WebSocket] Device connecté tardivement : ${deviceId}`);
+      }
+
       if (!deviceId) {
         console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
         return;
       }
 
-      if (!data.audioBase64 || data.audioBase64.length === 0) {
-        console.warn('[WebSocket] Audio Base64 vide ou mal formé pour', deviceId);
-        return;
+      try {
+        console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
+       await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);  // ✅ Passer deviceId
+      } catch (err) {
+        console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
       }
-
-      console.log(`[WebSocket] Segment audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
-
-      // Appel non-bloquant : on lance le traitement asynchrone sans bloquer la réception d'autres messages
-      assemblyService.processAudioSegment(data.audioBase64, deviceId, sendToFlutter)
-        .catch(err => {
-          console.error('[WebSocket] Erreur traitement segment audio pour', deviceId, err?.message || err);
-        });
     }
 
-    // Autres types de messages (logs)
     console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
   });
 
@@ -98,7 +97,7 @@ wss.on('connection', (ws) => {
   ws.on('pong', (data) => {
     console.log(`[WebSocket] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
   });
-});
+}); // ✅ Fermeture correcte de wss.on('connection')
 
 // Envoie un message UNIQUEMENT au device ciblé.
 function sendToFlutter(payload, targetDeviceId) {
