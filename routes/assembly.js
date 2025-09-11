@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { processAudioAndReturnJSONRealtime } = require('../controllers/realtimeService');
+const { processAudioAndReturnJSONRealtime } = require('../controllers/assemblyService');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
