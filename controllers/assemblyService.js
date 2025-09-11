@@ -1,20 +1,20 @@
 const fs = require('fs');
 const { OpenAI } = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const { sendToFlutter } = require('../websocket');
 
 /**
  * Processus complet : segment audio → GPT-Realtime → réponse audio cohérente
  */
 async function processAudioSegment(base64Segment, deviceId) {
-    const { sendToFlutter } = require('../websocket');
-
     if (!base64Segment || base64Segment.length === 0) {
         console.warn('[Realtime] Audio Base64 vide ou mal formé');
         return;
     }
 
     // Convertir Base64 en buffer
-    const audioBuffer = Buffer.from(base64Segment, 'base64');
+    let base64Data = base64Segment.includes(',') ? base64Segment.split(',')[1] : base64Segment;
+    const audioBuffer = Buffer.from(base64Data, 'base64');
 
     try {
         // 1️⃣ Envoyer le segment à GPT-Realtime
@@ -34,9 +34,9 @@ async function processAudioSegment(base64Segment, deviceId) {
         const gptAudioBase64 = response.choices[0].message.audio;
         const gptText = response.choices[0].message.content || "";
 
-        // 2️⃣ Envoi segmenté vers Flutter
+        // 2️⃣ Envoi immédiat vers Flutter
         sendToFlutter({
-            index: Date.now(), // ou récupérer depuis Flutter si besoin
+            index: Date.now(), // index pour identifier le segment
             text: gptText,
             audioBase64: gptAudioBase64,
             mime: 'audio/mpeg',
