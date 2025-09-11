@@ -49,36 +49,26 @@ wss.on('connection', (ws) => {
     }
 
 // Si audio reçu
-if (data.audioBase64) {
-  // ⚠️ Assurer que deviceId est défini
-  if (!deviceId && data.deviceId) {
-    deviceId = String(data.deviceId);
-    ws.deviceId = deviceId;
-    clients.set(deviceId, { ws });
-    console.log(`[WebSocket] Device connecté tardivement : ${deviceId}`);
-  }
+    if (data.audioBase64) {
+      if (!deviceId) {
+        console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
+        return;
+      }
 
-  if (!deviceId) {
-    console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
-    return;
-  }
+      try {
+        if (!data.audioBase64 || data.audioBase64.length === 0) {
+          console.warn('[WebSocket] Audio Base64 vide ou mal formé pour', deviceId);
+          return;
+        }
 
-  // ⚡ Appel à la nouvelle fonction segmentée
-  try {
-    if (!data.audioBase64 || data.audioBase64.length === 0) {
-      console.warn('[WebSocket] Audio Base64 vide ou mal formé pour', deviceId);
-      return;
+        console.log(`[WebSocket] Segment audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
+        await assemblyService.processAudioSegment(data.audioBase64, deviceId); // 🔹 fonction segment
+      } catch (err) {
+        console.error('[WebSocket] Erreur traitement segment audio pour', deviceId, err.message);
+      }
     }
 
-    console.log(`[WebSocket] Segment audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
-    await assemblyService.processAudioSegment(data.audioBase64, deviceId); // 🔹 fonction segment
-  } catch (err) {
-    console.error('[WebSocket] Erreur traitement segment audio pour', deviceId, err.message);
-  }
-}
-
-console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
-
+    console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
   });
 
   // Citation aléatoire toutes les 15s
