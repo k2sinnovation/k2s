@@ -1,4 +1,4 @@
-import { RealtimeClient } from "openai/realtime";
+import OpenAI from "openai";
 import fs from "fs";
 
 // ------------------------
@@ -18,40 +18,57 @@ export async function processAudioRealtime(fileOrBase64, deviceId, isBase64 = fa
     audioBuffer = fs.readFileSync(fileOrBase64);
   }
 
-  // Créer un client Realtime
-  const client = new RealtimeClient({
-    apiKey: process.env.OPENAI_API_KEY,
+  // Créer le client OpenAI
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  // Créer une session Realtime
+  const session = await openai.beta.realtime.sessions.create({
     model: "gpt-4o-realtime-preview-2025-06-03",
-    voice: "alloy" // tu peux changer la voix
+    voice: "alloy"
   });
 
-  // Connexion
-  await client.connect();
+  console.log("[Realtime] Session créée :", session.id);
 
-  console.log("[Realtime] Connecté à GPT-4o-realtime");
+  // Envoyer l’audio et demander une réponse vocale
+  const response = await openai.beta.realtime.responses.create({
+    session: session.id,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_audio",
+            audio: audioBuffer.toString("base64")
+          }
+        ]
+      }
+    ]
+  });
 
-  // Écoute des chunks audio en sortie
-  client.on("output_audio_buffer", (chunk) => {
-    const audioBase64 = chunk.toString("base64");
-    sendToFlutter({
-      index: 0,
-      text: null,
-      audioBase64,
-      mime: "audio/mpeg",
+  console.log("[Realtime] Réponse reçue :", JSON.stringify(response, null, 2));
+
+  // Extraire l’audio de la réponse
+  let audioBase64 = null;
+  for (const output of response.output) {
+    for (const item of output.content) {
+      if (item.type === "output_audio") {
+        audioBase64 = item.audio;
+      }
+    }
+  }
+
+  if (audioBase64) {
+    sendToFlutter(
+      {
+        index: 0,
+        text: null,
+        audioBase64,
+        mime: "audio/mpeg",
+        deviceId
+      },
       deviceId
-    }, deviceId);
-  });
-
-  // Envoyer l’audio utilisateur
-  await client.sendAudio(audioBuffer);
-
-  console.log("[Realtime] Audio envoyé au modèle");
-
-  // Clore après la réponse
-  client.on("session_ended", () => {
-    console.log("[Realtime] Session terminée");
-    client.disconnect();
-  });
+    );
+  }
 
   return { status: "ok", deviceId };
 }
