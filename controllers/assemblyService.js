@@ -1,13 +1,10 @@
+// assemblyService.js
 import OpenAI from "openai";
 import fs from "fs";
 
-// ------------------------
-// Fonction principale
-// ------------------------
-export async function processAudioRealtime(fileOrBase64, deviceId, isBase64 = false) {
+export async function processAudioAndReturnJSON(fileOrBase64, deviceId, isBase64 = false) {
   const { sendToFlutter } = await import("../websocket.js");
 
-  // Préparer l’audio en buffer
   let audioBuffer;
   if (isBase64) {
     const base64Data = fileOrBase64.includes(",")
@@ -18,10 +15,8 @@ export async function processAudioRealtime(fileOrBase64, deviceId, isBase64 = fa
     audioBuffer = fs.readFileSync(fileOrBase64);
   }
 
-  // Créer le client OpenAI
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // Créer une session Realtime
   const session = await openai.beta.realtime.sessions.create({
     model: "gpt-4o-realtime-preview-2025-06-03",
     voice: "alloy"
@@ -29,7 +24,6 @@ export async function processAudioRealtime(fileOrBase64, deviceId, isBase64 = fa
 
   console.log("[Realtime] Session créée :", session.id);
 
-  // Envoyer l’audio et demander une réponse vocale
   const response = await openai.beta.realtime.responses.create({
     session: session.id,
     input: [
@@ -47,7 +41,6 @@ export async function processAudioRealtime(fileOrBase64, deviceId, isBase64 = fa
 
   console.log("[Realtime] Réponse reçue :", JSON.stringify(response, null, 2));
 
-  // Extraire l’audio de la réponse
   let audioBase64 = null;
   for (const output of response.output) {
     for (const item of output.content) {
