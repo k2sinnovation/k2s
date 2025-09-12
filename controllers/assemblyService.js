@@ -1,64 +1,57 @@
-// backend/realtimeFlutterGPT.js
-import WebSocket, { WebSocketServer } from 'ws';
-import { RealtimeClient } from '@openai/realtime-api-beta';
-import dotenv from 'dotenv';
-dotenv.config();
+import { RealtimeClient } from "openai/realtime";
+import fs from "fs";
 
-const wss = new WebSocketServer({ port: 8080 });
-console.log("[Server] WebSocket lancé sur ws://localhost:8080");
+// ------------------------
+// Fonction principale
+// ------------------------
+export async function processAudioRealtime(fileOrBase64, deviceId, isBase64 = false) {
+  const { sendToFlutter } = await import("../websocket.js");
 
-wss.on('connection', async (ws) => {
-  console.log("[Server] Flutter connecté");
+  // Préparer l’audio en buffer
+  let audioBuffer;
+  if (isBase64) {
+    const base64Data = fileOrBase64.includes(",")
+      ? fileOrBase64.split(",")[1]
+      : fileOrBase64;
+    audioBuffer = Buffer.from(base64Data, "base64");
+  } else {
+    audioBuffer = fs.readFileSync(fileOrBase64);
+  }
 
-  let deviceId = null;
-
+  // Créer un client Realtime
   const client = new RealtimeClient({
     apiKey: process.env.OPENAI_API_KEY,
-    model: 'gpt-4o-realtime-preview-2025-06-03',
-    voice: 'alloy',
+    model: "gpt-4o-realtime-preview-2025-06-03",
+    voice: "alloy" // tu peux changer la voix
   });
 
+  // Connexion
   await client.connect();
-  console.log("[Realtime] Connecté à GPT-4o");
 
-  // Quand GPT envoie de l’audio
-  client.on('output_audio_buffer', (chunk) => {
-    try {
-      const audioBase64 = Buffer.from(chunk).toString('base64');
-      if (deviceId) {
-        ws.send(JSON.stringify({
-          audioBase64,   // 🔹 ton Flutter lit ce champ
-          index: Date.now(),
-          deviceId
-        }));
-      }
-    } catch (err) {
-      console.error("[Server] Erreur envoi audio :", err);
-    }
+  console.log("[Realtime] Connecté à GPT-4o-realtime");
+
+  // Écoute des chunks audio en sortie
+  client.on("output_audio_buffer", (chunk) => {
+    const audioBase64 = chunk.toString("base64");
+    sendToFlutter({
+      index: 0,
+      text: null,
+      audioBase64,
+      mime: "audio/mpeg",
+      deviceId
+    }, deviceId);
   });
 
-  // Quand Flutter envoie un message
-  ws.on('message', async (msg) => {
-    try {
-      const parsed = JSON.parse(msg);
+  // Envoyer l’audio utilisateur
+  await client.sendAudio(audioBuffer);
 
-      if (parsed.deviceId) deviceId = parsed.deviceId;
+  console.log("[Realtime] Audio envoyé au modèle");
 
-      if (parsed.audioBase64) {
-        const audioBuffer = Buffer.from(parsed.audioBase64, 'base64');
-        client.sendAudio(audioBuffer);
-      }
-
-      if (parsed.type === 'end') {
-        await client.flushAudio();
-      }
-    } catch (err) {
-      console.error("[Server] Erreur parsing message :", err);
-    }
-  });
-
-  ws.on('close', () => {
-    console.log("[Server] Flutter déconnecté");
+  // Clore après la réponse
+  client.on("session_ended", () => {
+    console.log("[Realtime] Session terminée");
     client.disconnect();
   });
-});
+
+  return { status: "ok", deviceId };
+}
