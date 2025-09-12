@@ -13,7 +13,7 @@ const ttsClient = new textToSpeech.TextToSpeechClient();
 // ------------------------
 async function transcribeWithAssembly(audioPath) {
   try {
-    console.log([AssemblyAI] Lecture du fichier audio : ${audioPath});
+    console.log(`[AssemblyAI] Lecture du fichier audio : ${audioPath}`);
     const fileData = fs.readFileSync(audioPath);
     console.log("[AssemblyAI] Upload audio en cours...");
     const uploadResponse = await axios.post(
