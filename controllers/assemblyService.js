@@ -13,9 +13,9 @@ const ttsClient = new textToSpeech.TextToSpeechClient();
 // ------------------------
 async function transcribeWithAssembly(audioPath) {
   try {
-    console.log([AssemblyAI] Lecture du fichier audio : ${audioPath});
+    console.log(['AssemblyAI] Lecture du fichier audio : ${audioPath});
     const fileData = fs.readFileSync(audioPath);
-    console.log("[AssemblyAI] Upload audio en cours...");
+    console.log("['AssemblyAI] Upload audio en cours...");
     const uploadResponse = await axios.post(
       'https://api.assemblyai.com/v2/upload',
       fileData,
@@ -27,9 +27,9 @@ async function transcribeWithAssembly(audioPath) {
       }
     );
     const uploadUrl = uploadResponse.data.upload_url;
-    console.log([AssemblyAI] Audio uploadé : ${uploadUrl});
+    console.log(['AssemblyAI] Audio uploadé : ${uploadUrl});
     // Créer la transcription
-    console.log("[AssemblyAI] Création de la transcription...");
+    console.log("['AssemblyAI] Création de la transcription...");
     const transcriptResponse = await axios.post(
       'https://api.assemblyai.com/v2/transcript',
       {
@@ -44,7 +44,7 @@ async function transcribeWithAssembly(audioPath) {
       }
     );
     const transcriptId = transcriptResponse.data.id;
-    console.log([AssemblyAI] ID transcription : ${transcriptId});
+    console.log(['AssemblyAI] ID transcription : ${transcriptId});
     const pollingEndpoint = https://api.assemblyai.com/v2/transcript/${transcriptId};
     // Polling pour attendre la fin
     while (true) {
@@ -54,12 +54,12 @@ async function transcribeWithAssembly(audioPath) {
         },
       });
       if (result.data.status === 'completed') {
-        console.log([AssemblyAI] Transcription terminée : ${result.data.text});
+        console.log(['AssemblyAI] Transcription terminée : ${result.data.text});
         return result.data.text;
       } else if (result.data.status === 'error') {
         throw new Error(Transcription échouée: ${result.data.error});
       } else {
-        console.log("[AssemblyAI] Transcription en cours...");
+        console.log("['AssemblyAI] Transcription en cours...");
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     }
@@ -74,14 +74,14 @@ async function transcribeWithAssembly(audioPath) {
 // ------------------------
 async function streamGoogleTTS(text, res) {
   try {
-    console.log([Google TTS] Génération TTS pour : ${text});
+    console.log(['Google TTS] Génération TTS pour : ${text});
     const request = {
       input: { text },
       voice: { languageCode: 'fr-FR', ssmlGender: 'FEMALE' },
       audioConfig: { audioEncoding: 'MP3' },
     };
     const [response] = await ttsClient.synthesizeSpeech(request);
-    console.log("[Google TTS] Audio généré (taille en bytes) :", response.audioContent.length);
+    console.log("['Google TTS] Audio généré (taille en bytes) :", response.audioContent.length);
     const stream = new PassThrough();
     stream.end(response.audioContent);
     res.set({
@@ -100,16 +100,16 @@ async function streamGoogleTTS(text, res) {
 // ------------------------
 async function processAudio(filePath, gptResponse) {
   try {
-    console.log([ProcessAudio] Début traitement du fichier : ${filePath});
+    console.log(['ProcessAudio] Début traitement du fichier : ${filePath});
     const texte = await transcribeWithAssembly(filePath);
-    console.log([ProcessAudio] Texte transcrit : ${texte});
+    console.log(['ProcessAudio] Texte transcrit : ${texte});
     if (gptResponse) {
-      console.log([ProcessAudio] Réponse GPT : ${gptResponse});
+      console.log(['ProcessAudio] Réponse GPT : ${gptResponse});
     }
     // Supprimer le fichier audio temporaire
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      console.log([ProcessAudio] Fichier temporaire supprimé : ${filePath});
+      console.log(['ProcessAudio] Fichier temporaire supprimé : ${filePath});
     }
     return { texte, gptResponse };
   } catch (error) {
