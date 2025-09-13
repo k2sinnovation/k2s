@@ -3,7 +3,7 @@ import path from "path";
 import OpenAI from "openai";
 
 /**
- * Sauvegarde un buffer audio en fichier temporaire sûr
+ * Crée un fichier temporaire sûr pour l'audio
  */
 function saveTempAudio(audioBuffer) {
   if (!fs.existsSync("./uploads")) fs.mkdirSync("./uploads");
@@ -15,10 +15,6 @@ function saveTempAudio(audioBuffer) {
 
 /**
  * Traite l'audio et renvoie le résultat au client Flutter
- * @param {string|Buffer} fileOrBase64 Audio en Base64 ou chemin fichier
- * @param {string} deviceId ID du device Flutter
- * @param {function} sendToFlutter Fonction pour renvoyer le message
- * @param {boolean} isBase64 true si fileOrBase64 est du Base64
  */
 export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFlutter, isBase64 = false) {
   let audioBuffer;
@@ -26,8 +22,10 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
 
   try {
     if (isBase64) {
+      // Convertir Base64 en Buffer
       const base64Data = fileOrBase64.includes(",") ? fileOrBase64.split(",")[1] : fileOrBase64;
       audioBuffer = Buffer.from(base64Data, "base64");
+      // Créer un fichier temporaire sûr
       tempFilePath = saveTempAudio(audioBuffer);
     } else {
       tempFilePath = fileOrBase64;
@@ -36,7 +34,7 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Création d'une session Realtime
+    // Création session Realtime
     const session = await client.realtime.sessions.create({
       model: "gpt-realtime-2025-08-28",
       voice: "alloy"
@@ -47,10 +45,7 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
       session: session.id,
       input: [{
         role: "user",
-        content: [{
-          type: "input_audio",
-          audio: audioBuffer.toString("base64")
-        }]
+        content: [{ type: "input_audio", audio: audioBuffer.toString("base64") }]
       }]
     });
 
@@ -62,7 +57,7 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
       }
     }
 
-    // Envoi au client Flutter si audio généré
+    // Envoi au client Flutter
     if (audioBase64 && sendToFlutter) {
       sendToFlutter({
         index: Date.now(),
@@ -77,7 +72,7 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
     console.error(`[assemblyService] Erreur traitement audio pour ${deviceId}:`, err.message);
     return { status: "error", deviceId, message: err.message };
   } finally {
-    // Nettoyage du fichier temporaire
+    // Supprime le fichier temporaire
     if (isBase64 && tempFilePath && fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
     }
