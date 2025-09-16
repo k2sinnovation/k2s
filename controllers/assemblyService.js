@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
-const { sendToFlutter } = require('../websocket'); // ton module websocket
 
 // Sauvegarde temporaire du fichier audio
 function saveTempAudio(buffer) {
@@ -16,9 +15,9 @@ function saveTempAudio(buffer) {
  * Traite l'audio reçu en Base64 depuis Flutter
  * @param {string} audioBase64 - Base64 du segment WAV
  * @param {string} deviceId - ID du device Flutter
- * @param {boolean} sendToFlutterFlag - envoyer le résultat au device
+ * @param {function} sendToFlutterFn - fonction pour renvoyer l'audio au device
  */
-async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFlag = true) {
+async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFn = null) {
   let tempFilePath = null;
   try {
     // Extraire le buffer
@@ -54,8 +53,8 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFla
     }
 
     // Envoyer à Flutter si demandé
-    if (audioOutBase64 && sendToFlutterFlag) {
-      sendToFlutter({
+    if (audioOutBase64 && sendToFlutterFn) {
+      sendToFlutterFn({
         deviceId,
         audioBase64: audioOutBase64,
         index: Date.now(),
