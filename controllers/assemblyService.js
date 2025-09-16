@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
+const { sendToFlutter } = require('../websocket'); // ton module websocket
 
 // Sauvegarde temporaire du fichier audio
 function saveTempAudio(buffer) {
@@ -15,9 +16,9 @@ function saveTempAudio(buffer) {
  * Traite l'audio reçu en Base64 depuis Flutter
  * @param {string} audioBase64 - Base64 du segment WAV
  * @param {string} deviceId - ID du device Flutter
- * @param {function} sendToFlutterFn - fonction pour renvoyer l'audio au device
+ * @param {boolean} sendToFlutterFlag - envoyer le résultat au device
  */
-async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFn = null) {
+async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFlag = true) {
   let tempFilePath = null;
   try {
     // Extraire le buffer
@@ -27,46 +28,35 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFn 
     // Sauvegarde temporaire (optionnel)
     tempFilePath = saveTempAudio(audioBuffer);
 
-    // ✅ Initialiser OpenAI
+    // Initialiser OpenAI
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Exemple : générer audio de réponse via Realtime
-    const session = await client.realtime.sessions.create({
-      model: "gpt-realtime-2025-08-28",
-      voice: "alloy"
+    // 🔹 Transcrire l'audio reçu
+    const transcription = await client.audio.transcriptions.create({
+      file: audioBuffer,
+      model: "gpt-4o-mini-transcribe", // ou gpt-4o-mini-transcribe, selon tes besoins
     });
 
-    const response = await client.realtime.responses.create({
-      session: session.id,
-      input: [{
-        role: "user",
-        content: [{ type: "input_audio", audio: audioBuffer.toString("base64") }]
-      }]
-    });
+    const textResult = transcription.text || "";
 
-    // Extraire le Base64 de sortie
-    let audioOutBase64 = null;
-    for (const out of response.output) {
-      for (const item of out.content) {
-        if (item.type === "output_audio") audioOutBase64 = item.audio;
-      }
-    }
+    console.log(`[assemblyService] Transcription pour ${deviceId}:`, textResult);
 
-    // Envoyer à Flutter si demandé
-    if (audioOutBase64 && sendToFlutterFn) {
-      sendToFlutterFn({
+    // Envoyer le texte au device si demandé
+    if (sendToFlutterFlag) {
+      sendToFlutter({
         deviceId,
-        audioBase64: audioOutBase64,
+        text: textResult,
         index: Date.now(),
       }, deviceId);
     }
 
-    return { status: "ok", deviceId };
+    return { status: "ok", deviceId, text: textResult };
 
   } catch (err) {
     console.error(`[assemblyService] Erreur pour ${deviceId}:`, err.message);
     return { status: "error", deviceId, message: err.message };
   } finally {
+    // Supprimer le fichier temporaire
     if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
   }
 }
