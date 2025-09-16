@@ -16,31 +16,33 @@ function saveTempAudio(audioBuffer) {
 /**
  * Traite l'audio et renvoie le résultat au client Flutter
  */
-export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFlutter, isBase64 = false) {
+export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFlutter, isBase64 = true) {
   let audioBuffer;
   let tempFilePath = null;
 
   try {
-    if (isBase64) {
-      // Convertir Base64 en Buffer
+    // 🔹 Détecte automatiquement si c'est du base64 même si isBase64 incorrect
+    const looksLikeBase64 = fileOrBase64.length > 1000 && /^[A-Za-z0-9+/=,\r\n]+$/.test(fileOrBase64);
+
+    if (isBase64 || looksLikeBase64) {
       const base64Data = fileOrBase64.includes(",") ? fileOrBase64.split(",")[1] : fileOrBase64;
       audioBuffer = Buffer.from(base64Data, "base64");
-      // Créer un fichier temporaire sûr
+
+      // 🔹 Génère un nom de fichier temporaire sûr
       tempFilePath = saveTempAudio(audioBuffer);
     } else {
+      // c'est un chemin de fichier réel
       tempFilePath = fileOrBase64;
       audioBuffer = fs.readFileSync(tempFilePath);
     }
 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Création session Realtime
     const session = await client.realtime.sessions.create({
       model: "gpt-realtime-2025-08-28",
       voice: "alloy"
     });
 
-    // Envoi audio à la session Realtime
     const response = await client.realtime.responses.create({
       session: session.id,
       input: [{
@@ -49,7 +51,6 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
       }]
     });
 
-    // Récupération de l'audio généré
     let audioBase64 = null;
     for (const out of response.output) {
       for (const item of out.content) {
@@ -57,7 +58,6 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
       }
     }
 
-    // Envoi au client Flutter
     if (audioBase64 && sendToFlutter) {
       sendToFlutter({
         index: Date.now(),
@@ -68,13 +68,14 @@ export async function processAudioAndReturnJSON(fileOrBase64, deviceId, sendToFl
     }
 
     return { status: "ok", deviceId };
+
   } catch (err) {
     console.error(`[assemblyService] Erreur traitement audio pour ${deviceId}:`, err.message);
     return { status: "error", deviceId, message: err.message };
   } finally {
-    // Supprime le fichier temporaire
-    if (isBase64 && tempFilePath && fs.existsSync(tempFilePath)) {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
     }
   }
 }
+
