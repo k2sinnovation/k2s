@@ -31,7 +31,7 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFla
     // Exemple : transcrire l'audio
     const transcription = await client.audio.transcriptions.create({
       file: audioBuffer,
-      model: "gpt-4o-mini-transcribe"
+      model: "gpt-4o-realtime-preview-2025-06-03"  
     });
 
     const textResult = transcription.text || "";
