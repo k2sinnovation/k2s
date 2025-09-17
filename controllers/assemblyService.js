@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
 
-// Sauvegarde temporaire du fichier audio
 function saveTempAudio(buffer) {
   if (!fs.existsSync("./uploads")) fs.mkdirSync("./uploads");
   const fileName = `${Date.now()}-${Math.floor(Math.random() * 10000)}.wav`;
@@ -11,11 +10,8 @@ function saveTempAudio(buffer) {
   return filePath;
 }
 
-/**
- * Traite l'audio reçu en Base64 depuis Flutter
- */
 async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFlag = true) {
-  const { sendToFlutter } = require('../websocket'); // 🔹 Déplacement ici pour éviter circularité
+  const { sendToFlutter } = require('../websocket');
   let tempFilePath = null;
 
   try {
@@ -25,18 +21,16 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFla
     // Sauvegarde temporaire
     tempFilePath = saveTempAudio(audioBuffer);
 
-    // Initialiser OpenAI
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Exemple : transcrire l'audio
+    // ✅ Transcrire via fichier temporaire
     const transcription = await client.audio.transcriptions.create({
-      file: audioBuffer,
-      model: "gpt-4o-realtime-preview-2025-06-03"  
+      file: fs.createReadStream(tempFilePath),
+      model: "gpt-4o-realtime-preview-2025-06-03"
     });
 
     const textResult = transcription.text || "";
 
-    // Envoyer à Flutter si demandé
     if (sendToFlutterFlag) {
       sendToFlutter({
         deviceId,
@@ -55,5 +49,4 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutterFla
   }
 }
 
-// Export CommonJS
 module.exports = { processAudioAndReturnJSON };
