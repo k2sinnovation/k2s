@@ -16,7 +16,7 @@ function saveTempAudio(buffer) {
 /**
  * Encapsule un buffer PCM en WAV
  */
-function encodeWav(pcmBuffer, sampleRate = 24000) {
+function encodeWav(pcmBuffer, sampleRate = 16000) {
   const channels = 1;
   const bitDepth = 16;
   const byteRate = (sampleRate * channels * bitDepth) / 8;
