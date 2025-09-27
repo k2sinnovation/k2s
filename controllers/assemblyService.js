@@ -76,7 +76,8 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
         audio: audioBuffer.toString("base64"),
       }));
       ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-      ws.send(JSON.stringify({ type: "response.create", modalities: ["audio", "text"] }));
+      ws.send(JSON.stringify({ type: "response.create" }));
+
     });
 
     ws.on("message", (data) => {
