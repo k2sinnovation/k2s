@@ -46,80 +46,72 @@ function encodeWav(pcmBuffer, sampleRate = 24000) {
 
 /**
  * Envoie un audio à GPT Realtime et renvoie la réponse audio + texte à Flutter
- * @param {string} audioBase64 Audio en base64 depuis Flutter
- * @param {string} deviceId Device ciblé
- * @param {function} sendToFlutter La vraie fonction d'envoi WebSocket
  */
 async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
   const base64Data = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
   const audioBuffer = Buffer.from(base64Data, "base64");
 
-  // Sauvegarde temporaire
   const tempFilePath = saveTempAudio(audioBuffer);
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(
       "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2025-06-03",
       {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       }
     );
 
     let responseAudioBuffers = [];
     let responseText = "";
 
-    ws.on("open", () => {
-      console.log(`[assemblyService] WebSocket ouvert pour ${deviceId}`);
+    function log(msg) {
+      console.log(`[${new Date().toISOString()}][assemblyService][Device ${deviceId}] ${msg}`);
+    }
 
-      // Envoi audio à GPT Realtime
-      ws.send(
-        JSON.stringify({
-          type: "input_audio_buffer.append",
-          audio: audioBuffer.toString("base64"),
-        })
-      );
+    ws.on("open", () => {
+      log("WebSocket ouvert");
+
+      ws.send(JSON.stringify({
+        type: "input_audio_buffer.append",
+        audio: audioBuffer.toString("base64"),
+      }));
       ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
       ws.send(JSON.stringify({ type: "response.create", modalities: ["audio", "text"] }));
     });
 
     ws.on("message", (data) => {
-      const msg = JSON.parse(data);
+      let msg;
+      try {
+        msg = JSON.parse(data);
+      } catch (e) {
+        log(`Erreur parsing message GPT: ${e}`);
+        return;
+      }
 
-      // Log pour debug
-      console.log(`[assemblyService] Message GPT reçu: ${msg.type}`);
+      // 🔹 Log complet pour debug
+      log(`Message GPT reçu: ${msg.type} → contenu: ${JSON.stringify(msg)}`);
 
-      // Récupération du texte généré
       if (msg.type === "response.output_text.delta") {
         responseText += msg.delta;
       }
 
-      // Récupération de l'audio renvoyé par GPT
       if (msg.type === "output_audio_buffer.delta") {
-        console.log(`[assemblyService] Chunk audio reçu de GPT, taille base64: ${msg.audio.length}`);
+        log(`Chunk audio reçu, taille base64: ${msg.audio.length}`);
         responseAudioBuffers.push(Buffer.from(msg.audio, "base64"));
       }
 
-      // Fin de la réponse GPT
       if (msg.type === "response.completed") {
         const fullAudioBuffer = Buffer.concat(responseAudioBuffers);
-
-        // Convertir PCM en WAV pour Flutter
         const wavBuffer = encodeWav(fullAudioBuffer, 24000);
         const base64Audio = wavBuffer.toString("base64");
 
-        // Envoi vers Flutter
         if (sendToFlutter) {
-          sendToFlutter(
-            {
-              deviceId,
-              text: responseText,
-              audioBase64: base64Audio,
-              index: Date.now(),
-            },
-            deviceId
-          );
+          sendToFlutter({
+            deviceId,
+            text: responseText,
+            audioBase64: base64Audio,
+            index: Date.now(),
+          }, deviceId);
         }
 
         ws.close();
@@ -130,16 +122,21 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
           audioBase64: base64Audio,
         });
       }
+
+      // 🔹 Log erreurs spécifiques
+      if (msg.type === "error") {
+        log(`⚠️ Erreur GPT: ${JSON.stringify(msg)}`);
+      }
     });
 
     ws.on("error", (err) => {
-      console.error(`[assemblyService] Erreur WebSocket pour ${deviceId}:`, err.message);
+      log(`Erreur WebSocket: ${err.message}`);
       reject({ status: "error", deviceId, message: err.message });
     });
 
     ws.on("close", () => {
-      // Supprime le fichier temporaire
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      log("WebSocket fermé et fichier temporaire supprimé");
     });
   });
 }
