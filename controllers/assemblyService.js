@@ -103,7 +103,7 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
 
       if (msg.type === "response.completed") {
         const fullAudioBuffer = Buffer.concat(responseAudioBuffers);
-        const wavBuffer = encodeWav(fullAudioBuffer, 24000);
+        const wavBuffer = encodeWav(fullAudioBuffer, 16000);
         const base64Audio = wavBuffer.toString("base64");
 
         if (sendToFlutter) {
