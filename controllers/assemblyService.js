@@ -45,46 +45,46 @@ function encodeWav(pcmBuffer, sampleRate = 16000) {
 }
 
 /**
- * Envoie un audio à GPT Realtime et stream les chunks audio vers Flutter dès qu'ils arrivent
+ * Traite l’audio et envoie les réponses chunk par chunk vers le client Flutter
  */
-async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
+async function processAudioAndReturnJSON(audioBase64, deviceId, wsClients) {
   const base64Data = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
   const audioBuffer = Buffer.from(base64Data, "base64");
-
   const tempFilePath = saveTempAudio(audioBuffer);
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(
+    const wsGPT = new WebSocket(
       "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2025-06-03",
       {
         headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       }
     );
 
+    let responseAudioBuffers = [];
     let responseText = "";
 
     function log(msg) {
       console.log(`[${new Date().toISOString()}][assemblyService][Device ${deviceId}] ${msg}`);
     }
 
-    ws.on("open", () => {
-      log("WebSocket ouvert");
+    wsGPT.on("open", () => {
+      log("WebSocket GPT ouvert");
 
-      // 1️⃣ Envoi audio d'entrée
-      ws.send(JSON.stringify({
+      // 1️⃣ Envoi audio d’entrée
+      wsGPT.send(JSON.stringify({
         type: "input_audio_buffer.append",
         audio: audioBuffer.toString("base64"),
       }));
-      ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      wsGPT.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
 
-      // 2️⃣ Création de la réponse avec sortie audio
-      ws.send(JSON.stringify({
+      // 2️⃣ Demande de réponse
+      wsGPT.send(JSON.stringify({
         type: "response.create",
         response: { instructions: "Analyse et réponds" },
       }));
     });
 
-    ws.on("message", (data) => {
+    wsGPT.on("message", (data) => {
       let msg;
       try {
         msg = JSON.parse(data);
@@ -93,42 +93,48 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
         return;
       }
 
+      // 🔹 Log
       log(`Message GPT reçu: ${msg.type}`);
 
-      // Texte en streaming
+      // Texte reçu
       if (msg.type === "response.output_text.delta") {
         responseText += msg.delta;
-        if (sendToFlutter) {
-          sendToFlutter({
-            deviceId,
-            text: responseText,
-            audioBase64: null, // pas encore d'audio complet
-            index: Date.now(),
-          }, deviceId);
-        }
       }
 
-      // 🔹 Chunk audio reçu → on le stream immédiatement
+      // Chunk audio reçu → envoi immédiat à Flutter
       if (msg.type === "output_audio_buffer.delta") {
         const chunkBuffer = Buffer.from(msg.audio, "base64");
-        const wavBuffer = encodeWav(chunkBuffer, 16000);
-        const base64Chunk = wavBuffer.toString("base64");
+        responseAudioBuffers.push(chunkBuffer);
 
-        if (sendToFlutter) {
-          sendToFlutter({
+        const wsClient = wsClients[deviceId];
+        if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+          wsClient.send(JSON.stringify({
             deviceId,
-            text: null, // texte déjà envoyé
-            audioBase64: base64Chunk,
+            audioBase64: chunkBuffer.toString("base64"),
+            text: null,
             index: Date.now(),
-          }, deviceId);
+          }));
         }
       }
 
-      // Quand GPT termine la réponse
+      // Fin de réponse → envoyer texte final + audio complet
       if (msg.type === "response.completed") {
-        log("Réponse complète reçue");
-        ws.close();
-        resolve({ status: "ok", deviceId, text: responseText });
+        const fullAudioBuffer = Buffer.concat(responseAudioBuffers);
+        const wavBuffer = encodeWav(fullAudioBuffer, 16000);
+
+        const wsClient = wsClients[deviceId];
+        if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+          wsClient.send(JSON.stringify({
+            deviceId,
+            audioBase64: wavBuffer.toString("base64"),
+            text: responseText,
+            index: Date.now(),
+          }));
+        }
+
+        wsGPT.close();
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        resolve({ status: "ok", deviceId, text: responseText, audioBase64: wavBuffer.toString("base64") });
       }
 
       if (msg.type === "error") {
@@ -136,14 +142,14 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
       }
     });
 
-    ws.on("error", (err) => {
-      log(`Erreur WebSocket: ${err.message}`);
+    wsGPT.on("error", (err) => {
+      log(`Erreur WebSocket GPT: ${err.message}`);
       reject({ status: "error", deviceId, message: err.message });
     });
 
-    ws.on("close", () => {
+    wsGPT.on("close", () => {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      log("WebSocket fermé et fichier temporaire supprimé");
+      log("WebSocket GPT fermé et fichier temporaire supprimé");
     });
   });
 }
