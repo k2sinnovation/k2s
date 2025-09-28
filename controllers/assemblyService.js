@@ -81,11 +81,13 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
   // 2️⃣ Création de la réponse avec sortie audio
 ws.send(JSON.stringify({
   type: "response.create",
-  modalities: ["audio"],              // ✅ bon niveau
-  instructions: "Analyse et réponds", // ✅ bon niveau
-  audio: {
-    format: { type: "audio/pcm", rate: 16000 }, // PCM 16kHz
-    voice: "alloy"
+  response: {
+    modalities: ["audio"],              // ✅ au bon endroit
+    instructions: "Analyse et réponds",
+    audio: {
+      format: { type: "audio/pcm", rate: 16000 },
+      voice: "alloy"
+    }
   }
 }));
 });
