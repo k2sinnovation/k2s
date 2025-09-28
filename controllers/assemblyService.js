@@ -82,7 +82,6 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
 ws.send(JSON.stringify({
   type: "response.create",
   response: {
-    modalities: ["audio"],              // ✅ au bon endroit
     instructions: "Analyse et réponds",
     audio: {
       format: { type: "audio/pcm", rate: 16000 },
