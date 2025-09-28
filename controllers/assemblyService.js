@@ -83,9 +83,6 @@ ws.send(JSON.stringify({
   type: "response.create",
   response: {
     instructions: "Analyse et réponds",
-    audio: {
-      voice: "alloy"
-    }
   }
 }));
 });
