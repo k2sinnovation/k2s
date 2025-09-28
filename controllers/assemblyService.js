@@ -68,17 +68,29 @@ async function processAudioAndReturnJSON(audioBase64, deviceId, sendToFlutter) {
       console.log(`[${new Date().toISOString()}][assemblyService][Device ${deviceId}] ${msg}`);
     }
 
-    ws.on("open", () => {
-      log("WebSocket ouvert");
+  ws.on("open", () => {
+  log("WebSocket ouvert");
 
-      ws.send(JSON.stringify({
-        type: "input_audio_buffer.append",
-        audio: audioBuffer.toString("base64"),
-      }));
-      ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-      ws.send(JSON.stringify({ type: "response.create" }));
+  // 1️⃣ Envoi ton audio d'entrée
+  ws.send(JSON.stringify({
+    type: "input_audio_buffer.append",
+    audio: audioBuffer.toString("base64"),
+  }));
+  ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
 
-    });
+  // 2️⃣ Création de la réponse avec sortie audio
+  ws.send(JSON.stringify({
+    type: "response.create",
+    response: {
+      modalities: ["audio"],             // 🔹 demande de l'audio
+      instructions: "Analyse et réponds", // 🔹 tu peux personnaliser
+      audio: {
+        format: { type: "audio/pcm", rate: 16000 }, // 🔹 format PCM 16kHz
+        voice: "alloy"                             // 🔹 voix choisie
+      }
+    }
+  }));
+});
 
     ws.on("message", (data) => {
       let msg;
