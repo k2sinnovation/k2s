@@ -84,7 +84,6 @@ ws.send(JSON.stringify({
   response: {
     instructions: "Analyse et réponds",
     audio: {
-      format: { type: "audio/pcm", rate: 16000 },
       voice: "alloy"
     }
   }
