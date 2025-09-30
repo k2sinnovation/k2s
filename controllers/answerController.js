@@ -57,16 +57,28 @@ exports.processAnswer = async (req, res) => {
       return JSON.parse(jsonString); // ⚡ JSON pur
     }
 
-    let resultJSON;
-    try {
-      resultJSON = extractJsonFromContent(resultText);
-    } catch (err) {
-      console.error("❌ Erreur parsing JSON IA :", err, "\nTexte brut :", resultText);
-      return res.status(500).json({
-        error: "Réponse IA invalide. Format JSON attendu non respecté.",
-        raw: resultText
-      });
-    }
+// Fonction de normalisation des caractères typographiques
+function normalizeJsonString(jsonStr) {
+  return jsonStr
+    .replace(/[“”«»]/g, '"')  // guillemets typographiques → standard "
+    .replace(/[‘’]/g, "'")    // apostrophes typographiques → standard '
+    .replace(/\u00A0/g, ' ')  // espaces insécables → espace normal
+    .trim();
+}
+
+let resultJSON;
+try {
+  const cleanedText = normalizeJsonString(resultText);
+  resultJSON = extractJsonFromContent(cleanedText);
+} catch (err) {
+  console.error("❌ Erreur parsing JSON IA :", err, "\nTexte brut :", resultText);
+  // Retourne toujours un JSON minimal pour Flutter
+  resultJSON = {
+    causes: [],
+    message: "Erreur : réponse IA non exploitable"
+  };
+}
+
 
     // ✅ Retourne toujours un JSON strict à Flutter
     return res.json({ diagnostic: resultJSON });
@@ -76,3 +88,4 @@ exports.processAnswer = async (req, res) => {
     return res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
+
