@@ -72,10 +72,10 @@ Réponds uniquement par un objet JSON strict :
 
 {
   "causes": [
-    { "cause": "Cause 1 : ...", "verification": "...","action": "..." },
-    { "cause": "Cause 2 : ...", "verification": "...","action": "..." },
-    { "cause": "Cause 3 : ...", "verification": "...","action": "..." },
-    { "cause": "Cause 4 : ...", "verification": "...","action": "..." }
+    { "Cause 1 : ...", "verification": "...","action": "..." },
+    { "Cause 2 : ...", "verification": "...","action": "..." },
+    { "Cause 3 : ...", "verification": "...","action": "..." },
+    { "Cause 4 : ...", "verification": "...","action": "..." }
   ],
   "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
 }
