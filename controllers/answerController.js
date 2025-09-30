@@ -34,13 +34,42 @@ exports.processAnswer = async (req, res) => {
 
     const resultText = completion.choices[0].message.content;
 
-    try {
-      const resultJSON = JSON.parse(resultText);
-      return res.json({ diagnostic: resultJSON });
-    } catch (parseError) {
-      console.error("❌ Erreur de parsing JSON IA :", parseError);
-      return res.status(500).json({ error: "Réponse IA invalide. Format JSON attendu non respecté." });
+    // -----------------------------
+    // Extraction et nettoyage JSON
+    // -----------------------------
+    function extractJsonFromContent(content) {
+      let cleaned = content.trim();
+
+      // Supprime balises Markdown ```json ou ```
+      cleaned = cleaned.replace(/```json|```/g, "");
+
+      // Normalise les guillemets français « »
+      cleaned = cleaned.replace(/[«»]/g, '"');
+
+      // Cherche première et dernière accolade
+      const jsonStart = cleaned.indexOf("{");
+      const jsonEnd = cleaned.lastIndexOf("}");
+      if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
+        throw new Error("Réponse IA non formatée en JSON");
+      }
+
+      const jsonString = cleaned.substring(jsonStart, jsonEnd + 1);
+      return JSON.parse(jsonString); // ⚡ JSON pur
     }
+
+    let resultJSON;
+    try {
+      resultJSON = extractJsonFromContent(resultText);
+    } catch (err) {
+      console.error("❌ Erreur parsing JSON IA :", err, "\nTexte brut :", resultText);
+      return res.status(500).json({
+        error: "Réponse IA invalide. Format JSON attendu non respecté.",
+        raw: resultText
+      });
+    }
+
+    // ✅ Retourne toujours un JSON strict à Flutter
+    return res.json({ diagnostic: resultJSON });
 
   } catch (error) {
     console.error("Erreur dans processAnswer :", error);
