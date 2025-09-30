@@ -77,7 +77,7 @@ Réponds uniquement par un objet JSON strict :
     { "cause": "Cause 3 : ...", "verification": "...","action": "..." },
     { "cause": "Cause 4 : ...", "verification": "...","action": "..." }
   ],
-  "message": "Si vous n'avez pas trouvé de solution, lancez une nouvelle analyse."
+  "message": "Si aucune cause ne résout le problème, envoyez plus de détails pour relancer l’analyse."
 }
 
 \\
