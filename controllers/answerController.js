@@ -81,11 +81,13 @@ try {
 
 
     // ✅ Retourne toujours un JSON strict à Flutter
-    return res.json({ diagnostic: resultJSON });
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.json({ diagnostic: resultJSON });
 
   } catch (error) {
     console.error("Erreur dans processAnswer :", error);
     return res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
+
 
