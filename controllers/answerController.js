@@ -52,54 +52,58 @@ function setupWebSocketServer(server, openai) {
           return;
         }
 
-        // Stocker le client pour ce deviceId
         clients.set(deviceId, ws);
         console.log(`[WS] Client enregistré pour deviceId ${deviceId}`);
 
         let prompt, typeResponse;
 
         // --- Sélection du type de requête ---
-        if (data.type === 'questions_request') {
-          console.log(`[WS] Requête questions_request reçue pour device ${deviceId}`);
-          const qaFormatted = data.previousQA && data.previousQA.length > 0
-            ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
-            : "Aucune question précédente.";
+        switch(data.type) {
+          case 'questions_request':
+            console.log(`[WS] Requête questions_request reçue pour device ${deviceId}`);
+            const qaFormattedQ = data.previousQA && data.previousQA.length > 0
+              ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+              : "Aucune question précédente.";
 
-          prompt = buildFirstAnalysisPrompt(data.text, qaFormatted);
-          typeResponse = 'questions_response';
+            prompt = buildFirstAnalysisPrompt(data.text, qaFormattedQ);
+            typeResponse = 'questions_response';
+            break;
 
-        } else if (data.type === 'answer_request') {
-          console.log(`[WS] Requête answer_request reçue pour device ${deviceId}`);
-          prompt = buildSecondAnalysisPrompt(
-            data.resume || '',
-            data.previousQA || [],
-            data.diagnostic_precedent || '',
-            data.analyseIndex || 1
-          );
-          typeResponse = 'answer_response';
+          case 'answer_request':
+            console.log(`[WS] Requête answer_request reçue pour device ${deviceId}`);
+            prompt = buildSecondAnalysisPrompt(
+              data.resume || '',
+              data.previousQA || [],
+              data.diagnostic_precedent || '',
+              data.analyseIndex || 1
+            );
+            typeResponse = 'answer_response';
+            break;
 
-        } else if (data.type === 'analyze_request') {
-          console.log(`[WS] Requête analyze_request reçue pour device ${deviceId}`);
-          const qaFormatted = data.previousQA && data.previousQA.length > 0
-            ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
-            : "Aucune question précédente.";
+          case 'analyze_request':
+            console.log(`[WS] Requête analyze_request reçue pour device ${deviceId}`);
+            const qaFormattedA = data.previousQA && data.previousQA.length > 0
+              ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+              : "Aucune question précédente.";
 
-          prompt = buildFirstAnalysisPrompt(data.userInput, qaFormatted);
-          typeResponse = 'analyze_response';
+            prompt = buildFirstAnalysisPrompt(data.userInput, qaFormattedA);
+            typeResponse = 'analyze_response';
+            break;
 
-        } else if (data.type === 'final_analysis_request') {
-          console.log(`[WS] Requête final_analysis_request reçue pour device ${deviceId}`);
-          prompt = buildSecondAnalysisPrompt(
-            data.resume || '',
-            [],
-            '',
-            data.analyseIndex || 1
-          );
-          typeResponse = 'final_analysis_response';
+          case 'final_analysis_request':
+            console.log(`[WS] Requête final_analysis_request reçue pour device ${deviceId}`);
+            prompt = buildSecondAnalysisPrompt(
+              data.resume || '',
+              [],
+              '',
+              data.analyseIndex || 1
+            );
+            typeResponse = 'final_analysis_response';
+            break;
 
-        } else {
-          console.warn(`[WS] Type de message inconnu : ${data.type}`);
-          return;
+          default:
+            console.warn(`[WS] Type de message inconnu : ${data.type}`);
+            return;
         }
 
         console.log(`[WS] Prompt construit pour device ${deviceId} :\n`, prompt);
@@ -121,7 +125,6 @@ function setupWebSocketServer(server, openai) {
         // --- Parsing JSON ---
         const resultJSON = extractJsonSafely(resultText);
         console.log('[WS] JSON extrait :', resultJSON);
-        console.log('[WS] Nombre de questions extraites :', resultJSON.questions.length);
 
         // --- Envoi au client ---
         if (clients.has(deviceId)) {
