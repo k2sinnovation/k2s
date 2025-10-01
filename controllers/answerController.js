@@ -45,26 +45,28 @@ function setupWebSocketServer(server, openai) {
         console.log("[WS] Message brut reçu :", rawMessage);
 
         const data = JSON.parse(rawMessage);
-        deviceId = data.deviceId || deviceId;
+
+        // 🔥 Normalisation pour être compatible même si le client envoie un mauvais champ
+        deviceId = data.deviceId || data.deviceID || data["ID de périphérique"] || deviceId;
 
         if (!deviceId) {
           console.warn("[WS] Pas de deviceId, message ignoré");
           return;
         }
 
+        // Stocker la socket associée à ce deviceId
         clients.set(deviceId, ws);
         console.log(`[WS] Client enregistré pour deviceId ${deviceId}`);
 
         let prompt, typeResponse;
 
         // --- Sélection du type de requête ---
-        switch(data.type) {
+        switch (data.type) {
           case 'questions_request':
             console.log(`[WS] Requête questions_request reçue pour device ${deviceId}`);
             const qaFormattedQ = data.previousQA && data.previousQA.length > 0
               ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
-
             prompt = buildFirstAnalysisPrompt(data.text, qaFormattedQ);
             typeResponse = 'questions_response';
             break;
@@ -85,7 +87,6 @@ function setupWebSocketServer(server, openai) {
             const qaFormattedA = data.previousQA && data.previousQA.length > 0
               ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
-
             prompt = buildFirstAnalysisPrompt(data.userInput, qaFormattedA);
             typeResponse = 'analyze_response';
             break;
@@ -130,7 +131,7 @@ function setupWebSocketServer(server, openai) {
         if (clients.has(deviceId)) {
           const payload = {
             type: typeResponse,
-            deviceId,
+            deviceId, // 🔥 toujours cohérent avec Flutter
             ...resultJSON
           };
           console.log('[WS] Envoi au client :', payload);
