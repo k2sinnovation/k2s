@@ -128,7 +128,7 @@ function attachWebSocketToServer(server, openai) {
       // Gestion GPT
       if (data.type && ws.serverOpenAI) {
         let prompt, typeResponse;
-        const userText = data.text || "";
+        const userText = data.text || data.userInput || "";
 
         switch (data.type) {
           case 'questions_request':
