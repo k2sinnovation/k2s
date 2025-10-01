@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('../utils/promptBuilder');
 
-// Normalise les guillemets et espaces spéciaux
+// Normalisation JSON
 function normalizeJsonString(jsonStr) {
   return jsonStr
     .replace(/[“”«»]/g, '"')
@@ -10,27 +10,27 @@ function normalizeJsonString(jsonStr) {
     .trim();
 }
 
-// Extraction JSON tolérante, même si l'IA ajoute du texte
+// Extraction JSON tolérante
 function extractJsonSafely(content) {
   try {
     const cleaned = normalizeJsonString(content);
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) throw new Error("Aucun JSON trouvé");
     const json = JSON.parse(match[0]);
-
     return {
       resume: json.resume || "",
       questions: Array.isArray(json.questions) ? json.questions : [],
       causes: Array.isArray(json.causes) ? json.causes : [],
+      result: json.result || json.diagnostic || "",
+      diagnostic: json.diagnostic || json.result || "",
       message: json.message || ""
     };
   } catch (err) {
     console.error("[WS] Erreur parsing JSON IA :", err, "\nTexte brut :", content);
-    return { resume: "", questions: [], causes: [], message: "Erreur parsing JSON IA" };
+    return { resume: "", questions: [], causes: [], result: "", diagnostic: "", message: "Erreur parsing JSON IA" };
   }
 }
 
-// Map pour gérer plusieurs utilisateurs (deviceId → ws)
 const clients = new Map();
 
 function setupWebSocketServer(server, openai) {
@@ -42,32 +42,18 @@ function setupWebSocketServer(server, openai) {
 
     ws.on('message', async (rawMessage) => {
       try {
-        console.log("[WS] Message brut reçu :", rawMessage);
-
         const data = JSON.parse(rawMessage);
-
-        // 🔥 Normalisation du deviceId
         deviceId = data.deviceId || data.deviceID || data["ID de périphérique"] || deviceId;
+        if (!deviceId) return;
 
-        if (!deviceId) {
-          console.warn("[WS] Pas de deviceId, message ignoré");
-          return;
-        }
-
-        // 🔥 Normalisation du texte
         const userText = data.text || data.texte || data.userInput || "";
-
-        // Stocker la socket associée à ce deviceId
         clients.set(deviceId, ws);
-        console.log(`[WS] Client enregistré pour deviceId ${deviceId}`);
 
         let prompt, typeResponse;
 
-        // --- Sélection du type de requête ---
         switch (data.type) {
           case 'questions_request':
-            console.log(`[WS] Requête questions_request reçue pour device ${deviceId}`);
-            const qaFormattedQ = data.previousQA && data.previousQA.length > 0
+            const qaFormattedQ = data.previousQA?.length
               ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
             prompt = buildFirstAnalysisPrompt(userText, qaFormattedQ);
@@ -75,7 +61,6 @@ function setupWebSocketServer(server, openai) {
             break;
 
           case 'answer_request':
-            console.log(`[WS] Requête answer_request reçue pour device ${deviceId}`);
             prompt = buildSecondAnalysisPrompt(
               data.resume || '',
               data.previousQA || [],
@@ -86,8 +71,7 @@ function setupWebSocketServer(server, openai) {
             break;
 
           case 'analyze_request':
-            console.log(`[WS] Requête analyze_request reçue pour device ${deviceId}`);
-            const qaFormattedA = data.previousQA && data.previousQA.length > 0
+            const qaFormattedA = data.previousQA?.length
               ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
             prompt = buildFirstAnalysisPrompt(userText, qaFormattedA);
@@ -95,7 +79,6 @@ function setupWebSocketServer(server, openai) {
             break;
 
           case 'final_analysis_request':
-            console.log(`[WS] Requête final_analysis_request reçue pour device ${deviceId}`);
             prompt = buildSecondAnalysisPrompt(
               data.resume || '',
               [],
@@ -106,13 +89,9 @@ function setupWebSocketServer(server, openai) {
             break;
 
           default:
-            console.warn(`[WS] Type de message inconnu : ${data.type}`);
             return;
         }
 
-        console.log(`[WS] Prompt construit pour device ${deviceId} :\n`, prompt);
-
-        // --- Appel GPT ---
         let resultText;
         try {
           const completion = await openai.chat.completions.create({
@@ -120,41 +99,33 @@ function setupWebSocketServer(server, openai) {
             messages: [{ role: "user", content: prompt }],
           });
           resultText = completion.choices[0].message.content;
-          console.log('[WS] Texte brut GPT reçu :', resultText);
         } catch (err) {
-          console.error('[WS] Erreur lors de l’appel GPT :', err);
+          console.error('[WS] Erreur GPT :', err);
           resultText = '{"message":"Erreur lors de l’appel GPT"}';
         }
 
-        // --- Parsing JSON ---
         const resultJSON = extractJsonSafely(resultText);
-        console.log('[WS] JSON extrait :', resultJSON);
 
-        // --- Envoi au client ---
+        // Ajouter analyseIndex dans payload pour Flutter
+        if (data.analyseIndex !== undefined) resultJSON.analyseIndex = data.analyseIndex;
+
         if (clients.has(deviceId)) {
           const payload = {
             type: typeResponse,
-            deviceId, // 🔥 cohérent avec Flutter
+            deviceId,
             ...resultJSON
           };
-          console.log('[WS] Envoi au client :', payload);
           clients.get(deviceId).send(JSON.stringify(payload));
-        } else {
-          console.warn(`[WS] DeviceId ${deviceId} introuvable dans clients`);
         }
 
       } catch (err) {
-        console.error(`[WS] Erreur WS pour device ${deviceId} et message :`, rawMessage, "\n", err);
+        console.error(`[WS] Erreur WS pour device ${deviceId} :`, err);
       }
     });
 
     ws.on('close', () => {
-      if (deviceId && clients.has(deviceId)) {
-        clients.delete(deviceId);
-        console.log(`[WS] Device déconnecté : ${deviceId}`);
-      } else {
-        console.log("[WS] Client déconnecté sans deviceId connu");
-      }
+      if (deviceId) clients.delete(deviceId);
+      console.log(`[WS] Device déconnecté : ${deviceId}`);
     });
   });
 
