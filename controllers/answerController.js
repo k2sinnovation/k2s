@@ -95,7 +95,7 @@ function setupWebSocketServer(server, openai) {
         let resultText;
         try {
           const completion = await openai.chat.completions.create({
-            model: "gpt-4o-search-preview-2025-03-11",
+            model: "gpt-4o",
             messages: [{ role: "user", content: prompt }],
           });
           resultText = completion.choices[0].message.content;
@@ -133,3 +133,4 @@ function setupWebSocketServer(server, openai) {
 }
 
 module.exports = { setupWebSocketServer };
+
