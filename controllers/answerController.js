@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('../utils/promptBuilder');
 
+// Normalise les guillemets et espaces spéciaux
 function normalizeJsonString(jsonStr) {
   return jsonStr
     .replace(/[“”«»]/g, '"')
@@ -9,19 +10,24 @@ function normalizeJsonString(jsonStr) {
     .trim();
 }
 
-function extractJsonFromContent(content) {
-  let cleaned = content.trim();
-  cleaned = cleaned.replace(/```json|```/g, "");
-  cleaned = cleaned.replace(/[«»]/g, '"');
+// Extraction JSON tolérante, même si l'IA ajoute du texte
+function extractJsonSafely(content) {
+  try {
+    const cleaned = normalizeJsonString(content);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Aucun JSON trouvé");
+    const json = JSON.parse(match[0]);
 
-  const jsonStart = cleaned.indexOf("{");
-  const jsonEnd = cleaned.lastIndexOf("}");
-  if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-    throw new Error("Réponse IA non formatée en JSON");
+    return {
+      resume: json.resume || "",
+      questions: Array.isArray(json.questions) ? json.questions : [],
+      causes: Array.isArray(json.causes) ? json.causes : [],
+      message: json.message || ""
+    };
+  } catch (err) {
+    console.error("Erreur parsing JSON IA :", err, "\nTexte brut :", content);
+    return { resume: "", questions: [], causes: [], message: "Erreur parsing JSON IA" };
   }
-
-  const jsonString = cleaned.substring(jsonStart, jsonEnd + 1);
-  return JSON.parse(jsonString);
 }
 
 // Map pour gérer plusieurs utilisateurs (deviceId → ws)
@@ -63,7 +69,6 @@ function setupWebSocketServer(server, openai) {
           typeResponse = 'answer_response';
 
         } else if (data.type === 'final_analysis_request') {
-          // Optionnel : si tu veux gérer analyse finale
           prompt = buildSecondAnalysisPrompt(
             data.resume || '',
             [],
@@ -84,14 +89,8 @@ function setupWebSocketServer(server, openai) {
 
         const resultText = completion.choices[0].message.content;
 
-        let resultJSON;
-        try {
-          const cleanedText = normalizeJsonString(resultText);
-          resultJSON = extractJsonFromContent(cleanedText);
-        } catch (err) {
-          console.error("Erreur parsing JSON IA :", err, "\nTexte brut :", resultText);
-          resultJSON = { causes: [], questions: [], resume: '', message: 'Erreur parsing JSON IA' };
-        }
+        // Utilisation du parsing tolérant
+        const resultJSON = extractJsonSafely(resultText);
 
         // Envoi au client correspondant
         if (clients.has(deviceId)) {
