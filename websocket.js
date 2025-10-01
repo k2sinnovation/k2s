@@ -2,6 +2,36 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const assemblyService = require('./controllers/assemblyService');
+const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('./utils/promptBuilder'); // ✅ ajout
+
+// ✅ Utils pour parsing JSON IA
+function normalizeJsonString(jsonStr) {
+  return jsonStr
+    .replace(/[“”«»]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\u00A0/g, ' ')
+    .trim();
+}
+
+function extractJsonSafely(content) {
+  try {
+    const cleaned = normalizeJsonString(content);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Aucun JSON trouvé");
+    const json = JSON.parse(match[0]);
+    return {
+      resume: json.resume || "",
+      questions: Array.isArray(json.questions) ? json.questions : [],
+      causes: Array.isArray(json.causes) ? json.causes : [],
+      result: json.result || json.diagnostic || "",
+      diagnostic: json.diagnostic || json.result || "",
+      message: json.message || ""
+    };
+  } catch (err) {
+    console.error("[WS] Erreur parsing JSON IA :", err, "\nTexte brut :", content);
+    return { resume: "", questions: [], causes: [], result: "", diagnostic: "", message: "Erreur parsing JSON IA" };
+  }
+}
 
 const clients = new Map(); // Map<deviceId, { ws }>
 
@@ -64,10 +94,77 @@ wss.on('connection', (ws) => {
 
       try {
         console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
-       await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);  // ✅ Passer deviceId
+        await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);  // ✅ Passer deviceId
       } catch (err) {
         console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
       }
+    }
+
+    // === Cas GPT ===
+    if (data.type) {
+      let prompt, typeResponse;
+      const userText = data.text || data.texte || data.userInput || "";
+
+      switch (data.type) {
+        case 'questions_request':
+          const qaQ = data.previousQA?.length
+            ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+            : "Aucune question précédente.";
+          prompt = buildFirstAnalysisPrompt(userText, qaQ);
+          typeResponse = 'questions_response';
+          break;
+
+        case 'analyze_request':
+          const qaA = data.previousQA?.length
+            ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+            : "Aucune question précédente.";
+          prompt = buildFirstAnalysisPrompt(userText, qaA);
+          typeResponse = 'analyze_response';
+          break;
+
+        case 'answer_request':
+          prompt = buildSecondAnalysisPrompt(
+            data.resume || '',
+            data.previousQA || [],
+            data.diagnostic_precedent || '',
+            data.analyseIndex || 1
+          );
+          typeResponse = 'answer_response';
+          break;
+
+        case 'final_analysis_request':
+          prompt = buildSecondAnalysisPrompt(
+            data.resume || '',
+            [],
+            '',
+            data.analyseIndex || 1
+          );
+          typeResponse = 'final_analysis_response';
+          break;
+
+        default:
+          console.warn("[WS] Type inconnu :", data.type);
+          return;
+      }
+
+      // === Appel GPT ===
+      let resultText;
+      try {
+        const completion = await ws.serverOpenAI.chat.completions.create({
+          model: "gpt-4o-search-preview-2025-03-11",
+          messages: [{ role: "user", content: prompt }],
+        });
+        resultText = completion.choices[0].message.content;
+      } catch (err) {
+        console.error('[WS] Erreur GPT :', err);
+        resultText = '{"message":"Erreur appel GPT"}';
+      }
+
+      const resultJSON = extractJsonSafely(resultText);
+      if (data.analyseIndex !== undefined) resultJSON.analyseIndex = data.analyseIndex;
+
+      const payload = { type: typeResponse, deviceId, ...resultJSON };
+      sendToFlutter(payload, deviceId);
     }
 
     console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
@@ -123,8 +220,12 @@ function sendToFlutter(payload, targetDeviceId) {
   }
 }
 
-// Attacher WS au serveur HTTP
-function attachWebSocketToServer(server) {
+// Attacher WS au serveur HTTP + passage de OpenAI
+function attachWebSocketToServer(server, openai) {
+  wss.on('connection', (ws) => {
+    ws.serverOpenAI = openai; // ✅ attache l’instance openai
+  });
+
   server.on('upgrade', (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request);
