@@ -147,25 +147,32 @@ function attachWebSocketToServer(server, openai) {
             typeResponse = 'analyze_response';
             break;
 
-          case 'answer_request':
-            prompt = buildSecondAnalysisPrompt(
-              data.resume || '',
-              data.previousQA || [],
-              data.diagnostic_precedent || '',
-              data.analyseIndex || 1
-            );
-            typeResponse = 'answer_response';
-            break;
+       case 'answer_request':
+  {
+    const userText = data.text || data.userInput || ""; // <-- on récupère le texte utilisateur
+    prompt = buildSecondAnalysisPrompt(
+      data.resume || userText,           // fallback sur userText si resume vide
+      data.previousQA || [],
+      data.diagnostic_precedent || '',
+      data.analyseIndex || 1
+    );
+    typeResponse = 'answer_response';
+  }
+  break;
 
-          case 'final_analysis_request':
-            prompt = buildSecondAnalysisPrompt(
-              data.resume || '',
-              [],
-              '',
-              data.analyseIndex || 1
-            );
-            typeResponse = 'final_analysis_response';
-            break;
+case 'final_analysis_request':
+  {
+    const userText = data.text || data.userInput || ""; // <-- idem
+    prompt = buildSecondAnalysisPrompt(
+      data.resume || userText,           // fallback sur userText si resume vide
+      [],
+      '',
+      data.analyseIndex || 1
+    );
+    typeResponse = 'final_analysis_response';
+  }
+  break;
+
 
           default:
             console.warn('[WS] Type inconnu :', data.type);
