@@ -92,7 +92,7 @@ if (data.type === 'questions_request') {
         console.log(`[WS] Prompt pour device ${deviceId} :\n`, prompt);
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-2024-08-06",
+          model: "gpt-4o-search-preview-2025-03-11",
           messages: [{ role: "user", content: prompt }],
         });
   
@@ -129,6 +129,7 @@ if (data.type === 'questions_request') {
 }
 
 module.exports = { setupWebSocketServer };
+
 
 
 
