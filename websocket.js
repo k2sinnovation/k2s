@@ -46,13 +46,16 @@ try {
 }
 
 // Ping régulier pour garder la connexion
-setInterval(() => {
-  clients.forEach(({ ws }) => {
-    if (ws.readyState === WebSocket.OPEN) ws.ping('keepalive');
-  });
-}, 15000);
+function startPing() {
+  setInterval(() => {
+    clients.forEach(({ ws }, deviceId) => {
+      if (ws.readyState === WebSocket.OPEN) ws.ping('keepalive');
+    });
+  }, 15000);
+}
+startPing();
 
-// Envoie un message uniquement au device ciblé
+// Envoie un message au device ciblé
 function sendToFlutter(payload, targetDeviceId) {
   if (!targetDeviceId) return false;
   const client = clients.get(String(targetDeviceId));
@@ -60,6 +63,7 @@ function sendToFlutter(payload, targetDeviceId) {
 
   try {
     client.ws.send(JSON.stringify(payload));
+    console.log(`[WS] Message envoyé à ${targetDeviceId}: type=${payload.type}`);
     return true;
   } catch (e) {
     console.warn('[WebSocket] Échec envoi à', targetDeviceId, e.message);
@@ -73,7 +77,7 @@ function attachWebSocketToServer(server, openai) {
 
   server.on('upgrade', (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, (ws) => {
-      ws.serverOpenAI = openai; // Instance OpenAI disponible pour ce WS
+      ws.serverOpenAI = openai;
       wss.emit('connection', ws, request);
     });
   });
@@ -82,25 +86,42 @@ function attachWebSocketToServer(server, openai) {
     let deviceId = null;
     console.log('[WS] Nouveau client connecté');
 
-    // Gestion des messages entrants
+    // Interval pour citations
+    const citationInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
+        const randomIndex = Math.floor(Math.random() * quotes.length);
+        sendToFlutter({ type: 'quote', quote: quotes[randomIndex].quote }, deviceId);
+      }
+    }, 15000);
+
     ws.on('message', async (rawMessage) => {
       let data;
-      try { data = JSON.parse(rawMessage); } 
-      catch (e) { console.error('[WS] JSON invalide', e.message); return; }
+      try {
+        data = JSON.parse(rawMessage);
+      } catch (err) {
+        console.error('[WS] JSON invalide', err.message);
+        return;
+      }
 
+      // Définir deviceId si pas encore
       if (!deviceId && data.deviceId) {
         deviceId = String(data.deviceId);
         clients.set(deviceId, { ws });
         console.log('[WS] Device connecté :', deviceId);
       }
 
+      if (!deviceId) {
+        console.warn('[WS] deviceId manquant, message ignoré');
+        return;
+      }
+
       // Gestion audio
       if (data.audioBase64) {
-        if (!deviceId) return;
         try {
           await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);
         } catch (err) {
           console.error('[WS] Erreur traitement audio :', err.message);
+          sendToFlutter({ type: 'audio_error', deviceId, message: err.message }, deviceId);
         }
       }
 
@@ -162,7 +183,6 @@ function attachWebSocketToServer(server, openai) {
           if (data.analyseIndex !== undefined) resultJSON.analyseIndex = data.analyseIndex;
 
           sendToFlutter({ type: typeResponse, deviceId, ...resultJSON }, deviceId);
-
         } catch (err) {
           console.error('[WS] Erreur GPT :', err);
           sendToFlutter({ type: typeResponse, deviceId, message: 'Erreur GPT' }, deviceId);
@@ -170,16 +190,8 @@ function attachWebSocketToServer(server, openai) {
       }
     });
 
-    // Envoi citation aléatoire toutes les 15s
-    const interval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
-        const randomIndex = Math.floor(Math.random() * quotes.length);
-        sendToFlutter({ quote: quotes[randomIndex].quote }, deviceId);
-      }
-    }, 15000);
-
     ws.on('close', () => {
-      clearInterval(interval);
+      clearInterval(citationInterval);
       if (deviceId) {
         clients.delete(deviceId);
         console.log('[WS] Device déconnecté :', deviceId);
