@@ -38,7 +38,7 @@ const { attachWebSocketToServer } = require('./websocket'); // Import fonction
 const server = http.createServer(app);
 
 // Attache WebSocket au serveur HTTP (une seule fois)
-attachWebSocketToServer(server); 
+attachWebSocketToServer(server, openai);
 
 
 // ✅ Connexion MongoDB
