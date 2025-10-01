@@ -2,9 +2,11 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const assemblyService = require('./controllers/assemblyService');
-const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('./utils/promptBuilder'); // ✅ ajout
+const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('./utils/promptBuilder');
 
-// ✅ Utils pour parsing JSON IA
+const clients = new Map(); // Map<deviceId, { ws }>
+
+// Utils pour parsing JSON IA
 function normalizeJsonString(jsonStr) {
   return jsonStr
     .replace(/[“”«»]/g, '"')
@@ -33,13 +35,8 @@ function extractJsonSafely(content) {
   }
 }
 
-const clients = new Map(); // Map<deviceId, { ws }>
-
-// WS server
-const wss = new WebSocket.Server({ noServer: true });
-
 // Lire les citations
-let quotes = []; 
+let quotes = [];
 try {
   const raw = fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8');
   quotes = JSON.parse(raw);
@@ -48,171 +45,21 @@ try {
   quotes = [];
 }
 
-// Ping régulier
+// Ping régulier pour garder la connexion
 setInterval(() => {
-  clients.forEach(({ ws }, deviceId) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.ping('keepalive');
-    }
+  clients.forEach(({ ws }) => {
+    if (ws.readyState === WebSocket.OPEN) ws.ping('keepalive');
   });
 }, 15000);
 
-// Connexion
-wss.on('connection', (ws) => {
-  let deviceId = null; // ⚠️ Déclaré ici
-
-  ws.on('message', async (message) => {
-    let data;
-    try {
-      data = JSON.parse(message);
-    } catch (e) {
-      console.log('[WebSocket] Erreur parsing message :', e.message);
-      return;
-    }
-
-    // Toujours s'assurer que deviceId est défini
-    if (!deviceId && data.deviceId) {
-      deviceId = String(data.deviceId);
-      ws.deviceId = deviceId;
-      clients.set(deviceId, { ws });
-      console.log(`[WebSocket] Device connecté : ${deviceId}`);
-    }
-
-    // Si audio reçu
-    if (data.audioBase64) {
-      if (!deviceId && data.deviceId) {
-        deviceId = String(data.deviceId);
-        ws.deviceId = deviceId;
-        clients.set(deviceId, { ws });
-        console.log(`[WebSocket] Device connecté tardivement : ${deviceId}`);
-      }
-
-      if (!deviceId) {
-        console.warn('[WebSocket] Audio reçu mais deviceId manquant, envoi annulé !');
-        return;
-      }
-
-      try {
-        console.log(`[WebSocket] Audio reçu de ${deviceId}, taille base64: ${data.audioBase64.length}`);
-        await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);  // ✅ Passer deviceId
-      } catch (err) {
-        console.error('[WebSocket] Erreur traitement audio pour', deviceId, err.message);
-      }
-    }
-
-    // === Cas GPT ===
-    if (data.type) {
-      let prompt, typeResponse;
-      const userText = data.text || data.texte || data.userInput || "";
-
-      switch (data.type) {
-        case 'questions_request':
-          const qaQ = data.previousQA?.length
-            ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
-            : "Aucune question précédente.";
-          prompt = buildFirstAnalysisPrompt(userText, qaQ);
-          typeResponse = 'questions_response';
-          break;
-
-        case 'analyze_request':
-          const qaA = data.previousQA?.length
-            ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
-            : "Aucune question précédente.";
-          prompt = buildFirstAnalysisPrompt(userText, qaA);
-          typeResponse = 'analyze_response';
-          break;
-
-        case 'answer_request':
-          prompt = buildSecondAnalysisPrompt(
-            data.resume || '',
-            data.previousQA || [],
-            data.diagnostic_precedent || '',
-            data.analyseIndex || 1
-          );
-          typeResponse = 'answer_response';
-          break;
-
-        case 'final_analysis_request':
-          prompt = buildSecondAnalysisPrompt(
-            data.resume || '',
-            [],
-            '',
-            data.analyseIndex || 1
-          );
-          typeResponse = 'final_analysis_response';
-          break;
-
-        default:
-          console.warn("[WS] Type inconnu :", data.type);
-          return;
-      }
-
-      // === Appel GPT ===
-      let resultText;
-      try {
-        const completion = await ws.serverOpenAI.chat.completions.create({
-          model: "gpt-4o-search-preview-2025-03-11",
-          messages: [{ role: "user", content: prompt }],
-        });
-        resultText = completion.choices[0].message.content;
-      } catch (err) {
-        console.error('[WS] Erreur GPT :', err);
-        resultText = '{"message":"Erreur appel GPT"}';
-      }
-
-      const resultJSON = extractJsonSafely(resultText);
-      if (data.analyseIndex !== undefined) resultJSON.analyseIndex = data.analyseIndex;
-
-      const payload = { type: typeResponse, deviceId, ...resultJSON };
-      sendToFlutter(payload, deviceId);
-    }
-
-    console.log(`[WebSocket] Message reçu de ${deviceId || 'non identifié'} :`, data);
-  });
-
-  // Citation aléatoire toutes les 15s
-  const interval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
-      const randomIndex = Math.floor(Math.random() * quotes.length);
-      const payload = { quote: quotes[randomIndex].quote };
-      try {
-        ws.send(JSON.stringify(payload));
-      } catch (e) {
-        console.warn('[WebSocket] Envoi citation échoué pour', deviceId, e.message);
-      }
-    }
-  }, 15000);
-
-  ws.on('close', () => {
-    clearInterval(interval);
-    if (deviceId) {
-      clients.delete(deviceId);
-      console.log(`[WebSocket] Device déconnecté : ${deviceId}`);
-    }
-  });
-
-  ws.on('pong', (data) => {
-    console.log(`[WebSocket] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
-  });
-}); // ✅ Fermeture correcte de wss.on('connection')
-
-// Envoie un message UNIQUEMENT au device ciblé.
+// Envoie un message uniquement au device ciblé
 function sendToFlutter(payload, targetDeviceId) {
-  if (!targetDeviceId) {
-    console.warn('[WebSocket] Envoi bloqué : deviceId manquant !');
-    return false;
-  }
-
+  if (!targetDeviceId) return false;
   const client = clients.get(String(targetDeviceId));
-  if (!client || client.ws.readyState !== WebSocket.OPEN) {
-    console.warn('[WebSocket] Device introuvable ou socket fermé :', targetDeviceId);
-    return false;
-  }
+  if (!client || client.ws.readyState !== WebSocket.OPEN) return false;
 
   try {
     client.ws.send(JSON.stringify(payload));
-    const shortText = typeof payload.text === 'string' ? payload.text.slice(0, 80) : '';
-    console.log(`[WebSocket] -> ${targetDeviceId} | index=${payload.index} | text="${shortText}"`);
     return true;
   } catch (e) {
     console.warn('[WebSocket] Échec envoi à', targetDeviceId, e.message);
@@ -220,17 +67,131 @@ function sendToFlutter(payload, targetDeviceId) {
   }
 }
 
-// Attacher WS au serveur HTTP + passage de OpenAI
+// Attacher WS au serveur HTTP
 function attachWebSocketToServer(server, openai) {
-  wss.on('connection', (ws) => {
-    ws.serverOpenAI = openai; // ✅ attache l’instance openai
-  });
+  const wss = new WebSocket.Server({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
     wss.handleUpgrade(request, socket, head, (ws) => {
+      ws.serverOpenAI = openai; // Instance OpenAI disponible pour ce WS
       wss.emit('connection', ws, request);
     });
   });
+
+  wss.on('connection', (ws) => {
+    let deviceId = null;
+    console.log('[WS] Nouveau client connecté');
+
+    // Gestion des messages entrants
+    ws.on('message', async (rawMessage) => {
+      let data;
+      try { data = JSON.parse(rawMessage); } 
+      catch (e) { console.error('[WS] JSON invalide', e.message); return; }
+
+      if (!deviceId && data.deviceId) {
+        deviceId = String(data.deviceId);
+        clients.set(deviceId, { ws });
+        console.log('[WS] Device connecté :', deviceId);
+      }
+
+      // Gestion audio
+      if (data.audioBase64) {
+        if (!deviceId) return;
+        try {
+          await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);
+        } catch (err) {
+          console.error('[WS] Erreur traitement audio :', err.message);
+        }
+      }
+
+      // Gestion GPT
+      if (data.type && ws.serverOpenAI) {
+        let prompt, typeResponse;
+        const userText = data.text || "";
+
+        switch (data.type) {
+          case 'questions_request':
+            const qaQ = data.previousQA?.length
+              ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+              : "Aucune question précédente.";
+            prompt = buildFirstAnalysisPrompt(userText, qaQ);
+            typeResponse = 'questions_response';
+            break;
+
+          case 'analyze_request':
+            const qaA = data.previousQA?.length
+              ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+              : "Aucune question précédente.";
+            prompt = buildFirstAnalysisPrompt(userText, qaA);
+            typeResponse = 'analyze_response';
+            break;
+
+          case 'answer_request':
+            prompt = buildSecondAnalysisPrompt(
+              data.resume || '',
+              data.previousQA || [],
+              data.diagnostic_precedent || '',
+              data.analyseIndex || 1
+            );
+            typeResponse = 'answer_response';
+            break;
+
+          case 'final_analysis_request':
+            prompt = buildSecondAnalysisPrompt(
+              data.resume || '',
+              [],
+              '',
+              data.analyseIndex || 1
+            );
+            typeResponse = 'final_analysis_response';
+            break;
+
+          default:
+            console.warn('[WS] Type inconnu :', data.type);
+            return;
+        }
+
+        try {
+          const completion = await ws.serverOpenAI.chat.completions.create({
+            model: "gpt-4o-search-preview-2025-03-11",
+            messages: [{ role: "user", content: prompt }],
+          });
+
+          const resultText = completion.choices[0].message.content;
+          const resultJSON = extractJsonSafely(resultText);
+          if (data.analyseIndex !== undefined) resultJSON.analyseIndex = data.analyseIndex;
+
+          sendToFlutter({ type: typeResponse, deviceId, ...resultJSON }, deviceId);
+
+        } catch (err) {
+          console.error('[WS] Erreur GPT :', err);
+          sendToFlutter({ type: typeResponse, deviceId, message: 'Erreur GPT' }, deviceId);
+        }
+      }
+    });
+
+    // Envoi citation aléatoire toutes les 15s
+    const interval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
+        const randomIndex = Math.floor(Math.random() * quotes.length);
+        sendToFlutter({ quote: quotes[randomIndex].quote }, deviceId);
+      }
+    }, 15000);
+
+    ws.on('close', () => {
+      clearInterval(interval);
+      if (deviceId) {
+        clients.delete(deviceId);
+        console.log('[WS] Device déconnecté :', deviceId);
+      }
+    });
+
+    ws.on('pong', (data) => {
+      console.log(`[WS] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
+    });
+  });
+
+  console.log('[WS] WebSocket server prêt !');
 }
 
-module.exports = { wss, sendToFlutter, clients, attachWebSocketToServer };
+module.exports = { attachWebSocketToServer, clients, sendToFlutter };
