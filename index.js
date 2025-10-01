@@ -32,13 +32,22 @@ app.locals.openai = openai;
 
 // ✅ WebSocket
 const http = require('http');
-const { attachWebSocketToServer } = require('./websocket'); // Import fonction
+const { wss, attachWebSocketToServer, clients } = require('./websocket'); // Import complet
 
-// Crée serveur HTTP pour attacher Express + WebSocket
+// Crée serveur HTTP pour Express + WebSocket
 const server = http.createServer(app);
 
-// Attache WebSocket au serveur HTTP (une seule fois)
+// Attache WebSocket au serveur HTTP et passe OpenAI
 attachWebSocketToServer(server, openai);
+
+// ✅ Optionnel : ping régulier pour garder les connexions WS actives
+setInterval(() => {
+  clients.forEach((client, deviceId) => {
+    if (client.ws.readyState === 1) { // 1 = OPEN
+      client.ws.ping('keepalive');
+    }
+  });
+}, 15000);
 
 
 // ✅ Connexion MongoDB
