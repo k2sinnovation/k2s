@@ -46,13 +46,16 @@ function setupWebSocketServer(server, openai) {
 
         const data = JSON.parse(rawMessage);
 
-        // 🔥 Normalisation pour être compatible même si le client envoie un mauvais champ
+        // 🔥 Normalisation du deviceId
         deviceId = data.deviceId || data.deviceID || data["ID de périphérique"] || deviceId;
 
         if (!deviceId) {
           console.warn("[WS] Pas de deviceId, message ignoré");
           return;
         }
+
+        // 🔥 Normalisation du texte
+        const userText = data.text || data.texte || data.userInput || "";
 
         // Stocker la socket associée à ce deviceId
         clients.set(deviceId, ws);
@@ -67,7 +70,7 @@ function setupWebSocketServer(server, openai) {
             const qaFormattedQ = data.previousQA && data.previousQA.length > 0
               ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
-            prompt = buildFirstAnalysisPrompt(data.text, qaFormattedQ);
+            prompt = buildFirstAnalysisPrompt(userText, qaFormattedQ);
             typeResponse = 'questions_response';
             break;
 
@@ -87,7 +90,7 @@ function setupWebSocketServer(server, openai) {
             const qaFormattedA = data.previousQA && data.previousQA.length > 0
               ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
-            prompt = buildFirstAnalysisPrompt(data.userInput, qaFormattedA);
+            prompt = buildFirstAnalysisPrompt(userText, qaFormattedA);
             typeResponse = 'analyze_response';
             break;
 
@@ -131,7 +134,7 @@ function setupWebSocketServer(server, openai) {
         if (clients.has(deviceId)) {
           const payload = {
             type: typeResponse,
-            deviceId, // 🔥 toujours cohérent avec Flutter
+            deviceId, // 🔥 cohérent avec Flutter
             ...resultJSON
           };
           console.log('[WS] Envoi au client :', payload);
