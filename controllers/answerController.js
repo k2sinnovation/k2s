@@ -95,8 +95,9 @@ if (data.type === 'questions_request') {
           model: "gpt-4o-2024-08-06",
           messages: [{ role: "user", content: prompt }],
         });
-
+  
         const resultText = completion.choices[0].message.content;
+        console.log('[WS] Texte brut GPT reçu :', resultText);
 
         // Utilisation du parsing tolérant
         const resultJSON = extractJsonSafely(resultText);
@@ -127,4 +128,5 @@ if (data.type === 'questions_request') {
 }
 
 module.exports = { setupWebSocketServer };
+
 
