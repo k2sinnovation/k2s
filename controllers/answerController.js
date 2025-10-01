@@ -101,6 +101,7 @@ if (data.type === 'questions_request') {
 
         // Utilisation du parsing tolérant
         const resultJSON = extractJsonSafely(resultText);
+        console.log('[WS] JSON extrait :', resultJSON);
 
         // Envoi au client correspondant
         if (clients.has(deviceId)) {
@@ -128,5 +129,6 @@ if (data.type === 'questions_request') {
 }
 
 module.exports = { setupWebSocketServer };
+
 
 
