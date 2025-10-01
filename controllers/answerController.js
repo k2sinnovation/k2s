@@ -51,34 +51,43 @@ function setupWebSocketServer(server, openai) {
 
         let prompt, typeResponse;
 
-        if (data.type === 'questions_request') {
-          const qaFormatted = data.previousQA && data.previousQA.length > 0
-            ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
-            : "Aucune question précédente.";
+if (data.type === 'questions_request') {
+    const qaFormatted = data.previousQA && data.previousQA.length > 0
+      ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+      : "Aucune question précédente.";
+    
+    prompt = buildFirstAnalysisPrompt(data.text, qaFormatted);
+    typeResponse = 'questions_response';
 
-          prompt = buildFirstAnalysisPrompt(data.text, qaFormatted);
-          typeResponse = 'questions_response';
+} else if (data.type === 'answer_request') {
+    prompt = buildSecondAnalysisPrompt(
+      data.resume || '',
+      data.previousQA || [],
+      data.diagnostic_precedent || '',
+      data.analyseIndex || 1
+    );
+    typeResponse = 'answer_response';
 
-        } else if (data.type === 'answer_request') {
-          prompt = buildSecondAnalysisPrompt(
-            data.resume || '',
-            data.previousQA || [],
-            data.diagnostic_precedent || '',
-            data.analyseIndex || 1
-          );
-          typeResponse = 'answer_response';
+} else if (data.type === 'analyze_request') { // ← ajout
+    const qaFormatted = data.previousQA && data.previousQA.length > 0
+      ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+      : "Aucune question précédente.";
 
-        } else if (data.type === 'final_analysis_request') {
-          prompt = buildSecondAnalysisPrompt(
-            data.resume || '',
-            [],
-            '',
-            data.analyseIndex || 1
-          );
-          typeResponse = 'final_analysis_response';
-        } else {
-          return;
-        }
+    prompt = buildFirstAnalysisPrompt(data.userInput, qaFormatted);
+    typeResponse = 'analyze_response'; // correspond au Flutter Completer
+
+} else if (data.type === 'final_analysis_request') {
+    prompt = buildSecondAnalysisPrompt(
+      data.resume || '',
+      [],
+      '',
+      data.analyseIndex || 1
+    );
+    typeResponse = 'final_analysis_response';
+} else {
+    return;
+}
+
 
         console.log(`[WS] Prompt pour device ${deviceId} :\n`, prompt);
 
@@ -118,3 +127,4 @@ function setupWebSocketServer(server, openai) {
 }
 
 module.exports = { setupWebSocketServer };
+
