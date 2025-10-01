@@ -25,7 +25,7 @@ function extractJsonSafely(content) {
       message: json.message || ""
     };
   } catch (err) {
-    console.error("Erreur parsing JSON IA :", err, "\nTexte brut :", content);
+    console.error("[WS] Erreur parsing JSON IA :", err, "\nTexte brut :", content);
     return { resume: "", questions: [], causes: [], message: "Erreur parsing JSON IA" };
   }
 }
@@ -38,82 +38,106 @@ function setupWebSocketServer(server, openai) {
 
   wss.on('connection', (ws) => {
     let deviceId = null;
+    console.log("[WS] Nouveau client connecté");
 
     ws.on('message', async (rawMessage) => {
       try {
+        console.log("[WS] Message brut reçu :", rawMessage);
+
         const data = JSON.parse(rawMessage);
         deviceId = data.deviceId || deviceId;
 
-        if (!deviceId) return;
+        if (!deviceId) {
+          console.warn("[WS] Pas de deviceId, message ignoré");
+          return;
+        }
 
         // Stocker le client pour ce deviceId
         clients.set(deviceId, ws);
+        console.log(`[WS] Client enregistré pour deviceId ${deviceId}`);
 
         let prompt, typeResponse;
 
-if (data.type === 'questions_request') {
-    const qaFormatted = data.previousQA && data.previousQA.length > 0
-      ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
-      : "Aucune question précédente.";
-    
-    prompt = buildFirstAnalysisPrompt(data.text, qaFormatted);
-    typeResponse = 'questions_response';
+        // --- Sélection du type de requête ---
+        if (data.type === 'questions_request') {
+          console.log(`[WS] Requête questions_request reçue pour device ${deviceId}`);
+          const qaFormatted = data.previousQA && data.previousQA.length > 0
+            ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+            : "Aucune question précédente.";
 
-} else if (data.type === 'answer_request') {
-    prompt = buildSecondAnalysisPrompt(
-      data.resume || '',
-      data.previousQA || [],
-      data.diagnostic_precedent || '',
-      data.analyseIndex || 1
-    );
-    typeResponse = 'answer_response';
+          prompt = buildFirstAnalysisPrompt(data.text, qaFormatted);
+          typeResponse = 'questions_response';
 
-} else if (data.type === 'analyze_request') { // ← ajout
-    const qaFormatted = data.previousQA && data.previousQA.length > 0
-      ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
-      : "Aucune question précédente.";
+        } else if (data.type === 'answer_request') {
+          console.log(`[WS] Requête answer_request reçue pour device ${deviceId}`);
+          prompt = buildSecondAnalysisPrompt(
+            data.resume || '',
+            data.previousQA || [],
+            data.diagnostic_precedent || '',
+            data.analyseIndex || 1
+          );
+          typeResponse = 'answer_response';
 
-    prompt = buildFirstAnalysisPrompt(data.userInput, qaFormatted);
-    typeResponse = 'analyze_response'; // correspond au Flutter Completer
+        } else if (data.type === 'analyze_request') {
+          console.log(`[WS] Requête analyze_request reçue pour device ${deviceId}`);
+          const qaFormatted = data.previousQA && data.previousQA.length > 0
+            ? data.previousQA.map((item, idx) => `Q${idx + 1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
+            : "Aucune question précédente.";
 
-} else if (data.type === 'final_analysis_request') {
-    prompt = buildSecondAnalysisPrompt(
-      data.resume || '',
-      [],
-      '',
-      data.analyseIndex || 1
-    );
-    typeResponse = 'final_analysis_response';
-} else {
-    return;
-}
+          prompt = buildFirstAnalysisPrompt(data.userInput, qaFormatted);
+          typeResponse = 'analyze_response';
 
+        } else if (data.type === 'final_analysis_request') {
+          console.log(`[WS] Requête final_analysis_request reçue pour device ${deviceId}`);
+          prompt = buildSecondAnalysisPrompt(
+            data.resume || '',
+            [],
+            '',
+            data.analyseIndex || 1
+          );
+          typeResponse = 'final_analysis_response';
 
-        console.log(`[WS] Prompt pour device ${deviceId} :\n`, prompt);
+        } else {
+          console.warn(`[WS] Type de message inconnu : ${data.type}`);
+          return;
+        }
 
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-search-preview-2025-03-11",
-          messages: [{ role: "user", content: prompt }],
-        });
-  
-        const resultText = completion.choices[0].message.content;
-        console.log('[WS] Texte brut GPT reçu :', resultText);
+        console.log(`[WS] Prompt construit pour device ${deviceId} :\n`, prompt);
 
-        // Utilisation du parsing tolérant
+        // --- Appel GPT ---
+        let resultText;
+        try {
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o-search-preview-2025-03-11",
+            messages: [{ role: "user", content: prompt }],
+          });
+          resultText = completion.choices[0].message.content;
+          console.log('[WS] Texte brut GPT reçu :', resultText);
+        } catch (err) {
+          console.error('[WS] Erreur lors de l’appel GPT :', err);
+          resultText = '{"message":"Erreur lors de l’appel GPT"}';
+        }
+
+        // --- Parsing JSON ---
         const resultJSON = extractJsonSafely(resultText);
         console.log('[WS] JSON extrait :', resultJSON);
+        console.log('[WS] Nombre de questions extraites :', resultJSON.questions.length);
 
-        // Envoi au client correspondant
+        // --- Envoi au client ---
         if (clients.has(deviceId)) {
-          clients.get(deviceId).send(JSON.stringify({
+          const payload = {
             type: typeResponse,
             deviceId,
             ...resultJSON
-          }));
+          };
+          console.log('[WS] Envoi au client :', payload);
+          clients.get(deviceId).send(JSON.stringify(payload));
+        } else {
+          console.warn(`[WS] DeviceId ${deviceId} introuvable dans clients`);
         }
 
       } catch (err) {
-        console.error("Erreur WS :", err);
+        console.error(`[WS] Erreur WS pour device ${deviceId} et message :`, rawMessage, "\n", err);
       }
     });
 
@@ -121,6 +145,8 @@ if (data.type === 'questions_request') {
       if (deviceId && clients.has(deviceId)) {
         clients.delete(deviceId);
         console.log(`[WS] Device déconnecté : ${deviceId}`);
+      } else {
+        console.log("[WS] Client déconnecté sans deviceId connu");
       }
     });
   });
@@ -129,7 +155,3 @@ if (data.type === 'questions_request') {
 }
 
 module.exports = { setupWebSocketServer };
-
-
-
-
