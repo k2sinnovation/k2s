@@ -6,7 +6,9 @@ const { buildFirstAnalysisPrompt, buildSecondAnalysisPrompt } = require('./utils
 
 const clients = new Map(); // Map<deviceId, { ws }>
 
+// --------------------
 // Utils pour parsing JSON IA
+// --------------------
 function normalizeJsonString(jsonStr) {
   return jsonStr
     .replace(/[“”«»]/g, '"')
@@ -35,7 +37,9 @@ function extractJsonSafely(content) {
   }
 }
 
+// --------------------
 // Lire les citations
+// --------------------
 let quotes = [];
 try {
   const raw = fs.readFileSync(path.join(__dirname, 'utils', 'citation'), 'utf8');
@@ -45,7 +49,9 @@ try {
   quotes = [];
 }
 
-// Ping régulier pour garder la connexion
+// --------------------
+// Ping régulier
+// --------------------
 function startPing() {
   setInterval(() => {
     clients.forEach(({ ws }, deviceId) => {
@@ -55,7 +61,9 @@ function startPing() {
 }
 startPing();
 
-// Envoie un message au device ciblé
+// --------------------
+// Envoi d’un message
+// --------------------
 function sendToFlutter(payload, targetDeviceId) {
   if (!targetDeviceId) return false;
   const client = clients.get(String(targetDeviceId));
@@ -63,15 +71,17 @@ function sendToFlutter(payload, targetDeviceId) {
 
   try {
     client.ws.send(JSON.stringify(payload));
-    console.log(`[WS] Message envoyé à ${targetDeviceId}: type=${payload.type}`);
+    console.log(`[WS] ✅ Message envoyé à ${targetDeviceId}: type=${payload.type}`);
     return true;
   } catch (e) {
-    console.warn('[WebSocket] Échec envoi à', targetDeviceId, e.message);
+    console.warn('[WebSocket] ❌ Échec envoi à', targetDeviceId, e.message);
     return false;
   }
 }
 
-// Attacher WS au serveur HTTP
+// --------------------
+// Serveur WebSocket
+// --------------------
 function attachWebSocketToServer(server, openai) {
   const wss = new WebSocket.Server({ noServer: true });
 
@@ -84,9 +94,9 @@ function attachWebSocketToServer(server, openai) {
 
   wss.on('connection', (ws) => {
     let deviceId = null;
-    console.log('[WS] Nouveau client connecté');
+    console.log('[WS] 🔗 Nouveau client connecté');
 
-    // Interval pour citations
+    // Interval pour citations automatiques
     const citationInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN && deviceId && quotes.length > 0) {
         const randomIndex = Math.floor(Math.random() * quotes.length);
@@ -99,19 +109,21 @@ function attachWebSocketToServer(server, openai) {
       try {
         data = JSON.parse(rawMessage);
       } catch (err) {
-        console.error('[WS] JSON invalide', err.message);
+        console.error('[WS] ❌ JSON invalide', err.message);
         return;
       }
 
-      // Définir deviceId si pas encore
+      console.log(`[WS] 📩 Reçu de ${deviceId || "inconnu"} :`, data);
+
+      // Device ID
       if (!deviceId && data.deviceId) {
         deviceId = String(data.deviceId);
         clients.set(deviceId, { ws });
-        console.log('[WS] Device connecté :', deviceId);
+        console.log('[WS] ✅ Device connecté :', deviceId);
       }
 
       if (!deviceId) {
-        console.warn('[WS] deviceId manquant, message ignoré');
+        console.warn('[WS] ⚠️ deviceId manquant, message ignoré');
         return;
       }
 
@@ -120,7 +132,7 @@ function attachWebSocketToServer(server, openai) {
         try {
           await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);
         } catch (err) {
-          console.error('[WS] Erreur traitement audio :', err.message);
+          console.error('[WS] ❌ Erreur traitement audio :', err.message);
           sendToFlutter({ type: 'audio_error', deviceId, message: err.message }, deviceId);
         }
       }
@@ -131,53 +143,57 @@ function attachWebSocketToServer(server, openai) {
         const userText = data.text || data.userInput || "";
 
         switch (data.type) {
-          case 'questions_request':
+          case 'questions_request': {
             const qaQ = data.previousQA?.length
               ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
             prompt = buildFirstAnalysisPrompt(userText, qaQ);
             typeResponse = 'questions_response';
             break;
+          }
 
-          case 'analyze_request':
+          case 'analyze_request': {
             const qaA = data.previousQA?.length
               ? data.previousQA.map((item, idx) => `Q${idx+1}: ${item.question}\nR: ${item.reponse}`).join('\n\n')
               : "Aucune question précédente.";
             prompt = buildFirstAnalysisPrompt(userText, qaA);
             typeResponse = 'analyze_response';
             break;
+          }
 
-       case 'answer_request':
-  {
-    const userText = data.text || data.userInput || ""; // <-- on récupère le texte utilisateur
-    prompt = buildSecondAnalysisPrompt(
-      data.resume || userText,           // fallback sur userText si resume vide
-      data.previousQA || [],
-      data.diagnostic_precedent || '',
-      data.analyseIndex || 1
-    );
-    typeResponse = 'answer_response';
-  }
-  break;
+          case 'answer_request': {
+            const answersText = data.answers
+              ? Object.entries(data.answers).map(([q, r]) => `Q: ${q}\nR: ${r}`).join("\n\n")
+              : "Aucune réponse utilisateur fournie.";
 
-case 'final_analysis_request':
-  {
-    const userText = data.text || data.userInput || ""; // <-- idem
-    prompt = buildSecondAnalysisPrompt(
-      data.resume || userText,           // fallback sur userText si resume vide
-      [],
-      '',
-      data.analyseIndex || 1
-    );
-    typeResponse = 'final_analysis_response';
-  }
-  break;
+            prompt = buildSecondAnalysisPrompt(
+              data.resume || userText,
+              data.previousQA || [],
+              data.diagnostic_precedent || '',
+              data.analyseIndex || 1
+            ) + "\n\nRéponses utilisateur:\n" + answersText;
 
+            typeResponse = 'answer_response';
+            break;
+          }
+
+          case 'final_analysis_request': {
+            prompt = buildSecondAnalysisPrompt(
+              data.resume || userText,
+              [],
+              '',
+              data.analyseIndex || 1
+            );
+            typeResponse = 'final_analysis_response';
+            break;
+          }
 
           default:
-            console.warn('[WS] Type inconnu :', data.type);
+            console.warn('[WS] ⚠️ Type inconnu :', data.type);
             return;
         }
+
+        console.log("[WS] 🧾 Prompt généré :", prompt);
 
         try {
           const completion = await ws.serverOpenAI.chat.completions.create({
@@ -186,12 +202,16 @@ case 'final_analysis_request':
           });
 
           const resultText = completion.choices[0].message.content;
+          console.log("[WS] 📤 Réponse brute GPT :", resultText);
+
           const resultJSON = extractJsonSafely(resultText);
           if (data.analyseIndex !== undefined) resultJSON.analyseIndex = data.analyseIndex;
 
+          console.log("[WS] 📦 Réponse JSON nettoyée :", resultJSON);
+
           sendToFlutter({ type: typeResponse, deviceId, ...resultJSON }, deviceId);
         } catch (err) {
-          console.error('[WS] Erreur GPT :', err);
+          console.error('[WS] ❌ Erreur GPT :', err);
           sendToFlutter({ type: typeResponse, deviceId, message: 'Erreur GPT' }, deviceId);
         }
       }
@@ -201,16 +221,16 @@ case 'final_analysis_request':
       clearInterval(citationInterval);
       if (deviceId) {
         clients.delete(deviceId);
-        console.log('[WS] Device déconnecté :', deviceId);
+        console.log('[WS] 🔌 Device déconnecté :', deviceId);
       }
     });
 
     ws.on('pong', (data) => {
-      console.log(`[WS] Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
+      console.log(`[WS] 🏓 Pong reçu de device ${deviceId || 'inconnu'} :`, data.toString());
     });
   });
 
-  console.log('[WS] WebSocket server prêt !');
+  console.log('[WS] 🚀 WebSocket server prêt !');
 }
 
 module.exports = { attachWebSocketToServer, clients, sendToFlutter };
