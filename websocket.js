@@ -197,7 +197,7 @@ function attachWebSocketToServer(server, openai) {
 
         try {
           const completion = await ws.serverOpenAI.chat.completions.create({
-            model: "gpt-4o-search-preview-2025-03-11",
+            model: "gpt-4o-mini",
             messages: [{ role: "user", content: prompt }],
           });
 
