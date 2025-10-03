@@ -1,6 +1,4 @@
-function buildFirstAnalysisPrompt(userInput, qaFormatted) {
-  const formattedQA = qaFormatted && qaFormatted.trim() !== '' ? qaFormatted : "Aucune question précédente.";
-
+function buildFirstAnalysisPrompt(userInput) {
   return `
 Tu es un assistant technique expérimenté, spécialisé en diagnostic terrain.
 Tes questions doivent faire gagner du temps, éliminer les fausses pistes, et aller droit au but.
@@ -8,14 +6,9 @@ Tes questions doivent faire gagner du temps, éliminer les fausses pistes, et al
 Analyse la demande :  
 "${userInput}"
 
-Questions déjà posées et réponses :  
-${formattedQA}
-
-Si la demande est hors sujet technique ou trop flou, répond **directement comme un assistant conversationnel** sans poser de questions, 
-juste une réponse claire et concise à l'utilisateur.
-
-Sinon, fais un résumé fidèle et génère jusqu’à 5 questions fermées SANS CHOIX (Oui/Non/Je ne sais pas), 
-qui permettent de cibler directement la cause probable du problème décrit. Évite les questions trop théoriques, générales ou sans lien direct avec le contexte. 
+Fais un résumé fidèle et génère jusqu’à 5 questions fermées SANS CHOIX (Oui/Non/Je ne sais pas), 
+qui permettent de cibler directement la cause probable du problème décrit. 
+Évite les questions trop théoriques, générales ou sans lien direct avec le contexte. 
 Concentre-toi sur des questions concrètes, utiles et pratiques, 
 qui orientent efficacement le diagnostic.
 
