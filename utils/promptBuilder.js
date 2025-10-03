@@ -33,11 +33,12 @@ function buildSecondAnalysisPrompt(resume, previousQA, diagnosticPrecedent = "",
 Tu es un technicien expérimenté qui analyse des problèmes techniques.  
 L’équipement fonctionnait avant correctement, sauf info contraire.
 
-Résumé de la demande utilisateur : "${finalResume}"
+Questions et réponses précédentes a prendre comme information complementaire mais pas essentiel :  
+${qaFormatted}
 
 Règles :
 
-- Base-toi sur manuels, codes défaut, documents constructeur et expérience terrain.  
+- Base-toi sur manuels utilisateur et ta basse, codes défaut, documents constructeur et expérience terrain.  
 - Analyse toujours en priorité le message utilisateur. C’est l'observation terrain directe.
 - Les 5 questions servent à valider ou invalider des hypothèses. Si une réponse est "Je ne sais pas", considère qu’elle est neutre.
 - Classe les causes de la plus probable à la moins probable.  
@@ -45,7 +46,7 @@ Règles :
 - Considère causes globales si plusieurs éléments sont affectés.  
 - Interprète les termes mal nommés par l’utilisateur.  
 - Identifie les paramètres constructeur spécifiques à corriger.  
-- Analyse attentivement la demande et les échanges précédents question reponse pour générer des causes plausibles et cohérentes.  
+- Analyse attentivement la demande et les échanges précédents question reponse pour générer des causes plausibles et cohérentes sans ce laisser influencer sur les reponses.  
 - Chaque action doit proposer une manipulation concrète avec, si possible, une valeur indicative à tester (ex. temps, tension, fréquence, seuil, etc.), même si la valeur exacte dépend du contexte. Cela permet au technicien de faire un essai terrain immédiatement.
 - Inquite les précautions spécifique à prendre uniquement, en lien direct avec la cause et l'action à réaliser. Ne mentionne pas les régles de sécurité générales ou basiques. Soit bref, claire et pertinent, sans exageration.
 - Ne génère jamais de causes hors sujet ou inventées. Si l’information est insuffisante, indique-le clairement dans la cause la plus probable.  
@@ -53,10 +54,8 @@ Règles :
 
 ${diagnosticPrecedent ? `Diagnostic précédent :\n${diagnosticPrecedent}\n` : ""}
 
-Questions et réponses précédentes :  
-${qaFormatted}
 
-Si la demande est un diagnostic de panne, répondre selon cette structure : Propose jusqu’à 4 causes probables avec vérifications concrètes et actions terrain :  
+Répondre selon cette structure : Propose jusqu’à 4 causes probables avec vérifications concrètes et actions terrain :  
 Réponds uniquement par un objet JSON strict :
 
 {
