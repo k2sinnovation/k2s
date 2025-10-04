@@ -104,7 +104,7 @@ function attachWebSocketToServer(server, openai) {
       }
     }, 15000);
 
-    ws.on('message', async (rawMessage) => {
+ws.on('message', async (rawMessage) => {
       let data;
       try {
         data = JSON.parse(rawMessage);
@@ -113,19 +113,28 @@ function attachWebSocketToServer(server, openai) {
         return;
       }
 
-      console.log(`[WS] 📩 Reçu de ${deviceId || "inconnu"} :`, data);
-
-      // Device ID
-      if (!deviceId && data.deviceId) {
+      // ✅ PRIORITÉ 1 : Connexion explicite
+      if (data.type === 'connect' && data.deviceId) {
         deviceId = String(data.deviceId);
         clients.set(deviceId, { ws });
         console.log('[WS] ✅ Device connecté :', deviceId);
+        return; // Sortir ici, ne rien faire d'autre
       }
 
+      // ✅ PRIORITÉ 2 : Extraction deviceId si pas encore fait
+      if (!deviceId && data.deviceId) {
+        deviceId = String(data.deviceId);
+        clients.set(deviceId, { ws });
+        console.log('[WS] ⚙️ Device ID extrait du message:', deviceId);
+      }
+
+      // Si toujours pas de deviceId, abandonner
       if (!deviceId) {
-        console.warn('[WS] ⚠️ deviceId manquant, message ignoré');
+        console.warn('[WS] ⚠️ deviceId manquant, message ignoré:', data.type);
         return;
       }
+
+      console.log(`[WS] 📩 Reçu de ${deviceId}:`, data.type || 'type inconnu');
 
 // Gestion des chunks audio
 if (data.type === 'audio_chunk' && data.audioBase64) {
