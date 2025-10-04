@@ -127,15 +127,18 @@ function attachWebSocketToServer(server, openai) {
         return;
       }
 
-      // Gestion audio
-      if (data.audioBase64) {
-        try {
-          await assemblyService.processAudioAndReturnJSON(data.audioBase64, deviceId, true);
-        } catch (err) {
-          console.error('[WS] ❌ Erreur traitement audio :', err.message);
-          sendToFlutter({ type: 'audio_error', deviceId, message: err.message }, deviceId);
-        }
-      }
+// Gestion audio chunk par chunk
+if (data.audioBase64) {
+  try {
+    // Le commit ne doit se faire que sur le dernier chunk
+    const commit = data.commit || false;
+
+    await assemblyService.processAudioChunk(deviceId, data.audioBase64, clients, commit);
+  } catch (err) {
+    console.error('[WS] ❌ Erreur traitement audio :', err.message);
+    sendToFlutter({ type: 'audio_error', deviceId, message: err.message }, deviceId);
+  }
+}
 
       // Gestion GPT
       if (data.type && ws.serverOpenAI) {
