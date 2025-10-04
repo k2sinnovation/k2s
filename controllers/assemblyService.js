@@ -39,7 +39,7 @@ async function processAudioChunk(deviceId, audioBase64, wsClients, commit = fals
         session: {
           modalities: ["text", "audio"],
           instructions: "Tu es un assistant vocal naturel. Réponds de manière concise et conversationnelle.",
-          voice: "sage",
+          voice: "shimmer",
           input_audio_format: "pcm16",
           output_audio_format: "pcm16",
           input_audio_transcription: {
