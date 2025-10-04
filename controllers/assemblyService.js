@@ -1,101 +1,102 @@
-const fs = require("fs");
-const path = require("path");
 const WebSocket = require("ws");
 
+// Stocker les sockets GPT par deviceId pour streaming multiple
+const gptSockets = new Map(); // Map<deviceId, WebSocket GPT temps réel>
+
 /**
- * Traite l’audio et envoie les réponses chunk par chunk vers le client Flutter
- * ⚡ Streaming PCM temps réel
+ * Envoie un chunk audio PCM à GPT et commit si demandé
+ * @param {string} deviceId - ID du device Flutter
+ * @param {string} audioBase64 - chunk audio PCM Base64
+ * @param {object} wsClients - Map<deviceId, WebSocket Flutter>
+ * @param {boolean} commit - true si c’est le dernier chunk du segment
  */
-async function processAudioAndReturnJSON(audioBase64, deviceId, wsClients) {
+async function processAudioChunk(deviceId, audioBase64, wsClients, commit = false) {
   const base64Data = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
   const audioBuffer = Buffer.from(base64Data, "base64");
 
-  return new Promise((resolve, reject) => {
+  // Créer socket GPT si n’existe pas
+  if (!gptSockets.has(deviceId)) {
     const wsGPT = new WebSocket(
       "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2025-06-03",
-      {
-        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      }
+      { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
     );
 
     let responseText = "";
 
-    function log(msg) {
-      console.log(`[${new Date().toISOString()}][Device ${deviceId}] ${msg}`);
-    }
-
-    wsGPT.on("open", () => {
-      log("WebSocket GPT ouvert");
-
-      // 1️⃣ Envoi audio d’entrée (PCM Base64)
-      wsGPT.send(JSON.stringify({
-        type: "input_audio_buffer.append",
-        audio: audioBuffer.toString("base64"),
-      }));
-      wsGPT.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-
-      // 2️⃣ Demande de réponse
-      wsGPT.send(JSON.stringify({
-        type: "response.create",
-        response: { instructions: "Analyse et réponds" },
-      }));
-    });
+    wsGPT.on("open", () => console.log(`[GPT][${deviceId}] Connexion ouverte`));
 
     wsGPT.on("message", (data) => {
       let msg;
-      try { msg = JSON.parse(data); } 
-      catch (e) { log(`Erreur parsing message GPT: ${e}`); return; }
+      try { msg = JSON.parse(data.toString()); } 
+      catch (e) { console.warn(`[GPT][${deviceId}] Erreur parsing message:`, e); return; }
 
-      log(`Message GPT reçu: ${msg.type}`);
+      const wsClient = wsClients[deviceId];
+      if (!wsClient || wsClient.readyState !== WebSocket.OPEN) return;
 
-      // Texte reçu
+      // Texte incrémental
       if (msg.type === "response.output_text.delta") {
         responseText += msg.delta;
+        wsClient.send(JSON.stringify({
+          deviceId,
+          audioPCM: null,
+          text: msg.delta,
+          index: Date.now(),
+        }));
       }
 
-      // Chunk audio reçu → envoi immédiat à Flutter en PCM Base64
-      if (msg.type === "output_audio_buffer.delta") {
-        const chunkBuffer = Buffer.from(msg.audio, "base64");
-        const wsClient = wsClients[deviceId];
-        if (wsClient && wsClient.readyState === WebSocket.OPEN) {
-          wsClient.send(JSON.stringify({
-            deviceId,
-            audioPCM: chunkBuffer.toString("base64"), // ⚡ PCM brut
-            text: null,
-            index: Date.now(),
-          }));
-        }
+      // Audio PCM incrémental
+      if (msg.type === "response.output_audio.delta" || msg.type === "output_audio_buffer.delta") {
+        wsClient.send(JSON.stringify({
+          deviceId,
+          audioPCM: msg.audio, // PCM brut Base64
+          text: null,
+          index: Date.now(),
+        }));
       }
 
-      // Fin de réponse → envoyer texte final
+      // Fin de réponse
       if (msg.type === "response.completed") {
-        const wsClient = wsClients[deviceId];
-        if (wsClient && wsClient.readyState === WebSocket.OPEN) {
-          wsClient.send(JSON.stringify({
-            deviceId,
-            audioPCM: null, // fin du flux audio
-            text: responseText,
-            index: Date.now(),
-          }));
-        }
+        wsClient.send(JSON.stringify({
+          deviceId,
+          audioPCM: null,
+          text: responseText,
+          index: Date.now(),
+        }));
         wsGPT.close();
-        resolve({ status: "ok", deviceId, text: responseText });
+        gptSockets.delete(deviceId);
       }
 
+      // Erreurs
       if (msg.type === "error") {
-        log(`⚠️ Erreur GPT: ${JSON.stringify(msg)}`);
+        console.warn(`[GPT][${deviceId}] Erreur:`, msg.error?.message || msg);
       }
-    });
-
-    wsGPT.on("error", (err) => {
-      log(`Erreur WebSocket GPT: ${err.message}`);
-      reject({ status: "error", deviceId, message: err.message });
     });
 
     wsGPT.on("close", () => {
-      log("WebSocket GPT fermé");
+      console.log(`[GPT][${deviceId}] Connexion fermée`);
+      gptSockets.delete(deviceId);
     });
-  });
+
+    wsGPT.on("error", (err) => {
+      console.error(`[GPT][${deviceId}] Erreur WebSocket:`, err.message);
+      gptSockets.delete(deviceId);
+    });
+
+    gptSockets.set(deviceId, wsGPT);
+  }
+
+  // Envoyer chunk
+  const wsGPT = gptSockets.get(deviceId);
+  wsGPT.send(JSON.stringify({
+    type: "input_audio_buffer.append",
+    audio: audioBuffer.toString("base64"),
+  }));
+
+  // Commit + création réponse si c’est le dernier chunk
+  if (commit) {
+    wsGPT.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    wsGPT.send(JSON.stringify({ type: "response.create", response: { instructions: "Analyse et réponds" } }));
+  }
 }
 
-module.exports = { processAudioAndReturnJSON };
+module.exports = { processAudioChunk };
