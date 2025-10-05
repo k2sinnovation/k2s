@@ -9,10 +9,10 @@ const gptSockets = new Map();
 async function processAudioChunk(deviceId, audioBase64, wsClients, commit = false) {
   console.log(`[Assembly][${deviceId}] 📥 Chunk reçu (${audioBase64.length} chars, commit: ${commit})`);
   
-// ✅ LIGNE ~11-13 : Garder le base64 tel quel
-const base64Data = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
-const estimatedBytes = (base64Data.length * 3) / 4;
-console.log(`[Assembly][${deviceId}] 🔄 Taille estimée: ${estimatedBytes} bytes`);
+  // ✅ Garder le base64 tel quel
+  const base64Data = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
+  const estimatedBytes = (base64Data.length * 3) / 4;
+  console.log(`[Assembly][${deviceId}] 🔄 Taille estimée: ${estimatedBytes} bytes`);
 
   // Créer socket GPT si nécessaire
   if (!gptSockets.has(deviceId)) {
@@ -46,12 +46,7 @@ console.log(`[Assembly][${deviceId}] 🔄 Taille estimée: ${estimatedBytes} byt
           input_audio_transcription: {
             model: "whisper-1"
           },
-          turn_detection: {
-            type: "server_vad",
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 500
-          },
+          turn_detection: null,  // ✅ Désactivé - VAD géré côté Flutter
           max_response_output_tokens: 2600,
           temperature: 0.9
         }
@@ -86,7 +81,7 @@ console.log(`[Assembly][${deviceId}] 🔄 Taille estimée: ${estimatedBytes} byt
       }
       const wsClient = clientData.ws;
 
-      // Transcription input
+      // Transcription input - Succès
       if (msg.type === "conversation.item.input_audio_transcription.completed") {
         console.log(`[GPT][${deviceId}] 🎤 Transcription: "${msg.transcript}"`);
         wsClient.send(JSON.stringify({
@@ -95,6 +90,11 @@ console.log(`[Assembly][${deviceId}] 🔄 Taille estimée: ${estimatedBytes} byt
           transcript: msg.transcript,
           index: Date.now(),
         }));
+      }
+
+      // ✅ Transcription input - Échec (debug)
+      if (msg.type === "conversation.item.input_audio_transcription.failed") {
+        console.error(`[GPT][${deviceId}] ❌ Transcription failed:`, JSON.stringify(msg));
       }
 
       // Audio delta - streaming
@@ -199,14 +199,13 @@ console.log(`[Assembly][${deviceId}] 🔄 Taille estimée: ${estimatedBytes} byt
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-// ✅ LIGNE ~172-178 : Envoi direct (CORRECT)
-// Envoi audio
-wsGPT.send(JSON.stringify({
-  type: "input_audio_buffer.append",
-  audio: base64Data,  // ✅ Direct, pas de conversion
-}));
-
-console.log(`[Assembly][${deviceId}] 📤 Chunk envoyé (${base64Data.length} chars base64)`);
+  // ✅ Envoi audio direct (pas de décodage/ré-encodage)
+  wsGPT.send(JSON.stringify({
+    type: "input_audio_buffer.append",
+    audio: base64Data,  // Direct depuis Flutter, déjà en base64
+  }));
+  
+  console.log(`[Assembly][${deviceId}] 📤 Chunk envoyé (${base64Data.length} chars base64)`);
 
   // Commit + response
   if (commit) {
