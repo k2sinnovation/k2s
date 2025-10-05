@@ -9,9 +9,10 @@ const gptSockets = new Map();
 async function processAudioChunk(deviceId, audioBase64, wsClients, commit = false) {
   console.log(`[Assembly][${deviceId}] 📥 Chunk reçu (${audioBase64.length} chars, commit: ${commit})`);
   
-  const base64Data = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
-  const audioBuffer = Buffer.from(base64Data, "base64");
-  console.log(`[Assembly][${deviceId}] 🔄 Buffer: ${audioBuffer.length} bytes`);
+// ✅ LIGNE ~11-13 : Garder le base64 tel quel
+const base64Data = audioBase64.includes(",") ? audioBase64.split(",")[1] : audioBase64;
+const estimatedBytes = (base64Data.length * 3) / 4;
+console.log(`[Assembly][${deviceId}] 🔄 Taille estimée: ${estimatedBytes} bytes`);
 
   // Créer socket GPT si nécessaire
   if (!gptSockets.has(deviceId)) {
@@ -198,13 +199,14 @@ async function processAudioChunk(deviceId, audioBase64, wsClients, commit = fals
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  // Envoi audio
-  wsGPT.send(JSON.stringify({
-    type: "input_audio_buffer.append",
-    audio: audioBuffer.toString("base64"),
-  }));
-  
-  console.log(`[Assembly][${deviceId}] 📤 Chunk envoyé (${audioBuffer.length} bytes)`);
+// ✅ LIGNE ~172-178 : Envoi direct (CORRECT)
+// Envoi audio
+wsGPT.send(JSON.stringify({
+  type: "input_audio_buffer.append",
+  audio: base64Data,  // ✅ Direct, pas de conversion
+}));
+
+console.log(`[Assembly][${deviceId}] 📤 Chunk envoyé (${base64Data.length} chars base64)`);
 
   // Commit + response
   if (commit) {
