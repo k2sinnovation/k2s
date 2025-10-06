@@ -39,16 +39,13 @@ async function processAudioChunk(deviceId, audioBase64, wsClients, commit = fals
         type: "session.update",
         session: {
           modalities: ["text", "audio"],
-          instructions: "Tu es un assistant vocal naturel. Réponds de manière concise et conversationnelle.",
+          instructions: "Tu es un assistant vocal français naturel et chaleureux. Réponds de manière concise, conversationnelle et utile. Parle comme dans une vraie conversation.",
           voice: "shimmer",
           input_audio_format: "pcm16",
           output_audio_format: "pcm16",
-          input_audio_transcription: {
-            model: "whisper-1"
-          },
           turn_detection: null,  // ✅ Désactivé - VAD géré côté Flutter
           max_response_output_tokens: 2600,
-          temperature: 0.9
+          temperature: 0.8
         }
       }));
       
@@ -131,6 +128,12 @@ async function processAudioChunk(deviceId, audioBase64, wsClients, commit = fals
       // Réponse complète
       if (msg.type === "response.done") {
         console.log(`[GPT][${deviceId}] ✅ Réponse complète (${audioChunkCount} chunks audio)`);
+        
+        // ✅ Log détaillé si pas d'audio
+        if (audioChunkCount === 0) {
+          console.warn(`[GPT][${deviceId}] ⚠️ AUCUN audio généré! Response:`, JSON.stringify(msg));
+        }
+        
         audioChunkCount = 0;
         
         wsClient.send(JSON.stringify({
@@ -202,12 +205,12 @@ async function processAudioChunk(deviceId, audioBase64, wsClients, commit = fals
   // ✅ Envoi audio direct (pas de décodage/ré-encodage)
   wsGPT.send(JSON.stringify({
     type: "input_audio_buffer.append",
-    audio: base64Data,  // Direct depuis Flutter, déjà en base64
+    audio: base64Data,
   }));
   
   console.log(`[Assembly][${deviceId}] 📤 Chunk envoyé (${base64Data.length} chars base64)`);
 
-  // Commit + response
+  // ✅ Commit + response CORRIGÉ
   if (commit) {
     console.log(`[Assembly][${deviceId}] 🏁 Commit...`);
     
@@ -215,16 +218,14 @@ async function processAudioChunk(deviceId, audioBase64, wsClients, commit = fals
       type: "input_audio_buffer.commit" 
     }));
     
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // ✅ Attendre plus longtemps pour que l'audio soit bien traité
+    await new Promise(resolve => setTimeout(resolve, 300));
     
     console.log(`[Assembly][${deviceId}] 🎯 Création réponse...`);
     
+    // ✅ CORRECTION: Pas d'instructions ici, utiliser celles de la session
     wsGPT.send(JSON.stringify({ 
-      type: "response.create",
-      response: {
-        modalities: ["text", "audio"],
-        instructions: "Réponds naturellement."
-      }
+      type: "response.create"
     }));
     
     console.log(`[Assembly][${deviceId}] ✅ Réponse créée`);
