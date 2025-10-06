@@ -1,5 +1,5 @@
 const WebSocket = require("ws");
-const { promptTTSVocal } = require("./utils/promptsTTSVocal");
+const { promptTTSVocal } = require("../utils/promptsTTSVocal");
 
 // Stocker les sockets GPT par deviceId
 const gptSockets = new Map();
