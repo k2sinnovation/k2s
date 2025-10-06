@@ -1,4 +1,5 @@
 const WebSocket = require("ws");
+const { promptTTSVocal } = require("./utils/promptsTTSVocal");
 
 // Stocker les sockets GPT par deviceId
 const gptSockets = new Map();
@@ -39,12 +40,12 @@ async function processAudioChunk(deviceId, audioBase64, wsClients, commit = fals
         type: "session.update",
         session: {
           modalities: ["text", "audio"],
-          instructions: "Tu es un assistant vocal français naturel et chaleureux. Réponds de manière concise, conversationnelle et utile. Parle comme dans une vraie conversation.",
+          instructions: promptTTSVocal,  // ✅ Utilise votre prompt personnalisé
           voice: "shimmer",
           input_audio_format: "pcm16",
           output_audio_format: "pcm16",
           turn_detection: null,  // ✅ Désactivé - VAD géré côté Flutter
-          max_response_output_tokens: 2600,
+          max_response_output_tokens: 260,  // ✅ Limite selon votre prompt
           temperature: 0.8
         }
       }));
