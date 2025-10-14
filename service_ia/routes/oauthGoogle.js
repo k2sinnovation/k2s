@@ -2,9 +2,8 @@ const express = require('express');
 const router = express.Router();
 
 const BACKEND_URL = process.env.BACKEND_URL;
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID; // ID client Android/iOS
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID; // juste l'ID client Android/iOS
 
-// Démarrer OAuth Google
 router.get('/auth/google/start', (req, res) => {
   const redirectUri = `${BACKEND_URL}/api/auth/google/callback`;
   const scope = [
