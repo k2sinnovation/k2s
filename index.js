@@ -10,16 +10,20 @@ const testTTSRoutes = require('./routes/testTTS');
 const testTtsRouter = require('./controllers/test_google_tts');
 const { router: openaiWebhookRouter } = require('./openaiWebhookService'); 
 
-
 require('dotenv').config();
 
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' }); // dossier temporaire
 
-// ✅ Chargement des routes
+// ✅ Chargement des routes existantes
 const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
 const subscribeRoute = require("./routes/subscribe");
+
+// ✅ Nouvelles routes OAuth
+const oauthWhatsAppRoute = require('./routes/oauthWhatsApp');
+const oauthGoogleRoute = require('./routes/oauthGoogle');
+const oauthOutlookRoute = require('./routes/oauthOutlook');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,12 +47,11 @@ attachWebSocketToServer(server, openai);
 // ✅ Optionnel : ping régulier pour garder les connexions WS actives
 setInterval(() => {
   clients.forEach((client, deviceId) => {
-    if (client.ws.readyState === 1) { // 1 = OPEN
+    if (client.ws.readyState === 1) {
       client.ws.ping('keepalive');
     }
   });
 }, 15000);
-
 
 // ✅ Connexion MongoDB
 mongoose.connect(process.env.MONGO_URI, {
@@ -74,7 +77,12 @@ app.use('/api', testTTSRoutes);
 app.use('/api/assembly', assemblyRoute);
 app.use('/test-tts', testTtsRouter);
 
-// ✅ Route pour lister les modèles accessibles via l'API OpenAI
+// ✅ Montage des nouvelles routes OAuth
+app.use('/api', oauthWhatsAppRoute);
+app.use('/api', oauthGoogleRoute);
+app.use('/api', oauthOutlookRoute);
+
+// ✅ Route pour lister les modèles OpenAI
 app.get('/api/istModels', async (req, res) => {
   try {
     const response = await openai.models.list();
@@ -84,9 +92,6 @@ app.get('/api/istModels', async (req, res) => {
     res.status(500).json({ error: "Erreur API OpenAI" });
   }
 });
-
-// ❌ Retiré car usermodel n’est pas une route
-// app.use("/api/user", userRoute);
 
 // ✅ Test route GET
 app.get('/', (req, res) => {
