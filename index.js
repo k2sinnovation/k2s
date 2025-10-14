@@ -21,9 +21,9 @@ const answerRoute = require("./routes/answer");
 const subscribeRoute = require("./routes/subscribe");
 
 // ✅ Nouvelles routes OAuth
-const oauthWhatsAppRoute = require('./routes/oauthWhatsApp');
-const oauthGoogleRoute = require('./routes/oauthGoogle');
-const oauthOutlookRoute = require('./routes/oauthOutlook');
+const oauthWhatsAppRoute = require('./service_ia/routes/oauthWhatsApp');
+const oauthGoogleRoute = require('./service_ia/routes/oauthGoogle');
+const oauthOutlookRoute = require('./service_ia/routes/oauthOutlook');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
