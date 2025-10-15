@@ -1,7 +1,7 @@
 {
   "name": "K2S-server",
   "version": "1.0.0",
-  "description": "Backend pour K2S avec OpenAI",
+  "description": "Backend pour K2S avec OpenAI et OAuth multi-utilisateurs",
   "main": "index.js",
   "scripts": {
     "start": "node checkNode.js && node index.js"
@@ -20,6 +20,8 @@
     "ws": "^8.18.0",
     "serpapi": "^2.1.0",
     "uuid": "^9.0.1",
-    "googleapis": "^120.0.0"
+    "googleapis": "^120.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3"
   }
 }
