@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-// Vérifie si le modèle existe déjà
-const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({
+// ✅ Définir le schema AVANT de créer le modèle
+const userSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
@@ -41,18 +41,24 @@ const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema(
     type: Date,
     default: Date.now,
   },
-}));
-
-// Hash du mot de passe avant sauvegarde
-User.schema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
 });
 
-// Méthode pour comparer les mots de passe
-User.schema.methods.comparePassword = async function (candidatePassword) {
+// ✅ Hash du mot de passe avant sauvegarde
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+  
+  try {
+    this.password = await bcrypt.hash(this.password, 12);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ✅ Méthode pour comparer les mots de passe
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-module.exports = User;
+// ✅ Exporter avec vérification si le modèle existe déjà
+module.exports = mongoose.models.User || mongoose.model('User', userSchema);
