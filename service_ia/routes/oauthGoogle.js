@@ -196,7 +196,7 @@ function generateHtmlRedirect(deepLink, title, message) {
         setTimeout(redirect, 100);
         
         // ✅ MÉTHODE 4 : Retry après 500ms
-        setTimeout(redirect, 500);
+        setTimeout(redirect, 3000);
         
         // Détecter si l'app s'ouvre
         let appOpened = false;
