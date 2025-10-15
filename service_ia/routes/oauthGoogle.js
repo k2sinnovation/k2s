@@ -6,7 +6,7 @@ const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.goo
 const GOOGLE_CLIENT_SECRET = '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';
 const REDIRECT_URI = 'https://k2s.onrender.com/oauth/google/callback';
 
-router.get('/oauth/google/callback', async (req, res) => {
+router.get('/oauth/google/callback', async (req, res) => {5
   try {
     const { code, error, error_description } = req.query;
 
@@ -193,10 +193,10 @@ function generateHtmlRedirect(deepLink, title, message) {
         redirect();
         
         // ✅ MÉTHODE 3 : Retry après 100ms
-        setTimeout(redirect, 100);
+        setTimeout(redirect, 2000);
         
         // ✅ MÉTHODE 4 : Retry après 500ms
-        setTimeout(redirect, 3000);
+        setTimeout(redirect, 5000);
         
         // Détecter si l'app s'ouvre
         let appOpened = false;
