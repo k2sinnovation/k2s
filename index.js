@@ -27,6 +27,10 @@ const testTtsRouter = require('./controllers/test_google_tts');
 const authRoute = require('./service_ia/routes/auth');
 const emailAccountsRoute = require('./service_ia/routes/emailTokens'); 
 
+// ✅OAuth Google
+const oauthGoogleRoute = require('./service_ia/routes/oauthGoogle');
+app.use('/', oauthGoogleRoute);
+
 // ✅ Import routes OAuth
 const oauthWhatsAppRoute = require('./service_ia/routes/oauthWhatsApp');
 
