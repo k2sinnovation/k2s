@@ -1,7 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const OpenAI = require("openai");
-const fs = require('fs');
 const cors = require('cors');
 const multer = require('multer');
 const http = require('http');
@@ -23,16 +22,11 @@ const testAudioRoutes = require('./routes/testAudio');
 const testTTSRoutes = require('./routes/testTTS');
 const testTtsRouter = require('./controllers/test_google_tts');
 
-// ✅ Import des routes authentification (NOUVEAU)
+// ✅ Import des routes authentification
 const authRoute = require('./service_ia/routes/auth');
 const emailAccountsRoute = require('./service_ia/routes/emailTokens'); 
-
-// ✅OAuth Google
-const oauthGoogleRoute = require('./service_ia/routes/oauthGoogle');
-app.use('/', oauthGoogleRoute);
-
-// ✅ Import routes OAuth
 const oauthWhatsAppRoute = require('./service_ia/routes/oauthWhatsApp');
+const oauthGoogleRoute = require('./service_ia/routes/oauthGoogle');
 
 // ===== CONFIGURATION =====
 
@@ -44,9 +38,9 @@ const upload = multer({ dest: 'uploads/' });
 
 // ===== MIDDLEWARE (ORDRE IMPORTANT!) =====
 
-// 1️⃣ CORS avec configuration appropriée
+// 1️⃣ CORS
 app.use(cors({
-  origin: '*', // En production, remplace par ton domaine
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -56,7 +50,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 3️⃣ Logs des requêtes (optionnel, utile pour debug)
+// 3️⃣ Logs des requêtes
 app.use((req, res, next) => {
   console.log(`📨 ${req.method} ${req.path}`);
   next();
@@ -86,10 +80,13 @@ setInterval(() => {
 
 // ===== ROUTES (ORDRE CRITIQUE!) =====
 
-// ⚠️ IMPORTANT : Routes d'authentification EN PREMIER
-app.use('/api', authRoute);              // /api/auth/register, /api/auth/login-device, etc.
-app.use('/api', emailAccountsRoute);      // /api/auth/save-tokens, /api/auth/email-accounts, etc.
-app.use('/api', oauthWhatsAppRoute);      // /api/auth/whatsapp/*
+// ✅ OAuth Google EN PREMIER (important pour le callback)
+app.use('/', oauthGoogleRoute);
+
+// Routes d'authentification
+app.use('/api', authRoute);
+app.use('/api', emailAccountsRoute);
+app.use('/api', oauthWhatsAppRoute);
 
 // Routes webhook OpenAI
 app.use('/openai-webhook', openaiWebhookRouter);
@@ -109,10 +106,11 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.0.0',
+    version: '2.0.1',
     endpoints: {
       auth: '/api/auth/*',
       email: '/api/auth/email-accounts',
+      oauth: '/oauth/google/callback',
       analyze: '/api/analyze',
       answer: '/api/answer',
       subscribe: '/api/subscribe',
@@ -141,7 +139,7 @@ app.post('/api/ask', async (req, res) => {
     }
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // ⚠️ CORRIGÉ : "gpt-5-mini" n'existe pas
+      model: "gpt-4o-mini",
       messages: [{ role: "user", content: question }],
     });
 
@@ -195,6 +193,7 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  🗄️  MongoDB: connecté                 ║
 ║  🔌 WebSocket: actif                   ║
 ║  🤖 OpenAI: configuré                  ║
+║  🔐 OAuth Google: actif                ║
 ╚════════════════════════════════════════╝
       `);
     });
