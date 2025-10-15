@@ -1,41 +1,46 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'votre_secret_jwt_super_securise';
 
 /**
  * Middleware d'authentification JWT
- * Vérifie le token dans le header Authorization
- * Ajoute req.user et req.userId si valide
+ * Vérifie le token et ajoute userId à req
  */
-const authenticate = async (req, res, next) => {
+module.exports = async (req, res, next) => {
   try {
-    // Récupérer le token depuis le header
-    const token = req.headers.authorization?.replace('Bearer ', '');
-
-    if (!token) {
-      return res.status(401).json({ error: 'Token manquant' });
+    // Récupérer le token depuis le header Authorization
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        error: 'Token manquant ou invalide',
+        details: 'Format attendu: "Authorization: Bearer <token>"'
+      });
     }
 
-    // Vérifier le token
+    const token = authHeader.replace('Bearer ', '');
+
+    // Vérifier et décoder le token
     const decoded = jwt.verify(token, JWT_SECRET);
 
-    // Récupérer l'utilisateur
-    const user = await User.findById(decoded.userId);
+    // Ajouter l'userId à la requête
+    req.userId = decoded.userId;
+    req.deviceId = decoded.deviceId;
 
-    if (!user || !user.isActive) {
-      return res.status(401).json({ error: 'Utilisateur non trouvé ou inactif' });
-    }
-
-    // Ajouter l'utilisateur à la requête
-    req.user = user;
-    req.userId = user._id;
+    console.log(`✅ [Auth] Middleware: userId=${req.userId}`);
 
     next();
   } catch (error) {
-    console.error('❌ [Auth] Token invalide:', error.message);
-    res.status(401).json({ error: 'Token invalide' });
+    console.error('❌ [Auth] Middleware erreur:', error.message);
+    
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ error: 'Token invalide' });
+    }
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expiré' });
+    }
+    
+    res.status(401).json({ error: 'Authentification échouée' });
   }
 };
-
-module.exports = authenticate;
