@@ -4,7 +4,7 @@ const axios = require('axios');
 
 // ✅ Configuration OAuth Google
 const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = 'VOTRE_CLIENT_SECRET_ICI'; // ⚠️ Remplacez par le vrai secret
+const GOOGLE_CLIENT_SECRET = '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'; 
 const REDIRECT_URI = 'https://k2s.onrender.com/oauth/google/callback';
 
 /**
