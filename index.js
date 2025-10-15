@@ -25,7 +25,7 @@ const testTtsRouter = require('./controllers/test_google_tts');
 
 // ✅ Import des routes authentification (NOUVEAU)
 const authRoute = require('./service_ia/routes/auth');
-const emailAccountsRoute = require('./service_ia/routes/email'); // ⚠️ VÉRIFIE LE NOM DU FICHIER
+const emailAccountsRoute = require('./service_ia/routes/emailTokens'); 
 
 // ✅ Import routes OAuth
 const oauthWhatsAppRoute = require('./service_ia/routes/oauthWhatsApp');
