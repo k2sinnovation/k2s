@@ -28,148 +28,72 @@ router.get('/oauth/google/callback', async (req, res) => {
         <head>
           <meta charset="UTF-8">
           <style>
-            body {
-              font-family: Arial, sans-serif;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              height: 100vh;
-              margin: 0;
-              background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
-              color: white;
-            }
-            .container {
-              text-align: center;
-              padding: 40px;
-              background: rgba(255, 255, 255, 0.1);
-              border-radius: 20px;
-              backdrop-filter: blur(10px);
-              max-width: 500px;
-            }
-            h1 { margin: 0 0 20px 0; }
-            .error { 
-              background: rgba(255, 255, 255, 0.2);
-              padding: 15px;
-              border-radius: 10px;
-              margin: 20px 0;
-              font-size: 14px;
-            }
+            body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #ff6b6b; color: white; }
+            .container { text-align: center; padding: 40px; background: rgba(255,255,255,0.1); border-radius: 20px; }
+            h1 { margin-bottom: 20px; }
           </style>
         </head>
         <body>
           <div class="container">
             <h1>❌ Erreur OAuth</h1>
-            <div class="error">
-              <strong>Erreur :</strong> ${error}<br>
-              ${error_description ? `<strong>Description :</strong> ${error_description}` : ''}
-            </div>
+            <p>${error} ${error_description ? `: ${error_description}` : ''}</p>
             <p>Fermez cette fenêtre et réessayez.</p>
-            <script>
-              setTimeout(() => {
-                window.close();
-              }, 5000);
-            </script>
           </div>
         </body>
         </html>
       `);
     }
 
-    if (!code) {
-      return res.status(400).send('Code OAuth manquant');
-    }
+    if (!code) return res.status(400).send('Code OAuth manquant');
 
     console.log('🔄 [OAuth Google] Échange du code contre tokens...');
 
     // Échanger le code contre des tokens
     const tokenResponse = await axios.post(
       'https://oauth2.googleapis.com/token',
-      {
-        code: code,
+      new URLSearchParams({
+        code,
         client_id: GOOGLE_CLIENT_ID,
         client_secret: GOOGLE_CLIENT_SECRET,
         redirect_uri: REDIRECT_URI,
         grant_type: 'authorization_code',
-      },
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      }
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
 
     const { access_token, refresh_token, id_token } = tokenResponse.data;
-
-    console.log('✅ [OAuth Google] Tokens reçus');
-    console.log('Access token:', access_token ? 'présent' : 'absent');
-    console.log('Refresh token:', refresh_token ? 'présent' : 'absent');
+    console.log('✅ Tokens reçus:', { access_token: !!access_token, refresh_token: !!refresh_token });
 
     // Récupérer l'email de l'utilisateur
     const userInfoResponse = await axios.get(
       'https://www.googleapis.com/oauth2/v2/userinfo',
-      {
-        headers: { Authorization: `Bearer ${access_token}` }
-      }
+      { headers: { Authorization: `Bearer ${access_token}` } }
     );
 
     const email = userInfoResponse.data.email;
-    console.log('✅ [OAuth Google] Email récupéré:', email);
-
-    // Encoder les tokens pour l'URL
-    const encodedAccessToken = encodeURIComponent(access_token);
-    const encodedRefreshToken = encodeURIComponent(refresh_token || '');
-    const encodedEmail = encodeURIComponent(email);
-    const encodedIdToken = encodeURIComponent(id_token || '');
+    console.log('✅ Email récupéré:', email);
 
     // Deep link vers l'app mobile
-    const deepLink = `k2sdiag://auth?access_token=${encodedAccessToken}&refresh_token=${encodedRefreshToken}&email=${encodedEmail}&id_token=${encodedIdToken}`;
+    const deepLink = `k2sdiag://auth?access_token=${encodeURIComponent(access_token)}&refresh_token=${encodeURIComponent(refresh_token || '')}&email=${encodeURIComponent(email)}&id_token=${encodeURIComponent(id_token || '')}`;
+    console.log('🔗 Redirection vers l\'app mobile');
 
-    console.log('🔗 [OAuth Google] Redirection vers l\'app mobile');
-
-    // Deep link vers l'app mobile
-const deepLink = `k2sdiag://auth?access_token=${encodedAccessToken}&refresh_token=${encodedRefreshToken}&email=${encodedEmail}&id_token=${encodedIdToken}`;
-
-console.log('🔗 [OAuth Google] Redirection vers l\'app mobile');
-
-// Redirection HTTP 302 → FlutterWebAuth2 capture automatiquement le callback
-res.redirect(deepLink);
-
+    // Redirection HTTP 302 → FlutterWebAuth2 capture automatiquement le callback
+    res.redirect(deepLink);
 
   } catch (error) {
-    console.error('❌ [OAuth Google] Erreur:', error.message);
-    console.error('Stack:', error.stack);
-
+    console.error('❌ [OAuth Google] Erreur:', error.message, error.stack);
     res.status(500).send(`
       <!DOCTYPE html>
       <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
-            color: white;
-          }
-          .container {
-            text-align: center;
-            padding: 40px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            backdrop-filter: blur(10px);
-          }
-        </style>
-      </head>
+      <head><meta charset="UTF-8"><style>
+        body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #ff6b6b; color: white; }
+        .container { text-align: center; padding: 40px; background: rgba(255,255,255,0.1); border-radius: 20px; }
+      </style></head>
       <body>
         <div class="container">
           <h1>❌ Erreur serveur</h1>
-          <p>Une erreur est survenue lors de la connexion.</p>
-          <p style="font-size: 14px; opacity: 0.8; margin-top: 20px;">
-            ${error.message}
-          </p>
-          <p style="margin-top: 30px;">Fermez cette fenêtre et réessayez.</p>
+          <p>${error.message}</p>
+          <p>Fermez cette fenêtre et réessayez.</p>
         </div>
       </body>
       </html>
