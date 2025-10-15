@@ -4,7 +4,8 @@
   "description": "Backend pour K2S avec OpenAI et OAuth multi-utilisateurs",
   "main": "index.js",
   "scripts": {
-    "start": "node checkNode.js && node index.js"
+    "start": "node checkNode.js && node index.js",
+    "dev": "nodemon index.js"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -22,6 +23,10 @@
     "uuid": "^9.0.1",
     "googleapis": "^120.0.0",
     "jsonwebtoken": "^9.0.2",
-    "bcryptjs": "^2.4.3"
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   }
 }
