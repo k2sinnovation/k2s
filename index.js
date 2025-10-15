@@ -20,10 +20,14 @@ const analyzeRoute = require("./routes/analyze");
 const answerRoute = require("./routes/answer");
 const subscribeRoute = require("./routes/subscribe");
 
-// ✅ Nouvelles routes OAuth
+// ✅ NOUVEAU : Routes authentification multi-users
+const authRoute = require('./service_ia/routes/auth');
+const emailTokensRoute = require('./service_ia/routes/emailTokens');
+
+// ✅ Routes OAuth
 const oauthWhatsAppRoute = require('./service_ia/routes/oauthWhatsApp');
-const oauthGoogleRoute = require('./service_ia/routes/oauthGoogle');
-const oauthOutlookRoute = require('./service_ia/routes/oauthOutlook');
+// const oauthGoogleRoute = require('./service_ia/routes/oauthGoogle');    // Optionnel (non utilisé sur mobile)
+// const oauthOutlookRoute = require('./service_ia/routes/oauthOutlook');  // Optionnel (non utilisé sur mobile)
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -77,10 +81,16 @@ app.use('/api', testTTSRoutes);
 app.use('/api/assembly', assemblyRoute);
 app.use('/test-tts', testTtsRouter);
 
-// ✅ Montage des nouvelles routes OAuth
+// ✅ NOUVEAU : Routes authentification (METTRE EN PREMIER)
+app.use('/api', authRoute);
+app.use('/api', emailTokensRoute);
+
+// ✅ Route OAuth WhatsApp (via backend)
 app.use('/api', oauthWhatsAppRoute);
-app.use('/api', oauthGoogleRoute);
-app.use('/api', oauthOutlookRoute);
+
+// ℹ️ OAuth Google/Outlook non utilisés sur mobile (PKCE direct dans Flutter)
+// app.use('/api', oauthGoogleRoute);
+// app.use('/api', oauthOutlookRoute);
 
 // ✅ Route pour lister les modèles OpenAI
 app.get('/api/istModels', async (req, res) => {
