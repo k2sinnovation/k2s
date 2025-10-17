@@ -33,6 +33,16 @@ const oauthOutlookRoute = require('./service_ia/routes/oauthOutlook');
 const mailRoutes = require('./service_ia/routes/mail');
 const whatsappMessagingRoutes = require('./service_ia/routes/whatsapp');
 
+// 🆕 Import des nouveaux modèles
+const User = require('./service_ia/models/User');
+const Prestation = require('./service_ia/models/Prestation');
+const Appointment = require('./service_ia/models/Appointment');
+const AutoReply = require('./service_ia/models/AutoReply');
+
+// 🆕 Import nouvelle route user
+const userRoute = require('./service_ia/routes/user');
+
+
 // ===== CONFIGURATION =====
 
 const app = express();
@@ -66,6 +76,7 @@ app.use('/uploads', express.static('uploads'));
 
 // ===== OPENAI =====
 
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.locals.openai = openai;
 
@@ -94,6 +105,7 @@ setInterval(() => {
 app.use('/', oauthGoogleRoute);
 app.use('/', oauthOutlookRoute);
 app.use('/api', oauthWhatsAppRoute);
+app.use('/api/user', userRoute);
 
 // Routes d'authentification
 app.use('/api', authRoute);
