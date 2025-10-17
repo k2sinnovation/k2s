@@ -1,286 +1,384 @@
-const express = require('express');
-const router = express.Router();
-const axios = require('axios');
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:app_links/app_links.dart';
 
-const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = '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';
-const REDIRECT_URI = 'https://k2s.onrender.com/oauth/google/callback';
+class OAuthService {
+  static const String backendUrl = 'https://k2s.onrender.com';
+  static const String callbackScheme = 'k2sdiag';
 
-router.get('/oauth/google/callback', async (req, res) => {
-  try {
-    const { code, error, error_description } = req.query;
+  static const String googleClientIdWeb =
+      '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
 
-    console.log('📨 [OAuth] Callback reçu');
-    console.log('📋 Code:', code?.substring(0, 20));
+  static const String outlookClientId = 'VOTRE_CLIENT_ID_OUTLOOK';
 
-    if (error) {
-      console.log('❌ Erreur OAuth:', error);
-      const deepLink = `k2sdiag://auth?error=${encodeURIComponent(error)}`;
-      return res.send(generateHtmlRedirect(deepLink, '❌ Erreur OAuth', error));
-    }
+  static final AppLinks _appLinks = AppLinks();
 
-    if (!code) {
-      console.log('❌ Code manquant');
-      const deepLink = 'k2sdiag://auth?error=no_code';
-      return res.send(generateHtmlRedirect(deepLink, '❌ Code manquant', 'Aucun code reçu'));
-    }
+  static Completer<Uri?>? _authCompleter;
+  static StreamSubscription? _linkSubscription;
 
-    console.log('🔄 [OAuth] Échange du code...');
+  // ===== GMAIL avec protection contre les appels multiples =====
+  static Future<Map<String, String>?> connectGmail() async {
+    try {
+      final scopes = [
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'openid',
+        'profile',
+      ].join(' ');
 
-    // Échanger le code contre les tokens
-    const tokenResponse = await axios.post(
-      'https://oauth2.googleapis.com/token',
-      new URLSearchParams({
-        code,
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri: REDIRECT_URI,
-        grant_type: 'authorization_code',
-      }),
-      { 
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 10000,
-      }
-    );
+      final authUrl = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
+        'client_id': googleClientIdWeb,
+        'redirect_uri': '$backendUrl/oauth/google/callback',
+        'response_type': 'code',
+        'scope': scopes,
+        'access_type': 'offline',
+        'prompt': 'consent',
+        'hl': 'fr', // 🔹 Langue française
+      });
 
-    const { access_token, refresh_token, id_token } = tokenResponse.data;
-    console.log('✅ [OAuth] Tokens reçus');
+      print('🔗 [OAuth] Ouverture navigateur...');
 
-    // Récupérer l'email
-    const userInfoResponse = await axios.get(
-      'https://www.googleapis.com/oauth2/v2/userinfo',
-      { headers: { Authorization: `Bearer ${access_token}` } }
-    );
+      _authCompleter = Completer<Uri?>();
 
-    const email = userInfoResponse.data.email;
-    console.log('✅ [OAuth] Email:', email);
+      // 🔹 CLEF: Variable pour tracker si on a déjà traité
+      bool hasProcessed = false;
 
-    // 🔹 IMPORTANT : Construction manuelle avec encodage proper
-    const params = new URLSearchParams({
-      access_token,
-      email,
-      success: 'true'
-    });
-
-    if (refresh_token) params.append('refresh_token', refresh_token);
-    if (id_token) params.append('id_token', id_token);
-
-    const deepLink = `k2sdiag://auth?${params.toString()}`;
-    
-    console.log('🔗 [OAuth] Deep link longueur:', deepLink.length);
-    console.log('📋 Deep link:', deepLink.substring(0, 100) + '...');
-
-    // HTML optimisé pour Android avec multiples méthodes de redirection
-    res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
-
-  } catch (error) {
-    console.error('❌ [OAuth] Erreur:', error.message);
-    if (error.response) {
-      console.error('📄 Réponse erreur:', error.response.data);
-    }
-    const deepLink = `k2sdiag://auth?error=server_error&error_description=${encodeURIComponent(error.message)}`;
-    res.send(generateHtmlRedirect(deepLink, '❌ Erreur serveur', error.message));
-  }
-});
-
-function generateHtmlRedirect(deepLink, title, message) {
-  const isSuccess = title.includes('✓');
-  const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
-  const icon = isSuccess ? '✓' : '❌';
-
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${title}</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 100vh;
-          background: linear-gradient(135deg, ${bgColor} 0%, ${bgColor}cc 100%);
-          color: white;
-          padding: 20px;
-        }
-        .container {
-          text-align: center;
-          padding: 40px;
-          background: rgba(255,255,255,0.1);
-          border-radius: 20px;
-          backdrop-filter: blur(10px);
-          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-          max-width: 400px;
-          width: 100%;
-        }
-        .icon {
-          font-size: 80px;
-          margin-bottom: 20px;
-          animation: scale 0.5s ease-in-out;
-        }
-        @keyframes scale {
-          0% { transform: scale(0); }
-          50% { transform: scale(1.2); }
-          100% { transform: scale(1); }
-        }
-        h1 { 
-          margin: 20px 0; 
-          font-size: 28px;
-          font-weight: 600;
-        }
-        .message {
-          background: rgba(255,255,255,0.2);
-          padding: 15px 20px;
-          border-radius: 10px;
-          margin: 20px 0;
-          font-size: 14px;
-          word-break: break-word;
-        }
-        .spinner {
-          display: inline-block;
-          width: 20px;
-          height: 20px;
-          border: 3px solid rgba(255,255,255,0.3);
-          border-radius: 50%;
-          border-top-color: white;
-          animation: spin 1s ease-in-out infinite;
-          margin-top: 10px;
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .manual-link {
-          margin-top: 20px;
-          padding: 15px 30px;
-          background: white;
-          color: ${bgColor};
-          border: none;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-          cursor: pointer;
-          text-decoration: none;
-          display: inline-block;
-          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-        .debug {
-          margin-top: 20px;
-          padding: 10px;
-          background: rgba(0,0,0,0.3);
-          border-radius: 5px;
-          font-size: 11px;
-          font-family: monospace;
-          max-height: 100px;
-          overflow: auto;
-          word-break: break-all;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="icon">${icon}</div>
-        <h1>${title}</h1>
-        ${message ? `<div class="message">${message}</div>` : ''}
-        
-        <div id="status">
-          Redirection automatique...
-          <div class="spinner"></div>
-        </div>
-        
-        <a href="#" class="manual-link" id="manualBtn" style="display:none;">
-          📱 Ouvrir l'application
-        </a>
-        
-        <div class="debug" id="debug"></div>
-      </div>
-      
-      <script>
-        const deepLink = ${JSON.stringify(deepLink)};
-        let opened = false;
-        let redirected = false;
-        
-        function log(msg) {
-          console.log(msg);
-          const debugEl = document.getElementById('debug');
-          debugEl.innerHTML += msg + '<br>';
-          debugEl.scrollTop = debugEl.scrollHeight;
-        }
-        
-        log('🔗 Deep link: ' + deepLink.substring(0, 50) + '...');
-        log('📏 Longueur: ' + deepLink.length + ' caractères');
-        
-        function redirect() {
-          if (redirected) {
-            log('⚠️ Redirection déjà effectuée');
+      _linkSubscription = _appLinks.uriLinkStream.listen(
+        (Uri uri) {
+          print('✅ [OAuth] Deep link reçu: ${uri.toString().substring(0, 100)}...');
+          
+          // 🔹 Ignorer si déjà traité
+          if (hasProcessed) {
+            print('⚠️ [OAuth] Deep link déjà traité, ignoré');
             return;
           }
-          redirected = true;
-          log('🔄 Redirection unique...');
-          
-          try {
-            // Méthode unique combinée (fonctionne sur Android)
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = deepLink;
-            document.body.appendChild(iframe);
-            log('✅ Iframe créé');
-            
-            setTimeout(() => {
-              try { 
-                document.body.removeChild(iframe);
-                log('🗑️ Iframe supprimé');
-              } catch(e) {}
-            }, 2000);
-            
-          } catch (e) {
-            log('❌ Erreur: ' + e.message);
-          }
-        }
-        
-        // Démarrer UNE SEULE FOIS immédiatement
-        redirect();
-        
-        // Afficher bouton manuel après 2 secondes si pas ouvert
-        setTimeout(() => {
-          if (!opened) {
-            const btn = document.getElementById('manualBtn');
-            btn.style.display = 'inline-block';
-            btn.onclick = (e) => {
-              e.preventDefault();
-              log('👆 Clic manuel');
-              window.location.href = deepLink;
-            };
-            document.getElementById('status').style.display = 'none';
-            log('🔘 Bouton manuel affiché');
-          }
-        }, 2000);
-        
-        // Détecter ouverture app
-        function detectAppOpened() {
-          if (opened) return;
-          opened = true;
-          log('✅ Application ouverte !');
-          document.getElementById('status').innerHTML = '✅ Retour à l\'application...';
-          setTimeout(() => {
-            try { window.close(); } catch(e) {
-              document.getElementById('status').innerHTML = '✅ Vous pouvez fermer cette page';
-            }
-          }, 1500);
-        }
-        
-        window.addEventListener('blur', detectAppOpened);
-        window.addEventListener('pagehide', detectAppOpened);
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) detectAppOpened();
-        });
-      </script>
-    </body>
-    </html>
-  `;
-}
 
-module.exports = router;
+          if (uri.scheme == callbackScheme &&
+              _authCompleter != null &&
+              !_authCompleter!.isCompleted) {
+            
+            hasProcessed = true; // 🔹 Marquer comme traité
+            _authCompleter!.complete(uri);
+          }
+        },
+        onError: (err) {
+          print('❌ [OAuth] Erreur deep link: $err');
+          if (_authCompleter != null && !_authCompleter!.isCompleted) {
+            _authCompleter!.completeError(err);
+          }
+        },
+      );
+
+      final launched = await launchUrl(
+        authUrl,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        print('❌ [OAuth] Impossible d\'ouvrir le navigateur');
+        _cleanupAuth();
+        return null;
+      }
+
+      print('⏳ [OAuth] Attente du callback...');
+
+      final resultUri = await _authCompleter!.future.timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {
+          print('⏱️ [OAuth] Timeout après 5 minutes');
+          return null;
+        },
+      );
+
+      _cleanupAuth();
+
+      if (resultUri == null) {
+        print('⚠️ [OAuth] Aucun callback reçu (timeout ou annulation)');
+        return null;
+      }
+
+      print('📋 [OAuth] URI reçu: ${resultUri.toString()}');
+
+      final error = resultUri.queryParameters['error'];
+      if (error != null) {
+        print('❌ [OAuth] Erreur: $error');
+        return null;
+      }
+
+      final accessToken = resultUri.queryParameters['access_token'];
+      final refreshToken = resultUri.queryParameters['refresh_token'];
+      final email = resultUri.queryParameters['email'];
+      final idToken = resultUri.queryParameters['id_token'];
+
+      print('📋 [OAuth] Paramètres reçus:');
+      print('  - access_token: ${accessToken != null ? "✓" : "✗"}');
+      print('  - refresh_token: ${refreshToken != null ? "✓" : "✗"}');
+      print('  - email: ${email ?? "✗"}');
+
+      if (accessToken == null || accessToken.isEmpty) {
+        print('❌ [Gmail] access_token manquant');
+        return null;
+      }
+
+      if (email == null || email.isEmpty) {
+        print('❌ [Gmail] Email manquant');
+        return null;
+      }
+
+      print('✅ [Gmail] Connexion réussie: $email');
+
+      return {
+        'access_token': accessToken,
+        'refresh_token': refreshToken ?? '',
+        'id_token': idToken ?? '',
+        'email': email,
+      };
+
+    } catch (e, stackTrace) {
+      print('❌ [Gmail] Erreur OAuth: $e');
+      print('📄 Stack: $stackTrace');
+      _cleanupAuth();
+      return null;
+    }
+  }
+
+  static void _cleanupAuth() {
+    _linkSubscription?.cancel();
+    _linkSubscription = null;
+    _authCompleter = null;
+  }
+
+  // ===== GÉNÉRATEURS PKCE =====
+  static String _generateCodeVerifier() {
+    final random = Random.secure();
+    final values = List<int>.generate(32, (i) => random.nextInt(256));
+    return base64Url.encode(values).replaceAll('=', '');
+  }
+
+  static String _generateCodeChallenge(String verifier) {
+    final bytes = utf8.encode(verifier);
+    final digest = sha256.convert(bytes);
+    return base64Url.encode(digest.bytes).replaceAll('=', '');
+  }
+
+  // ===== OUTLOOK (PKCE) =====
+  static Future<Map<String, String>?> connectOutlook() async {
+    try {
+      final codeVerifier = _generateCodeVerifier();
+      final codeChallenge = _generateCodeChallenge(codeVerifier);
+
+      final authUrl =
+      Uri.https('login.microsoftonline.com', '/common/oauth2/v2.0/authorize', {
+        'client_id': outlookClientId,
+        'redirect_uri': '$callbackScheme://auth',
+        'response_type': 'code',
+        'scope': 'offline_access User.Read Mail.Send Mail.Read',
+        'response_mode': 'query',
+        'prompt': 'consent',
+        'code_challenge': codeChallenge,
+        'code_challenge_method': 'S256',
+      });
+
+      print('🔗 [Outlook] Ouverture navigateur...');
+
+      _authCompleter = Completer<Uri?>();
+      bool hasProcessed = false;
+
+      _linkSubscription = _appLinks.uriLinkStream.listen(
+        (Uri uri) {
+          if (hasProcessed) return;
+          
+          if (uri.scheme == callbackScheme &&
+              _authCompleter != null &&
+              !_authCompleter!.isCompleted) {
+            hasProcessed = true;
+            _authCompleter!.complete(uri);
+          }
+        },
+        onError: (err) {
+          if (_authCompleter != null && !_authCompleter!.isCompleted) {
+            _authCompleter!.completeError(err);
+          }
+        },
+      );
+
+      final launched = await launchUrl(
+        authUrl,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        _cleanupAuth();
+        return null;
+      }
+
+      final resultUri = await _authCompleter!.future.timeout(
+        const Duration(minutes: 5),
+        onTimeout: () => null,
+      );
+
+      _cleanupAuth();
+
+      if (resultUri == null) return null;
+
+      final code = resultUri.queryParameters['code'];
+      final error = resultUri.queryParameters['error'];
+
+      if (error != null) {
+        print('❌ [Outlook] OAuth error: $error');
+        return null;
+      }
+      if (code == null) {
+        print('❌ [Outlook] Code OAuth non reçu');
+        return null;
+      }
+
+      print('🔄 [Outlook] Échange du code...');
+
+      final tokenResponse = await http.post(
+        Uri.parse('https://login.microsoftonline.com/common/oauth2/v2.0/token'),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {
+          'client_id': outlookClientId,
+          'code': code,
+          'code_verifier': codeVerifier,
+          'grant_type': 'authorization_code',
+          'redirect_uri': '$callbackScheme://auth',
+        },
+      );
+
+      if (tokenResponse.statusCode != 200) {
+        print('❌ [Outlook] Erreur token: ${tokenResponse.body}');
+        return null;
+      }
+
+      final data = json.decode(tokenResponse.body);
+
+      String email = '';
+      try {
+        final userInfoResponse = await http.get(
+          Uri.parse('https://graph.microsoft.com/v1.0/me'),
+          headers: {'Authorization': 'Bearer ${data['access_token']}'},
+        );
+        if (userInfoResponse.statusCode == 200) {
+          final userInfo = json.decode(userInfoResponse.body);
+          email = userInfo['userPrincipalName'] ?? userInfo['mail'] ?? '';
+          print('✅ [Outlook] Email: $email');
+        }
+      } catch (e) {
+        print('⚠️ [Outlook] Erreur récupération email: $e');
+      }
+
+      return {
+        'access_token': data['access_token'],
+        'refresh_token': data['refresh_token'] ?? '',
+        'id_token': data['id_token'] ?? '',
+        'email': email,
+      };
+    } catch (e, stackTrace) {
+      print('❌ [Outlook] Erreur OAuth: $e');
+      print('📄 Stack: $stackTrace');
+      _cleanupAuth();
+      return null;
+    }
+  }
+
+  // ===== WHATSAPP (via Backend) =====
+  static Future<Map<String, String>?> connectWhatsApp() async {
+    try {
+      final url = Uri.parse('$backendUrl/api/auth/whatsapp/start');
+
+      print('🔗 [WhatsApp] Ouverture navigateur...');
+
+      _authCompleter = Completer<Uri?>();
+      bool hasProcessed = false;
+
+      _linkSubscription = _appLinks.uriLinkStream.listen(
+        (Uri uri) {
+          if (hasProcessed) return;
+          
+          if (uri.scheme == callbackScheme &&
+              _authCompleter != null &&
+              !_authCompleter!.isCompleted) {
+            hasProcessed = true;
+            _authCompleter!.complete(uri);
+          }
+        },
+        onError: (err) {
+          if (_authCompleter != null && !_authCompleter!.isCompleted) {
+            _authCompleter!.completeError(err);
+          }
+        },
+      );
+
+      final launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!launched) {
+        _cleanupAuth();
+        return null;
+      }
+
+      final resultUri = await _authCompleter!.future.timeout(
+        const Duration(minutes: 5),
+        onTimeout: () => null,
+      );
+
+      _cleanupAuth();
+
+      if (resultUri == null) return null;
+
+      final code = resultUri.queryParameters['code'];
+      if (code == null) {
+        print('❌ [WhatsApp] Code OAuth non reçu');
+        return null;
+      }
+
+      print('🔄 [WhatsApp] Échange du code...');
+
+      final response = await http.post(
+        Uri.parse('$backendUrl/api/auth/whatsapp/callback'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'code': code}),
+      );
+
+      if (response.statusCode != 200) {
+        print('❌ [WhatsApp] Erreur serveur: ${response.statusCode}');
+        return null;
+      }
+
+      final data = json.decode(response.body);
+      print('✅ [WhatsApp] Connexion réussie');
+
+      return {
+        'access_token': data['access_token'],
+        'phone_number_id': data['phone_number_id'],
+        'business_account_id': data['business_account_id'],
+      };
+    } catch (e, stackTrace) {
+      print('❌ [WhatsApp] Erreur OAuth: $e');
+      print('📄 Stack: $stackTrace');
+      _cleanupAuth();
+      return null;
+    }
+  }
+
+  // ===== Initialisation globale =====
+  static Future<void> initDeepLinks() async {
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) {
+        print('📱 [DeepLink] Initial URI: $initialUri');
+      }
+    } catch (e) {
+      print('❌ [DeepLink] Erreur initial: $e');
+    }
+  }
+}
