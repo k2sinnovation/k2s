@@ -200,8 +200,8 @@ function generateHtmlRedirect(deepLink, title, message) {
       
       <script>
         const deepLink = ${JSON.stringify(deepLink)};
-        let attempts = 0;
         let opened = false;
+        let redirected = false;
         
         function log(msg) {
           console.log(msg);
@@ -214,42 +214,26 @@ function generateHtmlRedirect(deepLink, title, message) {
         log('📏 Longueur: ' + deepLink.length + ' caractères');
         
         function redirect() {
-          if (opened) return;
-          attempts++;
-          log('🔄 Tentative #' + attempts);
+          if (redirected) {
+            log('⚠️ Redirection déjà effectuée');
+            return;
+          }
+          redirected = true;
+          log('🔄 Redirection unique...');
           
           try {
-            // Méthode 1: Iframe (fonctionne bien sur Android)
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = deepLink;
-            document.body.appendChild(iframe);
-            
-            setTimeout(() => {
-              document.body.removeChild(iframe);
-              log('✅ Iframe supprimé');
-            }, 2000);
-            
-            // Méthode 2: window.location (backup)
-            setTimeout(() => {
-              if (!opened) {
-                log('🔄 Méthode 2: window.location');
-                window.location.href = deepLink;
-              }
-            }, 500);
-            
+            // UNE SEULE tentative avec window.location
+            window.location.href = deepLink;
+            log('✅ Redirection lancée');
           } catch (e) {
             log('❌ Erreur: ' + e.message);
           }
         }
         
-        // Démarrer immédiatement
+        // Démarrer UNE SEULE FOIS immédiatement
         redirect();
         
-        // Retry après 1 seconde
-        setTimeout(redirect, 1000);
-        
-        // Afficher bouton manuel après 2 secondes
+        // Afficher bouton manuel après 2 secondes si pas ouvert
         setTimeout(() => {
           if (!opened) {
             const btn = document.getElementById('manualBtn');
@@ -266,11 +250,15 @@ function generateHtmlRedirect(deepLink, title, message) {
         
         // Détecter ouverture app
         function detectAppOpened() {
+          if (opened) return;
           opened = true;
           log('✅ Application ouverte !');
+          document.getElementById('status').innerHTML = '✅ Retour à l\'application...';
           setTimeout(() => {
-            try { window.close(); } catch(e) {}
-          }, 3000);
+            try { window.close(); } catch(e) {
+              document.getElementById('status').innerHTML = '✅ Vous pouvez fermer cette page';
+            }
+          }, 1500);
         }
         
         window.addEventListener('blur', detectAppOpened);
