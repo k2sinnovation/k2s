@@ -11,6 +11,7 @@ router.get('/oauth/google/callback', async (req, res) => {
     const { code, error, error_description } = req.query;
 
     console.log('📨 [OAuth] Callback reçu');
+    console.log('📋 Code:', code?.substring(0, 20));
 
     if (error) {
       console.log('❌ Erreur OAuth:', error);
@@ -54,7 +55,7 @@ router.get('/oauth/google/callback', async (req, res) => {
     const email = userInfoResponse.data.email;
     console.log('✅ [OAuth] Email:', email);
 
-    // Construction du deep link
+    // 🔹 IMPORTANT : Construction manuelle avec encodage proper
     const params = new URLSearchParams({
       access_token,
       email,
@@ -66,9 +67,10 @@ router.get('/oauth/google/callback', async (req, res) => {
 
     const deepLink = `k2sdiag://auth?${params.toString()}`;
     
-    console.log('🔗 [OAuth] Deep link créé');
+    console.log('🔗 [OAuth] Deep link longueur:', deepLink.length);
+    console.log('📋 Deep link:', deepLink.substring(0, 100) + '...');
 
-    // HTML optimisé avec fermeture automatique
+    // HTML optimisé pour Android avec multiples méthodes de redirection
     res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
 
   } catch (error) {
@@ -162,10 +164,20 @@ function generateHtmlRedirect(deepLink, title, message) {
           font-size: 16px;
           cursor: pointer;
           text-decoration: none;
-          display: none;
+          display: inline-block;
           box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
-        #status.hidden { display: none; }
+        .debug {
+          margin-top: 20px;
+          padding: 10px;
+          background: rgba(0,0,0,0.3);
+          border-radius: 5px;
+          font-size: 11px;
+          font-family: monospace;
+          max-height: 100px;
+          overflow: auto;
+          word-break: break-all;
+        }
       </style>
     </head>
     <body>
@@ -179,95 +191,93 @@ function generateHtmlRedirect(deepLink, title, message) {
           <div class="spinner"></div>
         </div>
         
-        <a href="#" class="manual-link" id="manualBtn">
+        <a href="#" class="manual-link" id="manualBtn" style="display:none;">
           📱 Ouvrir l'application
         </a>
+        
+        <div class="debug" id="debug"></div>
       </div>
       
       <script>
         const deepLink = ${JSON.stringify(deepLink)};
-        let redirected = false;
+        let attempts = 0;
+        let opened = false;
+        
+        function log(msg) {
+          console.log(msg);
+          const debugEl = document.getElementById('debug');
+          debugEl.innerHTML += msg + '<br>';
+          debugEl.scrollTop = debugEl.scrollHeight;
+        }
+        
+        log('🔗 Deep link: ' + deepLink.substring(0, 50) + '...');
+        log('📏 Longueur: ' + deepLink.length + ' caractères');
         
         function redirect() {
-          if (redirected) return;
-          redirected = true;
+          if (opened) return;
+          attempts++;
+          log('🔄 Tentative #' + attempts);
           
-          console.log('🔗 Redirection vers:', deepLink.substring(0, 50) + '...');
-          
-          // 🔹 Méthode 1: Location immédiate
-          window.location.href = deepLink;
-          
-          // 🔹 Méthode 2: Iframe backup après 300ms
-          setTimeout(() => {
-            try {
-              const iframe = document.createElement('iframe');
-              iframe.style.display = 'none';
-              iframe.src = deepLink;
-              document.body.appendChild(iframe);
-              
-              setTimeout(() => {
-                try { document.body.removeChild(iframe); } catch(e) {}
-              }, 1000);
-            } catch(e) {
-              console.error('Erreur iframe:', e);
-            }
-          }, 300);
+          try {
+            // Méthode 1: Iframe (fonctionne bien sur Android)
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = deepLink;
+            document.body.appendChild(iframe);
+            
+            setTimeout(() => {
+              document.body.removeChild(iframe);
+              log('✅ Iframe supprimé');
+            }, 2000);
+            
+            // Méthode 2: window.location (backup)
+            setTimeout(() => {
+              if (!opened) {
+                log('🔄 Méthode 2: window.location');
+                window.location.href = deepLink;
+              }
+            }, 500);
+            
+          } catch (e) {
+            log('❌ Erreur: ' + e.message);
+          }
         }
         
-        // 🔹 Démarrer immédiatement
+        // Démarrer immédiatement
         redirect();
         
-        // 🔹 Détecter ouverture app
-        let appOpened = false;
-        function onAppOpen() {
-          if (appOpened) return;
-          appOpened = true;
-          console.log('✅ App ouverte, fermeture page...');
-          
-          document.getElementById('status').innerHTML = '✅ Retour à l\'application...';
-          
-          // 🔹 Fermer automatiquement après 1.5s
-          setTimeout(() => {
-            try {
-              window.close();
-            } catch(e) {
-              // Si échec, afficher message
-              document.getElementById('status').innerHTML = 
-                '✅ Vous pouvez fermer cette page';
-            }
-          }, 1500);
-        }
+        // Retry après 1 seconde
+        setTimeout(redirect, 1000);
         
-        // 🔹 Événements de détection
-        window.addEventListener('blur', onAppOpen);
-        window.addEventListener('pagehide', onAppOpen);
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) onAppOpen();
-        });
-        
-        // 🔹 Afficher bouton manuel après 3s si pas d'ouverture
+        // Afficher bouton manuel après 2 secondes
         setTimeout(() => {
-          if (!appOpened) {
+          if (!opened) {
             const btn = document.getElementById('manualBtn');
             btn.style.display = 'inline-block';
             btn.onclick = (e) => {
               e.preventDefault();
-              redirect();
+              log('👆 Clic manuel');
+              window.location.href = deepLink;
             };
-            document.getElementById('status').classList.add('hidden');
+            document.getElementById('status').style.display = 'none';
+            log('🔘 Bouton manuel affiché');
           }
-        }, 3000);
+        }, 2000);
         
-        // 🔹 Fermeture forcée après 10s en cas de succès
-        ${isSuccess ? `
-        setTimeout(() => {
-          if (appOpened) {
-            try { window.close(); } catch(e) {
-              document.body.innerHTML = '<div class="container"><h1>✅ Authentification réussie</h1><p>Vous pouvez fermer cette page</p></div>';
-            }
-          }
-        }, 10000);
-        ` : ''}
+        // Détecter ouverture app
+        function detectAppOpened() {
+          opened = true;
+          log('✅ Application ouverte !');
+          setTimeout(() => {
+            try { window.close(); } catch(e) {}
+          }, 3000);
+        }
+        
+        window.addEventListener('blur', detectAppOpened);
+        window.addEventListener('pagehide', detectAppOpened);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) detectAppOpened();
+        });
       </script>
     </body>
     </html>
