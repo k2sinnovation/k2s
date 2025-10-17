@@ -1,4 +1,4 @@
- "name": "K2S-server",
+{ "name": "K2S-server",
   "version": "1.0.0",
   "description": "Backend pour K2S avec OpenAI et OAuth multi-utilisateurs",
   "main": "index.js",
