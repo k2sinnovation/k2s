@@ -11,7 +11,7 @@ require('dotenv').config();
 const { processAudio, streamGoogleTTS } = require('./controllers/assemblyService');
 const { promptTTSVocal } = require('./utils/promptsTTSVocal');
 const { router: openaiWebhookRouter } = require('./openaiWebhookService');
-const { wss, attachWebSocketToServer, clients } = require('./websocket');
+const { wss, attachWebSocketToServer, clients, sendToFlutter } = require('./websocket');
 
 // ✅ Import des routes existantes
 const analyzeRoute = require("./routes/analyze");
@@ -27,6 +27,11 @@ const authRoute = require('./service_ia/routes/auth');
 const emailAccountsRoute = require('./service_ia/routes/emailTokens'); 
 const oauthWhatsAppRoute = require('./service_ia/routes/oauthWhatsApp');
 const oauthGoogleRoute = require('./service_ia/routes/oauthGoogle');
+const oauthOutlookRoute = require('./service_ia/routes/oauthOutlook');
+
+// 🆕 Import des nouvelles routes messagerie
+const mailRoutes = require('./service_ia/routes/mail');
+const whatsappMessagingRoutes = require('./service_ia/routes/whatsappMessaging');
 
 // ===== CONFIGURATION =====
 
@@ -42,7 +47,7 @@ const upload = multer({ dest: 'uploads/' });
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-WhatsApp-Token'],
   credentials: true,
 }));
 
@@ -69,6 +74,11 @@ app.locals.openai = openai;
 const server = http.createServer(app);
 attachWebSocketToServer(server, openai);
 
+// Rendre WebSocket accessible pour les routes
+app.set('wss', wss);
+app.set('wsClients', clients);
+app.set('sendToFlutter', sendToFlutter);
+
 // Keepalive WebSocket
 setInterval(() => {
   clients.forEach((client, deviceId) => {
@@ -80,13 +90,18 @@ setInterval(() => {
 
 // ===== ROUTES (ORDRE CRITIQUE!) =====
 
-// ✅ OAuth Google EN PREMIER (important pour le callback)
+// ✅ OAuth EN PREMIER (important pour les callbacks)
 app.use('/', oauthGoogleRoute);
+app.use('/', oauthOutlookRoute);
+app.use('/api', oauthWhatsAppRoute);
 
 // Routes d'authentification
 app.use('/api', authRoute);
 app.use('/api', emailAccountsRoute);
-app.use('/api', oauthWhatsAppRoute);
+
+// 🆕 NOUVELLES ROUTES MESSAGERIE
+app.use('/api/mail', mailRoutes);
+app.use('/api/whatsapp', whatsappMessagingRoutes);
 
 // Routes webhook OpenAI
 app.use('/openai-webhook', openaiWebhookRouter);
@@ -106,11 +121,20 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.0.1',
+    version: '2.1.0',
     endpoints: {
       auth: '/api/auth/*',
       email: '/api/auth/email-accounts',
-      oauth: '/oauth/google/callback',
+      oauth: {
+        gmail: '/oauth/google/callback',
+        outlook: '/auth/outlook/info',
+        whatsapp: '/api/auth/whatsapp/*',
+      },
+      messaging: {
+        gmail: '/api/mail/gmail/*',
+        outlook: '/api/mail/outlook/*',
+        whatsapp: '/api/whatsapp/*',
+      },
       analyze: '/api/analyze',
       answer: '/api/answer',
       subscribe: '/api/subscribe',
@@ -189,11 +213,12 @@ mongoose.connect(process.env.MONGO_URI, {
 ╔════════════════════════════════════════╗
 ║  🚀 Serveur K2S démarré avec succès   ║
 ╠════════════════════════════════════════╣
-║  📡 Port: ${PORT}                    ║
+║  📡 Port: ${PORT.toString().padEnd(28)}║
 ║  🗄️  MongoDB: connecté                 ║
 ║  🔌 WebSocket: actif                   ║
 ║  🤖 OpenAI: configuré                  ║
-║  🔐 OAuth Google: actif                ║
+║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
+║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
 ╚════════════════════════════════════════╝
       `);
     });
