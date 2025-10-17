@@ -11,21 +11,23 @@ router.get('/oauth/google/callback', async (req, res) => {
     const { code, error, error_description } = req.query;
 
     console.log('📨 [OAuth] Callback reçu');
-    console.log('📋 Paramètres:', { code: code?.substring(0, 20), error });
+    console.log('📋 Code:', code?.substring(0, 20));
 
     if (error) {
+      console.log('❌ Erreur OAuth:', error);
       const deepLink = `k2sdiag://auth?error=${encodeURIComponent(error)}`;
       return res.send(generateHtmlRedirect(deepLink, '❌ Erreur OAuth', error));
     }
 
     if (!code) {
+      console.log('❌ Code manquant');
       const deepLink = 'k2sdiag://auth?error=no_code';
       return res.send(generateHtmlRedirect(deepLink, '❌ Code manquant', 'Aucun code reçu'));
     }
 
     console.log('🔄 [OAuth] Échange du code...');
 
-    // Échanger le code
+    // Échanger le code contre les tokens
     const tokenResponse = await axios.post(
       'https://oauth2.googleapis.com/token',
       new URLSearchParams({
@@ -53,19 +55,22 @@ router.get('/oauth/google/callback', async (req, res) => {
     const email = userInfoResponse.data.email;
     console.log('✅ [OAuth] Email:', email);
 
-    // 🔹 FIX : Construction manuelle du deep link (évite les problèmes d'encodage)
-    const deepLinkParams = [
-      `access_token=${encodeURIComponent(access_token)}`,
-      `email=${encodeURIComponent(email)}`,
-      refresh_token ? `refresh_token=${encodeURIComponent(refresh_token)}` : null,
-      id_token ? `id_token=${encodeURIComponent(id_token)}` : null,
-      'success=true'
-    ].filter(Boolean).join('&');
+    // 🔹 IMPORTANT : Construction manuelle avec encodage proper
+    const params = new URLSearchParams({
+      access_token,
+      email,
+      success: 'true'
+    });
 
-    const deepLink = `k2sdiag://auth?${deepLinkParams}`;
-    console.log('🔗 [OAuth] Deep link créé (longueur:', deepLink.length, ')');
+    if (refresh_token) params.append('refresh_token', refresh_token);
+    if (id_token) params.append('id_token', id_token);
 
-    // HTML avec redirection optimisée pour Android
+    const deepLink = `k2sdiag://auth?${params.toString()}`;
+    
+    console.log('🔗 [OAuth] Deep link longueur:', deepLink.length);
+    console.log('📋 Deep link:', deepLink.substring(0, 100) + '...');
+
+    // HTML optimisé pour Android avec multiples méthodes de redirection
     res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
 
   } catch (error) {
@@ -82,9 +87,6 @@ function generateHtmlRedirect(deepLink, title, message) {
   const isSuccess = title.includes('✓');
   const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
   const icon = isSuccess ? '✓' : '❌';
-  
-  // 🔹 FIX : Échapper correctement le deep link pour JavaScript
-  const escapedDeepLink = deepLink.replace(/'/g, "\\'");
 
   return `
     <!DOCTYPE html>
@@ -138,11 +140,6 @@ function generateHtmlRedirect(deepLink, title, message) {
           font-size: 14px;
           word-break: break-word;
         }
-        .info {
-          margin-top: 20px;
-          font-size: 14px;
-          opacity: 0.8;
-        }
         .spinner {
           display: inline-block;
           width: 20px;
@@ -156,26 +153,30 @@ function generateHtmlRedirect(deepLink, title, message) {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
-        .close-info {
-          margin-top: 30px;
-          font-size: 12px;
-          opacity: 0.7;
-        }
         .manual-link {
           margin-top: 20px;
-          padding: 12px 24px;
-          background: rgba(255,255,255,0.2);
-          border: 2px solid white;
+          padding: 15px 30px;
+          background: white;
+          color: ${bgColor};
+          border: none;
           border-radius: 8px;
-          color: white;
+          font-weight: 600;
+          font-size: 16px;
+          cursor: pointer;
           text-decoration: none;
           display: inline-block;
-          font-weight: 600;
-          transition: all 0.3s;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
-        .manual-link:hover {
-          background: rgba(255,255,255,0.3);
-          transform: scale(1.05);
+        .debug {
+          margin-top: 20px;
+          padding: 10px;
+          background: rgba(0,0,0,0.3);
+          border-radius: 5px;
+          font-size: 11px;
+          font-family: monospace;
+          max-height: 100px;
+          overflow: auto;
+          word-break: break-all;
         }
       </style>
     </head>
@@ -184,83 +185,99 @@ function generateHtmlRedirect(deepLink, title, message) {
         <div class="icon">${icon}</div>
         <h1>${title}</h1>
         ${message ? `<div class="message">${message}</div>` : ''}
-        <div class="info">
-          Redirection vers l'application...
+        
+        <div id="status">
+          Redirection automatique...
           <div class="spinner"></div>
         </div>
         
-        <!-- 🔹 Lien manuel de secours -->
-        <a href="${deepLink}" class="manual-link" id="manualLink" style="display:none;">
-          Ouvrir l'application
+        <a href="#" class="manual-link" id="manualBtn" style="display:none;">
+          📱 Ouvrir l'application
         </a>
         
-        <div class="close-info">
-          Si rien ne se passe, fermez cette fenêtre
-        </div>
+        <div class="debug" id="debug"></div>
       </div>
       
       <script>
-        const deepLink = '${escapedDeepLink}';
-        let redirectAttempts = 0;
-        let appOpened = false;
+        const deepLink = ${JSON.stringify(deepLink)};
+        let attempts = 0;
+        let opened = false;
         
-        console.log('✅ Page chargée');
-        console.log('🔗 Deep link:', deepLink.substring(0, 50) + '...');
+        function log(msg) {
+          console.log(msg);
+          const debugEl = document.getElementById('debug');
+          debugEl.innerHTML += msg + '<br>';
+          debugEl.scrollTop = debugEl.scrollHeight;
+        }
         
-        function tryRedirect() {
-          if (appOpened) return;
-          
-          redirectAttempts++;
-          console.log('📱 Tentative de redirection #' + redirectAttempts);
+        log('🔗 Deep link: ' + deepLink.substring(0, 50) + '...');
+        log('📏 Longueur: ' + deepLink.length + ' caractères');
+        
+        function redirect() {
+          if (opened) return;
+          attempts++;
+          log('🔄 Tentative #' + attempts);
           
           try {
-            // Méthode 1 : window.location
-            window.location.href = deepLink;
+            // Méthode 1: Iframe (fonctionne bien sur Android)
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = deepLink;
+            document.body.appendChild(iframe);
             
-            // Méthode 2 : window.location.replace
             setTimeout(() => {
-              if (!appOpened) window.location.replace(deepLink);
+              document.body.removeChild(iframe);
+              log('✅ Iframe supprimé');
+            }, 2000);
+            
+            // Méthode 2: window.location (backup)
+            setTimeout(() => {
+              if (!opened) {
+                log('🔄 Méthode 2: window.location');
+                window.location.href = deepLink;
+              }
             }, 500);
             
           } catch (e) {
-            console.error('❌ Erreur redirection:', e);
+            log('❌ Erreur: ' + e.message);
           }
         }
         
-        // Redirection immédiate
-        tryRedirect();
+        // Démarrer immédiatement
+        redirect();
         
         // Retry après 1 seconde
-        setTimeout(tryRedirect, 1000);
+        setTimeout(redirect, 1000);
         
-        // Afficher le lien manuel après 2 secondes
+        // Afficher bouton manuel après 2 secondes
         setTimeout(() => {
-          if (!appOpened) {
-            document.getElementById('manualLink').style.display = 'inline-block';
-            console.log('🔗 Lien manuel affiché');
+          if (!opened) {
+            const btn = document.getElementById('manualBtn');
+            btn.style.display = 'inline-block';
+            btn.onclick = (e) => {
+              e.preventDefault();
+              log('👆 Clic manuel');
+              window.location.href = deepLink;
+            };
+            document.getElementById('status').style.display = 'none';
+            log('🔘 Bouton manuel affiché');
           }
         }, 2000);
         
-        // Détecter si l'app s'est ouverte
-        window.addEventListener('blur', () => {
-          console.log('✅ Focus perdu → App ouverte');
-          appOpened = true;
-        });
-        
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) {
-            console.log('✅ Page cachée → App ouverte');
-            appOpened = true;
-          }
-        });
-        
-        // Fermeture auto après 8 secondes
-        setTimeout(() => {
-          if (appOpened) {
-            console.log('🚪 Fermeture (succès)');
+        // Détecter ouverture app
+        function detectAppOpened() {
+          opened = true;
+          log('✅ Application ouverte !');
+          setTimeout(() => {
             try { window.close(); } catch(e) {}
-          }
-        }, 8000);
+          }, 3000);
+        }
+        
+        window.addEventListener('blur', detectAppOpened);
+        window.addEventListener('pagehide', detectAppOpened);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) detectAppOpened();
+        });
       </script>
     </body>
     </html>
