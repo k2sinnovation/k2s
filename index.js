@@ -4,6 +4,7 @@ const OpenAI = require("openai");
 const cors = require('cors');
 const multer = require('multer');
 const http = require('http');
+const cron = require('node-cron'); // ✅ AJOUT
 
 require('dotenv').config();
 
@@ -42,6 +43,8 @@ const AutoReply = require('./service_ia/models/AutoReply');
 // 🆕 Import nouvelle route user
 const userRoute = require('./service_ia/routes/user');
 
+// 🤖 Import du service de polling
+const mailPollingService = require('./service_ia/services/mail-polling.service');
 
 // ===== CONFIGURATION =====
 
@@ -75,7 +78,6 @@ app.use((req, res, next) => {
 app.use('/uploads', express.static('uploads'));
 
 // ===== OPENAI =====
-
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.locals.openai = openai;
@@ -133,9 +135,10 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.1.0',
+    version: '2.2.0',
     endpoints: {
       auth: '/api/auth/*',
+      user: '/api/user/*',
       email: '/api/auth/email-accounts',
       oauth: {
         gmail: '/oauth/google/callback',
@@ -146,6 +149,11 @@ app.get('/', (req, res) => {
         gmail: '/api/mail/gmail/*',
         outlook: '/api/mail/outlook/*',
         whatsapp: '/api/whatsapp/*',
+      },
+      autoReply: {
+        aiSettings: '/api/user/ai-settings',
+        prestations: '/api/user/prestations',
+        appointments: '/api/user/appointments',
       },
       analyze: '/api/analyze',
       answer: '/api/answer',
@@ -231,8 +239,26 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  🤖 OpenAI: configuré                  ║
 ║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
+║  🔄 Auto-Reply: actif (1 minute)       ║
 ╚════════════════════════════════════════╝
       `);
+
+      // 🤖 DÉMARRER LE POLLING AUTOMATIQUE
+      console.log('🤖 Initialisation du système d\'auto-réponse...');
+      
+      // Check immédiat au démarrage
+      mailPollingService.checkAllUsers().catch(err => {
+        console.error('❌ Erreur check initial:', err.message);
+      });
+
+      // ⏱️ POLLING TOUTES LES 1 MINUTE
+      cron.schedule('* * * * *', () => {
+        mailPollingService.checkAllUsers().catch(err => {
+          console.error('❌ Erreur CRON:', err.message);
+        });
+      });
+
+      console.log('✅ Auto-Reply activé : vérification toutes les 1 minute');
     });
   })
   .catch((err) => {
