@@ -31,7 +31,7 @@ const oauthOutlookRoute = require('./service_ia/routes/oauthOutlook');
 
 // 🆕 Import des nouvelles routes messagerie
 const mailRoutes = require('./service_ia/routes/mail');
-const whatsappMessagingRoutes = require('./service_ia/routes/whatsappMessaging');
+const whatsappMessagingRoutes = require('./service_ia/routes/whatsapp');
 
 // ===== CONFIGURATION =====
 
