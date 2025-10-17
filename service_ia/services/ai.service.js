@@ -8,8 +8,11 @@ class AIService {
   async analyzeMessage(message, user) {
     const settings = user.aiSettings;
 
-    if (!settings.apiKey) {
-      throw new Error('Clé API OpenAI manquante');
+    // ✅ CORRECTION : Utiliser la clé d'environnement
+    const apiKey = process.env.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('Clé API OpenAI manquante dans les variables d\'environnement');
     }
 
     const systemPrompt = `Tu es un assistant qui analyse les emails pour "${settings.salonName || user.businessName}".
@@ -47,17 +50,17 @@ Réponds UNIQUEMENT au format JSON:
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: settings.aiModel,
+          model: settings.aiModel || 'gpt-4',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
           ],
-          temperature: settings.temperature,
+          temperature: settings.temperature || 0.7,
           max_tokens: 150
         },
         {
           headers: {
-            'Authorization': `Bearer ${settings.apiKey}`,
+            'Authorization': `Bearer ${apiKey}`, // ✅ Clé d'environnement
             'Content-Type': 'application/json'
           },
           timeout: 30000
@@ -72,6 +75,9 @@ Réponds UNIQUEMENT au format JSON:
 
     } catch (error) {
       console.error('❌ Erreur appel OpenAI:', error.message);
+      if (error.response) {
+        console.error('Détails:', error.response.data);
+      }
       throw error;
     }
   }
@@ -82,8 +88,11 @@ Réponds UNIQUEMENT au format JSON:
   async generateResponse(message, analysis, user) {
     const settings = user.aiSettings;
 
-    if (!settings.apiKey) {
-      throw new Error('Clé API OpenAI manquante');
+    // ✅ CORRECTION : Utiliser la clé d'environnement
+    const apiKey = process.env.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('Clé API OpenAI manquante dans les variables d\'environnement');
     }
 
     if (!analysis.is_relevant) {
@@ -136,7 +145,7 @@ RÈGLES CRITIQUES:
 - Réponds UNIQUEMENT aux questions liées à "${settings.salonName || user.businessName}"
 - Vérifie TOUJOURS les créneaux avant de les proposer
 - Ne confirme JAMAIS automatiquement un RDV
-- Utilise un ton ${settings.tone}
+- Utilise un ton ${settings.tone || 'professionnel'}
 - Sois précis avec horaires et tarifs
 - Si tu ne sais pas, dis-le et propose de contacter directement`;
 
@@ -151,17 +160,17 @@ Génère une réponse professionnelle et complète.`;
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: settings.aiModel,
+          model: settings.aiModel || 'gpt-4',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
           ],
-          temperature: settings.temperature,
-          max_tokens: settings.maxTokens
+          temperature: settings.temperature || 0.7,
+          max_tokens: settings.maxTokens || 500
         },
         {
           headers: {
-            'Authorization': `Bearer ${settings.apiKey}`,
+            'Authorization': `Bearer ${apiKey}`, // ✅ Clé d'environnement
             'Content-Type': 'application/json'
           },
           timeout: 30000
@@ -172,6 +181,9 @@ Génère une réponse professionnelle et complète.`;
 
     } catch (error) {
       console.error('❌ Erreur génération réponse:', error.message);
+      if (error.response) {
+        console.error('Détails:', error.response.data);
+      }
       throw error;
     }
   }
