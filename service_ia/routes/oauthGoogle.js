@@ -222,9 +222,20 @@ function generateHtmlRedirect(deepLink, title, message) {
           log('🔄 Redirection unique...');
           
           try {
-            // UNE SEULE tentative avec window.location
-            window.location.href = deepLink;
-            log('✅ Redirection lancée');
+            // Méthode unique combinée (fonctionne sur Android)
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = deepLink;
+            document.body.appendChild(iframe);
+            log('✅ Iframe créé');
+            
+            setTimeout(() => {
+              try { 
+                document.body.removeChild(iframe);
+                log('🗑️ Iframe supprimé');
+              } catch(e) {}
+            }, 2000);
+            
           } catch (e) {
             log('❌ Erreur: ' + e.message);
           }
