@@ -6,11 +6,12 @@ const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.goo
 const GOOGLE_CLIENT_SECRET = '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';
 const REDIRECT_URI = 'https://k2s.onrender.com/oauth/google/callback';
 
-router.get('/oauth/google/callback', async (req, res) => {5
+router.get('/oauth/google/callback', async (req, res) => {
   try {
     const { code, error, error_description } = req.query;
 
     console.log('📨 [OAuth] Callback reçu');
+    console.log('📋 Paramètres:', { code: code?.substring(0, 20), error });
 
     if (error) {
       const deepLink = `k2sdiag://auth?error=${encodeURIComponent(error)}`;
@@ -52,33 +53,38 @@ router.get('/oauth/google/callback', async (req, res) => {5
     const email = userInfoResponse.data.email;
     console.log('✅ [OAuth] Email:', email);
 
-    // Construire le deep link
-    const params = new URLSearchParams({
-      access_token,
-      refresh_token: refresh_token || '',
-      email,
-      id_token: id_token || '',
-      success: 'true',
-    });
+    // 🔹 FIX : Construction manuelle du deep link (évite les problèmes d'encodage)
+    const deepLinkParams = [
+      `access_token=${encodeURIComponent(access_token)}`,
+      `email=${encodeURIComponent(email)}`,
+      refresh_token ? `refresh_token=${encodeURIComponent(refresh_token)}` : null,
+      id_token ? `id_token=${encodeURIComponent(id_token)}` : null,
+      'success=true'
+    ].filter(Boolean).join('&');
 
-    const deepLink = `k2sdiag://auth?${params.toString()}`;
-    console.log('🔗 [OAuth] Deep link créé');
+    const deepLink = `k2sdiag://auth?${deepLinkParams}`;
+    console.log('🔗 [OAuth] Deep link créé (longueur:', deepLink.length, ')');
 
-    // ✅ HTML avec TRIPLE redirection (JavaScript + Meta + HTTP)
+    // HTML avec redirection optimisée pour Android
     res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
 
   } catch (error) {
     console.error('❌ [OAuth] Erreur:', error.message);
+    if (error.response) {
+      console.error('📄 Réponse erreur:', error.response.data);
+    }
     const deepLink = `k2sdiag://auth?error=server_error&error_description=${encodeURIComponent(error.message)}`;
     res.send(generateHtmlRedirect(deepLink, '❌ Erreur serveur', error.message));
   }
 });
 
-// ✅ Fonction pour générer HTML avec triple redirection
 function generateHtmlRedirect(deepLink, title, message) {
   const isSuccess = title.includes('✓');
   const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
   const icon = isSuccess ? '✓' : '❌';
+  
+  // 🔹 FIX : Échapper correctement le deep link pour JavaScript
+  const escapedDeepLink = deepLink.replace(/'/g, "\\'");
 
   return `
     <!DOCTYPE html>
@@ -86,10 +92,6 @@ function generateHtmlRedirect(deepLink, title, message) {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      
-      <!-- ✅ MÉTHODE 1 : Meta refresh (le plus fiable sur mobile) -->
-      <meta http-equiv="refresh" content="0; url=${deepLink}">
-      
       <title>${title}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -99,7 +101,7 @@ function generateHtmlRedirect(deepLink, title, message) {
           justify-content: center;
           align-items: center;
           min-height: 100vh;
-          background: linear-gradient(135deg, ${bgColor} 0%, ${adjustColor(bgColor)} 100%);
+          background: linear-gradient(135deg, ${bgColor} 0%, ${bgColor}cc 100%);
           color: white;
           padding: 20px;
         }
@@ -134,7 +136,7 @@ function generateHtmlRedirect(deepLink, title, message) {
           border-radius: 10px;
           margin: 20px 0;
           font-size: 14px;
-          word-break: break-all;
+          word-break: break-word;
         }
         .info {
           margin-top: 20px;
@@ -159,6 +161,22 @@ function generateHtmlRedirect(deepLink, title, message) {
           font-size: 12px;
           opacity: 0.7;
         }
+        .manual-link {
+          margin-top: 20px;
+          padding: 12px 24px;
+          background: rgba(255,255,255,0.2);
+          border: 2px solid white;
+          border-radius: 8px;
+          color: white;
+          text-decoration: none;
+          display: inline-block;
+          font-weight: 600;
+          transition: all 0.3s;
+        }
+        .manual-link:hover {
+          background: rgba(255,255,255,0.3);
+          transform: scale(1.05);
+        }
       </style>
     </head>
     <body>
@@ -170,82 +188,83 @@ function generateHtmlRedirect(deepLink, title, message) {
           Redirection vers l'application...
           <div class="spinner"></div>
         </div>
+        
+        <!-- 🔹 Lien manuel de secours -->
+        <a href="${deepLink}" class="manual-link" id="manualLink" style="display:none;">
+          Ouvrir l'application
+        </a>
+        
         <div class="close-info">
-          Si rien ne se passe, fermez cette fenêtre manuellement
+          Si rien ne se passe, fermez cette fenêtre
         </div>
       </div>
       
       <script>
-        console.log('✅ Page chargée');
-        console.log('🔗 Deep link:', '${deepLink}'.substring(0, 50) + '...');
+        const deepLink = '${escapedDeepLink}';
+        let redirectAttempts = 0;
+        let appOpened = false;
         
-        // ✅ MÉTHODE 2 : JavaScript immédiat
-        function redirect() {
+        console.log('✅ Page chargée');
+        console.log('🔗 Deep link:', deepLink.substring(0, 50) + '...');
+        
+        function tryRedirect() {
+          if (appOpened) return;
+          
+          redirectAttempts++;
+          console.log('📱 Tentative de redirection #' + redirectAttempts);
+          
           try {
-            console.log('📱 Redirection JavaScript...');
-            window.location.href = '${deepLink}';
+            // Méthode 1 : window.location
+            window.location.href = deepLink;
+            
+            // Méthode 2 : window.location.replace
+            setTimeout(() => {
+              if (!appOpened) window.location.replace(deepLink);
+            }, 500);
+            
           } catch (e) {
-            console.error('❌ Erreur:', e);
+            console.error('❌ Erreur redirection:', e);
           }
         }
         
         // Redirection immédiate
-        redirect();
+        tryRedirect();
         
-        // ✅ MÉTHODE 3 : Retry après 100ms
-        setTimeout(redirect, 2000);
+        // Retry après 1 seconde
+        setTimeout(tryRedirect, 1000);
         
-        // ✅ MÉTHODE 4 : Retry après 500ms
-        setTimeout(redirect, 5000);
+        // Afficher le lien manuel après 2 secondes
+        setTimeout(() => {
+          if (!appOpened) {
+            document.getElementById('manualLink').style.display = 'inline-block';
+            console.log('🔗 Lien manuel affiché');
+          }
+        }, 2000);
         
-        // Détecter si l'app s'ouvre
-        let appOpened = false;
-        
+        // Détecter si l'app s'est ouverte
         window.addEventListener('blur', () => {
-          console.log('✅ Fenêtre a perdu le focus (app probablement ouverte)');
+          console.log('✅ Focus perdu → App ouverte');
           appOpened = true;
-          setTimeout(() => {
-            try { window.close(); } catch(e) {}
-          }, 1000);
         });
         
         document.addEventListener('visibilitychange', () => {
-          if (document.hidden && !appOpened) {
-            console.log('✅ Page cachée');
+          if (document.hidden) {
+            console.log('✅ Page cachée → App ouverte');
             appOpened = true;
           }
         });
         
-        // ✅ Forcer la fermeture après 5 secondes
+        // Fermeture auto après 8 secondes
         setTimeout(() => {
-          console.log('🚪 Fermeture forcée');
-          try { 
-            window.close(); 
-          } catch(e) {
-            console.log('⚠️ Impossible de fermer');
+          if (appOpened) {
+            console.log('🚪 Fermeture (succès)');
+            try { window.close(); } catch(e) {}
           }
-        }, 5000);
-        
-        // ✅ MÉTHODE 5 : Créer un lien cliquable (fallback ultime)
-        setTimeout(() => {
-          if (!appOpened) {
-            const link = document.createElement('a');
-            link.href = '${deepLink}';
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            console.log('🔗 Lien cliqué programmatiquement');
-          }
-        }, 1000);
+        }, 8000);
       </script>
     </body>
     </html>
   `;
-}
-
-// Fonction utilitaire pour ajuster la couleur
-function adjustColor(color) {
-  return color.replace('#', '#') + '88'; // Ajoute transparence
 }
 
 module.exports = router;
