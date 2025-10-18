@@ -81,37 +81,52 @@ class MailPollingService {
     }
   }
 
-  /**
-   * 📥 Récupérer les nouveaux emails
-   */
-  async fetchNewEmails(emailConfig) {
-    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+/**
+ * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
+ */
+async fetchNewEmails(emailConfig) {
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-    try {
-      let response;
+  try {
+    let response;
 
-      if (emailConfig.provider === 'gmail') {
-        response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
-          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-          params: { maxResults: 10 }
-        });
-      } else if (emailConfig.provider === 'outlook') {
-        response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
-          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-          params: { top: 10 }
-        });
+    if (emailConfig.provider === 'gmail') {
+      response = await axios.get(`${BASE_URL}/api/mail/gmail/search`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        params: { 
+          q: 'is:unread in:inbox' // ✅ FILTRE : SEULEMENT NON-LUS
+        },
+        timeout: 15000
+      });
+    } else if (emailConfig.provider === 'outlook') {
+      response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+      
+      // ✅ FILTRE CÔTÉ SERVICE : Garder seulement les non-lus
+      if (response?.data?.messages) {
+        response.data.messages = response.data.messages.filter(msg => !msg.isRead);
       }
-
-      return response?.data?.messages || [];
-
-    } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn(`⚠️ [Quota] Limite atteinte, attente...`);
-        await new Promise(resolve => setTimeout(resolve, 60000));
-      }
-      return [];
     }
+
+    const messages = response?.data?.messages || [];
+    
+    if (messages.length > 0) {
+      console.log(`  📨 ${messages.length} nouveaux messages non lus`);
+    }
+
+    return messages;
+
+  } catch (error) {
+    if (error.response?.status === 429) {
+      console.warn(`  ⚠️ [Quota] Limite atteinte`);
+    } else {
+      console.error(`  ❌ [Fetch] Erreur:`, error.message);
+    }
+    return [];
   }
+}
 
   /**
    * 🤖 Traiter un message
