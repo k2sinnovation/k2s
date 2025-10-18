@@ -1,8 +1,13 @@
 const mongoose = require('mongoose');
 
 const appointmentSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  id: { type: String, required: true }, // ID Flutter
+  userId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true, 
+    index: true 
+  },
+  flutterId: { type: String, required: true }, // ✅ CHANGÉ DE 'id' À 'flutterId'
   clientName: { type: String, required: true },
   clientPhone: String,
   clientEmail: String,
@@ -20,7 +25,7 @@ const appointmentSchema = new mongoose.Schema({
 });
 
 // Index composite
-appointmentSchema.index({ userId: 1, id: 1 }, { unique: true });
+appointmentSchema.index({ userId: 1, flutterId: 1 }, { unique: true });
 appointmentSchema.index({ userId: 1, dateTime: 1 });
 
 module.exports = mongoose.models.Appointment || mongoose.model('Appointment', appointmentSchema);
