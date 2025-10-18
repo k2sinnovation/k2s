@@ -45,6 +45,15 @@ const sessionSchema = new mongoose.Schema({
     index: true 
   },
   
+  emailProvider: {
+    type: String,
+    enum: ['gmail', 'outlook', null],
+    default: null
+  },
+  
+  emailAccessToken: String,
+  emailRefreshToken: String,
+  
   deviceInfo: {
     platform: String,
     appVersion: String,
@@ -54,16 +63,14 @@ const sessionSchema = new mongoose.Schema({
   ipAddress: String
 });
 
-// Index composites pour performances
 sessionSchema.index({ userId: 1, isActive: 1 });
 sessionSchema.index({ sessionToken: 1, isActive: 1 });
+sessionSchema.index({ userId: 1, deviceId: 1 });
 
-// Méthode pour hasher le token
 sessionSchema.statics.hashToken = function(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 };
 
-// Méthode pour générer un token
 sessionSchema.statics.generateToken = function() {
   return crypto.randomBytes(32).toString('hex');
 };
