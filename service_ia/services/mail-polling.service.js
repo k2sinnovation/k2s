@@ -5,23 +5,27 @@ const axios = require('axios');
 
 class MailPollingService {
   constructor() {
-    this.processingMessages = new Set(); // Verrou par message
-    this.processingUsers = new Set();    // ✅ Verrou par utilisateur
-    this.isPolling = false;              // ✅ Verrou global
+    this.processingMessages = new Map(); // ✅ Map pour stocker timestamps
+    this.processingUsers = new Map();    // ✅ Map pour stocker timestamps
+    this.lastPollingStart = 0;           // ✅ Timestamp du dernier polling
+    this.POLLING_COOLDOWN = 30000;       // ✅ 30 secondes minimum entre polling
   }
 
   async checkAllUsers() {
-    // ✅ BLOQUER si un polling est déjà en cours
-    if (this.isPolling) {
-      console.log('⏭️ [Polling] Déjà en cours, ignoré');
+    const now = Date.now();
+    
+    // ✅ VÉRIFICATION AVEC COOLDOWN
+    if (now - this.lastPollingStart < this.POLLING_COOLDOWN) {
+      const remainingTime = Math.ceil((this.POLLING_COOLDOWN - (now - this.lastPollingStart)) / 1000);
+      console.log(`⏭️ [Polling] Trop tôt, attendre ${remainingTime}s`);
       return;
     }
 
-    this.isPolling = true;
+    this.lastPollingStart = now;
 
     try {
       const startTime = Date.now();
-      console.log('🔍 [Polling] Vérification...');
+      console.log('🔍 [Polling] Démarrage avec verrou timestamp:', startTime);
 
       const users = await User.find({
         'aiSettings.isEnabled': true,
@@ -68,16 +72,26 @@ class MailPollingService {
     }
   }
 
-  async checkUserEmails(user) {
-    // ✅ BLOQUER si cet utilisateur est déjà en cours de traitement
+async checkUserEmails(user) {
     const userKey = user._id.toString();
+    const now = Date.now();
     
+    // ✅ VÉRIFICATION AVEC TIMESTAMP
     if (this.processingUsers.has(userKey)) {
-      console.log(`  ⏭️ [${user.email}] Déjà en cours de traitement`);
-      return { processed: 0, sent: 0 };
+      const lockTime = this.processingUsers.get(userKey);
+      const elapsed = now - lockTime;
+      
+      // Si le verrou a plus de 5 minutes, on le réinitialise
+      if (elapsed > 300000) {
+        console.log(`  ⚠️ [${user.email}] Verrou expiré (${Math.round(elapsed/1000)}s), réinitialisation`);
+        this.processingUsers.delete(userKey);
+      } else {
+        console.log(`  ⏭️ [${user.email}] Déjà en cours (${Math.round(elapsed/1000)}s)`);
+        return { processed: 0, sent: 0 };
+      }
     }
 
-    this.processingUsers.add(userKey);
+    this.processingUsers.set(userKey, now); // ✅ Stocker le timestamp
 
     try {
       const newMessages = await this.fetchNewEmails(user.emailConfig);
@@ -267,27 +281,52 @@ class MailPollingService {
     }
   }
 
-  async processMessage(message, user) {
+async processMessage(message, user) {
     const lockKey = `${user._id}-${message.id}`;
+    const now = Date.now();
     
-    // ✅ BLOQUER si ce message est déjà en cours de traitement
+    // ✅ VÉRIFICATION AVEC TIMESTAMP
     if (this.processingMessages.has(lockKey)) {
-      return { sent: false, alreadyProcessed: true };
+      const lockTime = this.processingMessages.get(lockKey);
+      const elapsed = now - lockTime;
+      
+      // Si le verrou a plus de 2 minutes, on considère qu'il est bloqué
+      if (elapsed > 120000) {
+        console.log(`    ⚠️ Verrou expiré pour ${lockKey} (${Math.round(elapsed/1000)}s), réinitialisation`);
+        this.processingMessages.delete(lockKey);
+      } else {
+        console.log(`    ⏭️ Message déjà en cours (${Math.round(elapsed/1000)}s)`);
+        return { sent: false, alreadyProcessed: true };
+      }
     }
 
-    this.processingMessages.add(lockKey);
+    this.processingMessages.set(lockKey, now); // ✅ Stocker le timestamp
 
     try {
-      // ✅ VÉRIFIER SI DÉJÀ TRAITÉ EN BASE
+      // ✅ DOUBLE VÉRIFICATION EN BASE **AVANT** TOUTE ANALYSE
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
-        messageId: message.id
+        messageId: message.id,
+        status: { $in: ['sent', 'pending', 'processing'] } // ✅ Inclure processing
       });
 
       if (alreadyProcessed) {
+        console.log(`    ⏭️ Déjà traité (${alreadyProcessed.status})`);
         await this.markAsRead(message.id, user.emailConfig);
         return { sent: false, alreadyProcessed: true };
       }
+
+      // ✅ CRÉER UN ENREGISTREMENT "PROCESSING" IMMÉDIATEMENT
+      const processingRecord = await AutoReply.create({
+        userId: user._id,
+        messageId: message.id,
+        threadId: message.threadId,
+        from: message.from,
+        subject: message.subject,
+        body: '',
+        status: 'processing', // 🆕 Nouvel état
+        createdAt: new Date()
+      });
 
       console.log(`    📩 Nouveau: ${message.from} - "${message.subject}"`);
 
@@ -306,24 +345,19 @@ class MailPollingService {
 
       const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
 
-      if (!analysis.is_relevant) {
+   if (!analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${analysis.reason}`);
         
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          threadId: fullMessage.threadId,
-          from: message.from,
-          subject: message.subject,
-          body: fullMessage.body,
-          analysis: {
-            isRelevant: false,
-            confidence: analysis.confidence,
-            intent: analysis.intent,
-            reason: analysis.reason
-          },
-          status: 'ignored'
-        });
+        // ✅ METTRE À JOUR au lieu de créer un nouveau
+        processingRecord.body = fullMessage.body;
+        processingRecord.analysis = {
+          isRelevant: false,
+          confidence: analysis.confidence,
+          intent: analysis.intent,
+          reason: analysis.reason
+        };
+        processingRecord.status = 'ignored';
+        await processingRecord.save();
 
         await this.markAsRead(message.id, user.emailConfig);
         return { sent: false, alreadyProcessed: false };
@@ -342,63 +376,71 @@ class MailPollingService {
                            !user.aiSettings.requireValidation &&
                            analysis.confidence >= 0.8;
 
-      if (shouldAutoSend) {
+     if (shouldAutoSend) {
         console.log(`    📤 Envoi réponse dans thread ${fullMessage.threadId}...`);
         
         const sendSuccess = await this.sendReply(fullMessage, response, user);
 
         if (!sendSuccess) {
           console.log(`    ❌ Échec envoi`);
+          
+          // ✅ NETTOYER en cas d'échec
+          await AutoReply.deleteOne({
+            userId: user._id,
+            messageId: message.id,
+            status: 'processing'
+          });
+          
           return { sent: false, alreadyProcessed: false };
         }
 
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          threadId: fullMessage.threadId,
-          from: message.from,
-          subject: message.subject,
-          body: fullMessage.body,
-          analysis: {
-            isRelevant: true,
-            confidence: analysis.confidence,
-            intent: analysis.intent
-          },
-          generatedResponse: response,
-          sentResponse: response,
-          status: 'sent',
-          sentAt: new Date()
-        });
-
+        // ✅ METTRE À JOUR au lieu de créer un nouveau
+        processingRecord.body = fullMessage.body;
+        processingRecord.analysis = {
+          isRelevant: true,
+          confidence: analysis.confidence,
+          intent: analysis.intent
+        };
+        processingRecord.generatedResponse = response;
+        processingRecord.sentResponse = response;
+        processingRecord.status = 'sent';
+        processingRecord.sentAt = new Date();
+        await processingRecord.save();
         await this.markAsRead(message.id, user.emailConfig);
 
         console.log(`    ✅ Réponse envoyée à ${message.from}`);
         return { sent: true, alreadyProcessed: false };
 
-      } else {
+} else {
         console.log(`    ⏸️ En attente de validation`);
         
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          threadId: fullMessage.threadId,
-          from: message.from,
-          subject: message.subject,
-          body: fullMessage.body,
-          analysis: {
-            isRelevant: true,
-            confidence: analysis.confidence,
-            intent: analysis.intent
-          },
-          generatedResponse: response,
-          status: 'pending'
-        });
+        // ✅ METTRE À JOUR au lieu de créer un nouveau
+        processingRecord.body = fullMessage.body;
+        processingRecord.analysis = {
+          isRelevant: true,
+          confidence: analysis.confidence,
+          intent: analysis.intent
+        };
+        processingRecord.generatedResponse = response;
+        processingRecord.status = 'pending';
+        await processingRecord.save();
 
         return { sent: false, alreadyProcessed: false };
       }
 
-    } catch (error) {
+} catch (error) {
       console.error(`    ❌ Erreur traitement:`, error.message);
+      
+      // ✅ NETTOYER en cas d'erreur
+      try {
+        await AutoReply.deleteOne({
+          userId: user._id,
+          messageId: message.id,
+          status: 'processing'
+        });
+      } catch (cleanupError) {
+        console.error(`    ❌ Erreur nettoyage:`, cleanupError.message);
+      }
       
       try {
         await this.markAsRead(message.id, user.emailConfig);
