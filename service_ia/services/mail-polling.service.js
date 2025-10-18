@@ -5,9 +5,6 @@ const axios = require('axios');
 
 class MailPollingService {
 
-  /**
-   * 🔍 Vérifier tous les utilisateurs
-   */
   async checkAllUsers() {
     try {
       const startTime = Date.now();
@@ -55,9 +52,6 @@ class MailPollingService {
     }
   }
 
-  /**
-   * 📨 Vérifier les emails d'un utilisateur
-   */
   async checkUserEmails(user) {
     try {
       const newMessages = await this.fetchNewEmails(user.emailConfig);
@@ -83,112 +77,98 @@ class MailPollingService {
     }
   }
 
-  /**
- * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
- */
-async fetchNewEmails(emailConfig) {
-  const BASE_URL = 'https://k2s.onrender.com';
+  async fetchNewEmails(emailConfig) {
+    const BASE_URL = 'https://k2s.onrender.com';
 
-  try {
-    let response;
+    try {
+      let response;
 
-    if (emailConfig.provider === 'gmail') {
-      response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        params: {
-          q: 'is:unread in:inbox' // ✅ FILTRE GMAIL : Seulement non-lus
+      if (emailConfig.provider === 'gmail') {
+        response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          params: {
+            q: 'is:unread in:inbox'
+          },
+          timeout: 15000
+        });
+        
+        const messages = response?.data?.messages || [];
+        
+        if (messages.length > 0) {
+          console.log(`  📨 ${messages.length} messages non lus trouvés`);
+        }
+        
+        return messages;
+        
+      } else if (emailConfig.provider === 'outlook') {
+        response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 15000
+        });
+        
+        if (response?.data?.messages) {
+          const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
+          
+          if (unreadMessages.length > 0) {
+            console.log(`  📨 ${unreadMessages.length} messages non lus`);
+          }
+          
+          return unreadMessages;
+        }
+      }
+
+      return [];
+
+    } catch (error) {
+      if (error.response?.status === 429) {
+        console.warn(`  ⚠️ [Quota] Limite atteinte`);
+      } else if (error.response) {
+        console.error(`  ❌ [Fetch] Erreur ${error.response.status}:`, error.response.data);
+      } else {
+        console.error(`  ❌ [Fetch] Erreur:`, error.message);
+      }
+      return [];
+    }
+  }
+
+  // ✅ UNE SEULE fetchFullMessage AVEC LOGS DÉTAILLÉS
+  async fetchFullMessage(messageId, emailConfig) {
+    console.log(`🔍🔍🔍 DEBUT fetchFullMessage pour ${messageId}`);
+    
+    const BASE_URL = 'https://k2s.onrender.com';
+    const url = `${BASE_URL}/api/mail/gmail/message/${messageId}`;
+    
+    console.log(`🔗 URL: ${url}`);
+    console.log(`🔑 Token présent: ${emailConfig.accessToken ? 'OUI' : 'NON'}`);
+    console.log(`🔑 Token longueur: ${emailConfig.accessToken?.length || 0}`);
+
+    try {
+      const response = await axios.get(url, {
+        headers: { 
+          'Authorization': `Bearer ${emailConfig.accessToken}` 
         },
         timeout: 15000
       });
-      
-      const messages = response?.data?.messages || [];
-      
-      if (messages.length > 0) {
-        console.log(`  📨 ${messages.length} messages non lus trouvés`);
-      }
-      
-      return messages;
-      
-    } else if (emailConfig.provider === 'outlook') {
-      response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        timeout: 15000
-      });
-      
-      if (response?.data?.messages) {
-        const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
-        
-        if (unreadMessages.length > 0) {
-          console.log(`  📨 ${unreadMessages.length} messages non lus sur ${response.data.messages.length} total`);
-        }
-        
-        return unreadMessages;
-      }
-    }
 
-    return [];
+      console.log(`✅✅✅ Réponse OK: ${JSON.stringify(response.data).substring(0, 100)}`);
+      return response.data;
 
-  } catch (error) {
-    if (error.response?.status === 429) {
-      console.warn(`  ⚠️ [Quota] Limite atteinte`);
-    } else if (error.response) {
-      console.error(`  ❌ [Fetch] Erreur ${error.response.status}:`, error.response.data);
-    } else {
-      console.error(`  ❌ [Fetch] Erreur:`, error.message);
+    } catch (error) {
+      console.log(`❌❌❌ ERREUR COMPLETE:`, JSON.stringify({
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+        headers: error.response?.headers
+      }, null, 2));
+      
+      return null;
     }
-    return [];
   }
-}
 
-async fetchFullMessage(messageId, emailConfig) {
-  const BASE_URL = 'https://k2s.onrender.com';
-
-  try {
-    let response;
-
-    if (emailConfig.provider === 'gmail') {
-      console.log(`      📞 Récupération message ${messageId.substring(0, 10)}...`);
-      
-      response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        timeout: 15000
-      });
-      
-      if (response?.data?.body) {
-        console.log(`      ✅ Corps récupéré (${response.data.body.length} caractères)`);
-      } else {
-        console.log(`      ⚠️ Message sans corps`);
-      }
-      
-    } else if (emailConfig.provider === 'outlook') {
-      response = await axios.get(`${BASE_URL}/api/mail/outlook/message/${messageId}`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        timeout: 15000
-      });
-    }
-
-    return response?.data || null;
-
-  } catch (error) {
-    console.error(`      ❌ Erreur récupération message:`, {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      errorData: error.response?.data,
-      message: error.message,
-      url: `${BASE_URL}/api/mail/gmail/message/${messageId}`
-    });
-    return null;
-  }
-}
-
-  /**
-   * 🤖 Traiter un message
-   */
   async processMessage(message, user) {
     try {
       console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
 
-      // Vérifier si déjà traité
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
         messageId: message.id
@@ -199,7 +179,6 @@ async fetchFullMessage(messageId, emailConfig) {
         return { sent: false };
       }
 
-      // ✅ RÉCUPÉRER LE CORPS COMPLET DU MESSAGE
       const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
       
       if (!fullMessage) {
@@ -207,11 +186,10 @@ async fetchFullMessage(messageId, emailConfig) {
         return { sent: false };
       }
 
-      // 1️⃣ ANALYSE
       const analysis = await aiService.analyzeMessage(fullMessage, user);
 
       if (!analysis.is_relevant) {
-        console.log(`    ⏭️ Non pertinent: ${analysis.reason || 'Non lié à l\'activité'}`);
+        console.log(`    ⏭️ Non pertinent`);
         
         await AutoReply.create({
           userId: user._id,
@@ -230,20 +208,17 @@ async fetchFullMessage(messageId, emailConfig) {
         return { sent: false };
       }
 
-      console.log(`    ✅ Pertinent: ${analysis.intent} (confiance: ${(analysis.confidence * 100).toFixed(0)}%)`);
+      console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
 
-      // 2️⃣ GÉNÉRATION
       console.log(`    🤖 Génération de la réponse...`);
       const response = await aiService.generateResponse(fullMessage, analysis, user);
 
-      // 3️⃣ DÉCISION D'ENVOI
       const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
                              !user.aiSettings.requireValidation &&
                              analysis.confidence >= 0.8;
 
       if (shouldAutoSend) {
-        // ✅ ENVOI AUTOMATIQUE
-        console.log(`    📤 Envoi automatique (confiance ${(analysis.confidence * 100).toFixed(0)}% ≥ 80%)...`);
+        console.log(`    📤 Envoi automatique...`);
         
         await this.sendReply(fullMessage, response, user);
 
@@ -264,18 +239,11 @@ async fetchFullMessage(messageId, emailConfig) {
           sentAt: new Date()
         });
 
-        console.log(`    ✅ Réponse envoyée avec succès à ${message.from}`);
+        console.log(`    ✅ Réponse envoyée à ${message.from}`);
         return { sent: true };
 
       } else {
-        // ⏸️ EN ATTENTE DE VALIDATION
-        const reason = !user.aiSettings.autoReplyEnabled 
-          ? 'Auto-reply désactivé'
-          : user.aiSettings.requireValidation
-          ? 'Validation requise'
-          : `Confiance insuffisante (${(analysis.confidence * 100).toFixed(0)}% < 80%)`;
-        
-        console.log(`    ⏸️ En attente de validation: ${reason}`);
+        console.log(`    ⏸️ En attente de validation`);
         
         await AutoReply.create({
           userId: user._id,
@@ -301,40 +269,8 @@ async fetchFullMessage(messageId, emailConfig) {
     }
   }
 
-  /**
-   * 📥 Récupérer le message complet avec le corps
-   */
-  async fetchFullMessage(messageId, emailConfig) {
-    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-
-    try {
-      let response;
-
-      if (emailConfig.provider === 'gmail') {
-        response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
-          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-          timeout: 15000
-        });
-      } else if (emailConfig.provider === 'outlook') {
-        response = await axios.get(`${BASE_URL}/api/mail/outlook/message/${messageId}`, {
-          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-          timeout: 15000
-        });
-      }
-
-      return response?.data || null;
-
-    } catch (error) {
-      console.error(`    ❌ Erreur récupération message complet:`, error.message);
-      return null;
-    }
-  }
-
-  /**
-   * 📤 Envoyer une réponse
-   */
   async sendReply(message, responseBody, user) {
-    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+    const BASE_URL = 'https://k2s.onrender.com';
 
     try {
       if (user.emailConfig.provider === 'gmail') {
@@ -363,11 +299,10 @@ async fetchFullMessage(messageId, emailConfig) {
       return true;
       
     } catch (error) {
-      console.error(`    ❌ Erreur envoi réponse:`, error.message);
+      console.error(`    ❌ Erreur envoi:`, error.message);
       throw error;
     }
   }
-
-} // ✅ ACCOLADE DE FIN DE CLASSE
+}
 
 module.exports = new MailPollingService();
