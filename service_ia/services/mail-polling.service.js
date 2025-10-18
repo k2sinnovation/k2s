@@ -84,44 +84,63 @@ class MailPollingService {
   }
 
   /**
-   * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
-   */
-  async fetchNewEmails(emailConfig) {
-    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+ * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
+ */
+async fetchNewEmails(emailConfig) {
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-    try {
-      let response;
+  try {
+    let response;
 
-      if (emailConfig.provider === 'gmail') {
-        response = await axios.get(`${BASE_URL}/api/mail/gmail/search`, {
-          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-          params: { 
-            q: 'is:unread in:inbox'
-          },
-          timeout: 15000
-        });
-      } else if (emailConfig.provider === 'outlook') {
-        response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
-          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-          timeout: 15000
-        });
+    if (emailConfig.provider === 'gmail') {
+      // ✅ UTILISER /inbox AU LIEU DE /search
+      response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+      
+      // ✅ FILTRER CÔTÉ SERVICE : Garder seulement les non-lus
+      if (response?.data?.messages) {
+        const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
         
-        if (response?.data?.messages) {
-          response.data.messages = response.data.messages.filter(msg => !msg.isRead);
+        if (unreadMessages.length > 0) {
+          console.log(`  📨 ${unreadMessages.length} messages non lus sur ${response.data.messages.length} total`);
         }
+        
+        return unreadMessages;
       }
-
-      return response?.data?.messages || [];
-
-    } catch (error) {
-      if (error.response?.status === 429) {
-        console.warn(`  ⚠️ [Quota] Limite atteinte`);
-      } else {
-        console.error(`  ❌ [Fetch] Erreur:`, error.message);
+      
+    } else if (emailConfig.provider === 'outlook') {
+      response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+      
+      // ✅ FILTRER CÔTÉ SERVICE : Garder seulement les non-lus
+      if (response?.data?.messages) {
+        const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
+        
+        if (unreadMessages.length > 0) {
+          console.log(`  📨 ${unreadMessages.length} messages non lus sur ${response.data.messages.length} total`);
+        }
+        
+        return unreadMessages;
       }
-      return [];
     }
+
+    return [];
+
+  } catch (error) {
+    if (error.response?.status === 429) {
+      console.warn(`  ⚠️ [Quota] Limite atteinte`);
+    } else if (error.response) {
+      console.error(`  ❌ [Fetch] Erreur ${error.response.status}:`, error.response.data);
+    } else {
+      console.error(`  ❌ [Fetch] Erreur:`, error.message);
+    }
+    return [];
   }
+}
 
   /**
    * 🤖 Traiter un message
