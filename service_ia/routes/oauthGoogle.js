@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const User = require('../models/User');
-const Session = require('../models/Session'); // ✅ IMPORTANT
+const Session = require('../models/Session');
 
 const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
@@ -28,7 +28,6 @@ router.get('/oauth/google/callback', async (req, res) => {
 
     console.log('🔄 [OAuth] Échange du code...');
 
-    // Échanger le code contre les tokens
     const tokenResponse = await axios.post(
       'https://oauth2.googleapis.com/token',
       new URLSearchParams({
@@ -47,7 +46,6 @@ router.get('/oauth/google/callback', async (req, res) => {
     const { access_token, refresh_token, id_token, expires_in } = tokenResponse.data;
     console.log('✅ [OAuth] Tokens reçus');
 
-    // Récupérer l'email
     const userInfoResponse = await axios.get(
       'https://www.googleapis.com/oauth2/v2/userinfo',
       { headers: { Authorization: `Bearer ${access_token}` } }
@@ -56,7 +54,7 @@ router.get('/oauth/google/callback', async (req, res) => {
     const email = userInfoResponse.data.email;
     console.log('✅ [OAuth] Email:', email);
 
-    // ✅ CRÉER OU METTRE À JOUR L'UTILISATEUR
+    // Créer ou mettre à jour utilisateur
     let user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
@@ -78,7 +76,7 @@ router.get('/oauth/google/callback', async (req, res) => {
           plan: 'free',
           isActive: true,
           startDate: new Date(),
-          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 jours gratuits
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
         },
         aiSettings: {
           isEnabled: false,
@@ -114,18 +112,16 @@ router.get('/oauth/google/callback', async (req, res) => {
       console.log('✅ [OAuth] Tokens mis à jour');
     }
 
-    // ✅ GÉNÉRER SESSION TOKEN PERMANENT (1 an)
+    // Générer session token
     const deviceId = req.query.state || `web_${Date.now()}`;
     const sessionToken = Session.generateToken();
     const hashedToken = Session.hashToken(sessionToken);
 
-    // ✅ Révoquer anciennes sessions du même device (optionnel)
     await Session.updateMany(
       { userId: user._id, deviceId: deviceId },
       { isActive: false }
     );
 
-    // ✅ CRÉER NOUVELLE SESSION EN BASE
     const newSession = await Session.create({
       userId: user._id,
       deviceId: deviceId,
@@ -140,14 +136,13 @@ router.get('/oauth/google/callback', async (req, res) => {
       }
     });
 
-    console.log(`✅ [OAuth] Session créée (ID: ${newSession._id}, expire: ${newSession.expiresAt})`);
+    console.log(`✅ [OAuth] Session créée (ID: ${newSession._id})`);
 
-    // ✅ Construction du deep link avec SESSION TOKEN
     const params = new URLSearchParams({
       access_token,
       email,
       success: 'true',
-      session_token: sessionToken, // ✅ SESSION TOKEN non hashé
+      session_token: sessionToken,
       user_id: user._id.toString(),
       expires_in: (expires_in || 3600).toString(),
     });
@@ -157,65 +152,18 @@ router.get('/oauth/google/callback', async (req, res) => {
 
     const deepLink = `k2sdiag://auth?${params.toString()}`;
     
-    console.log('🔗 [OAuth] Deep link créé (longueur:', deepLink.length, ')');
-    console.log('🎯 [OAuth] Session Token:', sessionToken.substring(0, 20) + '...');
+    console.log('🔗 [OAuth] Deep link créé');
 
     res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
 
   } catch (error) {
     console.error('❌ [OAuth] Erreur:', error.message);
-    if (error.response) {
-      console.error('📄 Réponse:', error.response.data);
-    }
     const deepLink = `k2sdiag://auth?error=server_error&error_description=${encodeURIComponent(error.message)}`;
     res.send(generateHtmlRedirect(deepLink, '❌ Erreur serveur', error.message));
   }
 });
 
-// ✅ ROUTE DE REFRESH TOKEN OAUTH (pour compatibilité)
-router.post('/oauth/google/refresh', async (req, res) => {
-  try {
-    const { refresh_token } = req.body;
-
-    if (!refresh_token) {
-      return res.status(400).json({ error: 'refresh_token manquant' });
-    }
-
-    console.log('🔄 [OAuth] Refresh token Google...');
-
-    const response = await axios.post(
-      'https://oauth2.googleapis.com/token',
-      new URLSearchParams({
-        refresh_token: refresh_token,
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        grant_type: 'refresh_token',
-      }),
-      { 
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 10000,
-      }
-    );
-
-    const { access_token, expires_in, id_token } = response.data;
-
-    console.log('✅ [OAuth] Token Google rafraîchi');
-
-    res.json({
-      access_token,
-      expires_in: expires_in || 3600,
-      id_token: id_token || '',
-    });
-
-  } catch (error) {
-    console.error('❌ [OAuth] Erreur refresh:', error.response?.data || error.message);
-    res.status(500).json({ 
-      error: 'Erreur refresh token',
-      details: error.message 
-    });
-  }
-});
-
+// ✅ FONCTION HTML OPTIMISÉE - UNE SEULE REDIRECTION
 function generateHtmlRedirect(deepLink, title, message) {
   const isSuccess = title.includes('✓');
   const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
@@ -223,7 +171,7 @@ function generateHtmlRedirect(deepLink, title, message) {
 
   return `
     <!DOCTYPE html>
-    <html>
+    <html lang="fr">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -260,7 +208,11 @@ function generateHtmlRedirect(deepLink, title, message) {
           50% { transform: scale(1.2); }
           100% { transform: scale(1); }
         }
-        h1 { margin: 20px 0; font-size: 28px; font-weight: 600; }
+        h1 { 
+          margin: 20px 0; 
+          font-size: 28px;
+          font-weight: 600;
+        }
         .message {
           background: rgba(255,255,255,0.2);
           padding: 15px 20px;
@@ -293,19 +245,8 @@ function generateHtmlRedirect(deepLink, title, message) {
           font-size: 16px;
           cursor: pointer;
           text-decoration: none;
-          display: inline-block;
+          display: none;
           box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-        .debug {
-          margin-top: 20px;
-          padding: 10px;
-          background: rgba(0,0,0,0.3);
-          border-radius: 5px;
-          font-size: 11px;
-          font-family: monospace;
-          max-height: 100px;
-          overflow: auto;
-          word-break: break-all;
         }
       </style>
     </head>
@@ -316,62 +257,59 @@ function generateHtmlRedirect(deepLink, title, message) {
         ${message ? `<div class="message">${message}</div>` : ''}
         
         <div id="status">
-          Redirection automatique...
+          Ouverture de l'application...
           <div class="spinner"></div>
         </div>
         
-        <a href="#" class="manual-link" id="manualBtn" style="display:none;">
+        <a href="${deepLink}" class="manual-link" id="manualBtn">
           📱 Ouvrir l'application
         </a>
-        
-        <div class="debug" id="debug"></div>
       </div>
       
       <script>
         const deepLink = ${JSON.stringify(deepLink)};
-        let opened = false;
+        let appOpened = false;
         
-        function log(msg) {
-          console.log(msg);
-          const debugEl = document.getElementById('debug');
-          debugEl.innerHTML += msg + '<br>';
-          debugEl.scrollTop = debugEl.scrollHeight;
-        }
+        console.log('🔗 Redirection vers l\'application...');
         
-        log('🔗 Link: ' + deepLink.substring(0, 50) + '...');
-        
-        function redirect() {
-          if (opened) return;
-          log('🔄 Redirection...');
+        // ✅ DÉTECTION D'OUVERTURE APP
+        function onAppOpened() {
+          if (appOpened) return;
+          appOpened = true;
           
-          const iframe = document.createElement('iframe');
-          iframe.style.display = 'none';
-          iframe.src = deepLink;
-          document.body.appendChild(iframe);
+          console.log('✅ Application ouverte');
+          document.getElementById('status').innerHTML = 
+            '✅ Retour à l\'application...<div style="margin-top:10px; font-size:14px; opacity:0.8;">Vous pouvez fermer cette page</div>';
           
+          // Tentative de fermeture automatique
           setTimeout(() => {
-            document.body.removeChild(iframe);
-            window.location.href = deepLink;
-          }, 500);
+            try { window.close(); } catch(e) {}
+          }, 1500);
         }
         
-        redirect();
-        setTimeout(redirect, 1000);
+        // Événements de détection
+        window.addEventListener('blur', onAppOpened);
+        window.addEventListener('pagehide', onAppOpened);
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) onAppOpened();
+        });
         
+        // ✅ UNE SEULE REDIRECTION AUTOMATIQUE
         setTimeout(() => {
-          if (!opened) {
-            const btn = document.getElementById('manualBtn');
-            btn.style.display = 'inline-block';
-            btn.onclick = (e) => {
-              e.preventDefault();
-              window.location.href = deepLink;
-            };
+          if (!appOpened) {
+            console.log('🚀 Redirection automatique...');
+            window.location.href = deepLink;
+          }
+        }, 100);
+        
+        // Bouton manuel de secours après 3s
+        setTimeout(() => {
+          if (!appOpened) {
+            console.log('🔘 Affichage bouton manuel');
+            document.getElementById('manualBtn').style.display = 'inline-block';
             document.getElementById('status').style.display = 'none';
           }
-        }, 2000);
-        
-        window.addEventListener('blur', () => { opened = true; });
-        window.addEventListener('pagehide', () => { opened = true; });
+        }, 3000);
       </script>
     </body>
     </html>
