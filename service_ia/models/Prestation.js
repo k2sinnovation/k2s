@@ -7,7 +7,7 @@ const prestationSchema = new mongoose.Schema({
     required: true, 
     index: true 
   },
-  flutterId: { type: String, required: true }, // ✅ CHANGÉ DE 'id' À 'flutterId'
+  id: { type: String }, // ✅ RETIRÉ 'required: true'
   name: { type: String, required: true },
   category: { type: String, required: true },
   defaultDurationMinutes: { type: Number, required: true },
@@ -18,6 +18,6 @@ const prestationSchema = new mongoose.Schema({
 });
 
 // Index composite pour recherche efficace
-prestationSchema.index({ userId: 1, flutterId: 1 }, { unique: true });
+prestationSchema.index({ userId: 1, id: 1 });
 
 module.exports = mongoose.models.Prestation || mongoose.model('Prestation', prestationSchema);
