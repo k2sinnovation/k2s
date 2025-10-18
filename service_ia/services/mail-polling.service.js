@@ -2,6 +2,8 @@ const User = require('../models/User');
 const AutoReply = require('../models/AutoReply');
 const aiService = require('./ai.service');
 const axios = require('axios');
+const driveService = require('./google-drive.service'); 
+const driveCacheMiddleware = require('../middleware/drive-cache.middleware'); 
 
 class MailPollingService {
   constructor() {
@@ -343,12 +345,49 @@ class MailPollingService {
         return { sent: false, alreadyProcessed: false };
       }
 
-      const conversationHistory = await this.getConversationHistory(
-        fullMessage.threadId, 
-        user.emailConfig
-      );
+     // ✅ APRÈS - AJOUTER CHARGEMENT DRIVE AVANT ANALYSE
+const conversationHistory = await this.getConversationHistory(
+  fullMessage.threadId, 
+  user.emailConfig
+);
 
-      const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
+// ✅ NOUVEAU : CHARGER DONNÉES DRIVE AVANT ANALYSE
+try {
+  const accessToken = user.emailConfig?.accessToken;
+  
+  if (accessToken) {
+    // Vérifier cache d'abord (performance)
+    let driveData = await driveCacheMiddleware.getCachedDriveData(user._id.toString());
+    
+    if (!driveData) {
+      console.log(`  📂 [${user.email}] Chargement Drive...`);
+      
+      const driveStartTime = Date.now();
+      driveData = await driveService.loadAllUserData(accessToken, user._id.toString());
+      const driveDuration = Date.now() - driveStartTime;
+      
+      console.log(`  ✅ [${user.email}] Drive chargé en ${driveDuration}ms`);
+      
+      // Mettre en cache (async, sans attendre)
+      driveCacheMiddleware.cacheUserDriveData(user._id.toString(), driveData).catch(() => {});
+    } else {
+      console.log(`  📦 [${user.email}] Drive depuis cache`);
+    }
+    
+    const hasBusinessInfo = !driveData.businessInfo._empty;
+    const hasPlanningInfo = !driveData.planningInfo._empty;
+    
+    console.log(`  📊 [${user.email}] Drive: business=${hasBusinessInfo}, planning=${hasPlanningInfo}`);
+  } else {
+    console.warn(`  ⚠️ [${user.email}] Pas de token Gmail, Drive non chargé`);
+  }
+} catch (driveError) {
+  // Ne pas bloquer si Drive échoue
+  console.warn(`  ⚠️ [${user.email}] Erreur Drive (non bloquant):`, driveError.message);
+}
+
+// Analyser le message (utilise maintenant le contexte Drive chargé)
+const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
 
       if (!analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${analysis.reason}`);
