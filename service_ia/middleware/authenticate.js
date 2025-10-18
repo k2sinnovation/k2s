@@ -1,6 +1,10 @@
 const Session = require('../models/Session');
 const User = require('../models/User');
 
+/**
+ * Middleware d'authentification par SESSION TOKEN PERMANENT
+ * Remplace l'ancien système JWT court
+ */
 module.exports = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -16,6 +20,8 @@ module.exports = async (req, res, next) => {
     const sessionToken = authHeader.replace('Bearer ', '');
     const hashedToken = Session.hashToken(sessionToken);
     
+    console.log(`🔍 [Auth] Vérification session: ${sessionToken.substring(0, 20)}...`);
+    
     // ✅ VÉRIFIER SESSION EN BASE
     const session = await Session.findOne({
       sessionToken: hashedToken,
@@ -30,6 +36,8 @@ module.exports = async (req, res, next) => {
         code: 'INVALID_SESSION'
       });
     }
+    
+    console.log(`✅ [Auth] Session trouvée pour userId=${session.userId}`);
     
     // ✅ VÉRIFIER ABONNEMENT
     const user = await User.findById(session.userId);
@@ -62,6 +70,10 @@ module.exports = async (req, res, next) => {
     req.deviceId = session.deviceId;
     req.session = session;
     req.user = user;
+    
+    // ✅ ATTACHER LES TOKENS EMAIL SI BESOIN
+    req.emailAccessToken = session.emailAccessToken || user.emailConfig?.accessToken;
+    req.emailRefreshToken = session.emailRefreshToken || user.emailConfig?.refreshToken;
     
     console.log(`✅ [Auth] Middleware: userId=${req.userId}, device=${req.deviceId}`);
     
