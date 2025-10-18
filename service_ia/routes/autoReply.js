@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const AutoReply = require('../models/AutoReply');
-const { authenticateToken } = require('../middleware/auth');
+const authenticateToken = require('../middleware/auth');
 
 // 🆕 Vérifier si un message a une réponse IA
 router.get('/check/:messageId', authenticateToken, async (req, res) => {
