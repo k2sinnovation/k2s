@@ -42,6 +42,8 @@ const AutoReply = require('./service_ia/models/AutoReply');
 
 // 🆕 Import nouvelle route user
 const userRoute = require('./service_ia/routes/user');
+// 🆕 Import route auto-reply
+const autoReplyRoute = require('./service_ia/routes/autoReply');
 
 // 🤖 Import du service de polling
 const mailPollingService = require('./service_ia/services/mail-polling.service');
@@ -116,6 +118,8 @@ app.use('/api', emailAccountsRoute);
 // 🆕 NOUVELLES ROUTES MESSAGERIE
 app.use('/api/mail', mailRoutes);
 app.use('/api/whatsapp', whatsappMessagingRoutes);
+// 🆕 Route auto-reply (vérification messages IA)
+app.use('/api/auto-reply', autoReplyRoute);  
 
 // Routes webhook OpenAI
 app.use('/openai-webhook', openaiWebhookRouter);
