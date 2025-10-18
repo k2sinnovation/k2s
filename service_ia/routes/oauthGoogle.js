@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
@@ -11,7 +13,6 @@ router.get('/oauth/google/callback', async (req, res) => {
     const { code, error, error_description } = req.query;
 
     console.log('📨 [OAuth] Callback reçu');
-    console.log('📋 Code:', code?.substring(0, 20));
 
     if (error) {
       console.log('❌ Erreur OAuth:', error);
@@ -43,7 +44,7 @@ router.get('/oauth/google/callback', async (req, res) => {
       }
     );
 
-    const { access_token, refresh_token, id_token } = tokenResponse.data;
+    const { access_token, refresh_token, id_token, expires_in } = tokenResponse.data;
     console.log('✅ [OAuth] Tokens reçus');
 
     // Récupérer l'email
@@ -55,11 +56,76 @@ router.get('/oauth/google/callback', async (req, res) => {
     const email = userInfoResponse.data.email;
     console.log('✅ [OAuth] Email:', email);
 
-    // 🔹 IMPORTANT : Construction manuelle avec encodage proper
+    // 🆕 CRÉER OU METTRE À JOUR L'UTILISATEUR
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      console.log('🆕 [OAuth] Création nouvel utilisateur:', email);
+      
+      user = new User({
+        email,
+        password: Math.random().toString(36).slice(-12),
+        businessName: email.split('@')[0] || 'Mon Entreprise',
+        deviceId: `gmail_${Date.now()}`,
+        subscription: 'free',
+        emailConfig: {
+          provider: 'gmail',
+          accessToken: access_token,
+          refreshToken: refresh_token || undefined,
+          email: email,
+          connectedAt: new Date()
+        },
+        aiSettings: {
+          isEnabled: false,
+          autoReplyEnabled: false,
+          requireValidation: true,
+          salonName: email.split('@')[0] || 'Mon Entreprise',
+          ownerEmail: email,
+          role: 'Assistant virtuel pour la gestion des rendez-vous',
+          instructions: 'Sois professionnel et courtois.',
+          tone: 'professionnel',
+          aiModel: 'gpt-4',
+          temperature: 0.7,
+          maxTokens: 500
+        }
+      });
+
+      await user.save();
+      console.log('✅ [OAuth] Utilisateur créé:', user._id);
+      
+    } else {
+      console.log('🔄 [OAuth] Utilisateur existant, mise à jour tokens');
+      
+      user.emailConfig = {
+        provider: 'gmail',
+        accessToken: access_token,
+        refreshToken: refresh_token || user.emailConfig?.refreshToken,
+        email: email,
+        connectedAt: new Date()
+      };
+      
+      user.lastLoginAt = new Date();
+      await user.save();
+      console.log('✅ [OAuth] Tokens mis à jour');
+    }
+
+    // 🆕 GÉNÉRER JWT
+    const jwtToken = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    console.log('✅ [OAuth] JWT généré');
+
+    // Construction du deep link
     const params = new URLSearchParams({
       access_token,
       email,
-      success: 'true'
+      success: 'true',
+      jwt_token: jwtToken,
+      user_id: user._id.toString(),
+      expires_in: (expires_in || 3600).toString(),
     });
 
     if (refresh_token) params.append('refresh_token', refresh_token);
@@ -67,16 +133,14 @@ router.get('/oauth/google/callback', async (req, res) => {
 
     const deepLink = `k2sdiag://auth?${params.toString()}`;
     
-    console.log('🔗 [OAuth] Deep link longueur:', deepLink.length);
-    console.log('📋 Deep link:', deepLink.substring(0, 100) + '...');
+    console.log('🔗 [OAuth] Deep link créé (longueur:', deepLink.length, ')');
 
-    // HTML optimisé pour Android avec multiples méthodes de redirection
     res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
 
   } catch (error) {
     console.error('❌ [OAuth] Erreur:', error.message);
     if (error.response) {
-      console.error('📄 Réponse erreur:', error.response.data);
+      console.error('📄 Réponse:', error.response.data);
     }
     const deepLink = `k2sdiag://auth?error=server_error&error_description=${encodeURIComponent(error.message)}`;
     res.send(generateHtmlRedirect(deepLink, '❌ Erreur serveur', error.message));
@@ -127,11 +191,7 @@ function generateHtmlRedirect(deepLink, title, message) {
           50% { transform: scale(1.2); }
           100% { transform: scale(1); }
         }
-        h1 { 
-          margin: 20px 0; 
-          font-size: 28px;
-          font-weight: 600;
-        }
+        h1 { margin: 20px 0; font-size: 28px; font-weight: 600; }
         .message {
           background: rgba(255,255,255,0.2);
           padding: 15px 20px;
@@ -200,7 +260,6 @@ function generateHtmlRedirect(deepLink, title, message) {
       
       <script>
         const deepLink = ${JSON.stringify(deepLink)};
-        let attempts = 0;
         let opened = false;
         
         function log(msg) {
@@ -210,74 +269,40 @@ function generateHtmlRedirect(deepLink, title, message) {
           debugEl.scrollTop = debugEl.scrollHeight;
         }
         
-        log('🔗 Deep link: ' + deepLink.substring(0, 50) + '...');
-        log('📏 Longueur: ' + deepLink.length + ' caractères');
+        log('🔗 Link: ' + deepLink.substring(0, 50) + '...');
         
         function redirect() {
           if (opened) return;
-          attempts++;
-          log('🔄 Tentative #' + attempts);
+          log('🔄 Redirection...');
           
-          try {
-            // Méthode 1: Iframe (fonctionne bien sur Android)
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = deepLink;
-            document.body.appendChild(iframe);
-            
-            setTimeout(() => {
-              document.body.removeChild(iframe);
-              log('✅ Iframe supprimé');
-            }, 2000);
-            
-            // Méthode 2: window.location (backup)
-            setTimeout(() => {
-              if (!opened) {
-                log('🔄 Méthode 2: window.location');
-                window.location.href = deepLink;
-              }
-            }, 500);
-            
-          } catch (e) {
-            log('❌ Erreur: ' + e.message);
-          }
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = deepLink;
+          document.body.appendChild(iframe);
+          
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+            window.location.href = deepLink;
+          }, 500);
         }
         
-        // Démarrer immédiatement
         redirect();
-        
-        // Retry après 1 seconde
         setTimeout(redirect, 1000);
         
-        // Afficher bouton manuel après 2 secondes
         setTimeout(() => {
           if (!opened) {
             const btn = document.getElementById('manualBtn');
             btn.style.display = 'inline-block';
             btn.onclick = (e) => {
               e.preventDefault();
-              log('👆 Clic manuel');
               window.location.href = deepLink;
             };
             document.getElementById('status').style.display = 'none';
-            log('🔘 Bouton manuel affiché');
           }
         }, 2000);
         
-        // Détecter ouverture app
-        function detectAppOpened() {
-          opened = true;
-          log('✅ Application ouverte !');
-          setTimeout(() => {
-            try { window.close(); } catch(e) {}
-          }, 3000);
-        }
-        
-        window.addEventListener('blur', detectAppOpened);
-        window.addEventListener('pagehide', detectAppOpened);
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) detectAppOpened();
-        });
+        window.addEventListener('blur', () => { opened = true; });
+        window.addEventListener('pagehide', () => { opened = true; });
       </script>
     </body>
     </html>
