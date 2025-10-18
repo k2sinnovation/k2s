@@ -5,10 +5,20 @@ const axios = require('axios');
 
 class MailPollingService {
   constructor() {
-    this.processingMessages = new Set(); // ✅ Verrou pour éviter les doublons
+    this.processingMessages = new Set(); // Verrou par message
+    this.processingUsers = new Set();    // ✅ Verrou par utilisateur
+    this.isPolling = false;              // ✅ Verrou global
   }
 
   async checkAllUsers() {
+    // ✅ BLOQUER si un polling est déjà en cours
+    if (this.isPolling) {
+      console.log('⏭️ [Polling] Déjà en cours, ignoré');
+      return;
+    }
+
+    this.isPolling = true;
+
     try {
       const startTime = Date.now();
       console.log('🔍 [Polling] Vérification...');
@@ -26,13 +36,24 @@ class MailPollingService {
 
       console.log(`👥 [Polling] ${users.length} utilisateurs`);
 
+      const BATCH_SIZE = 20;
       let totalSent = 0;
 
-      // ✅ TRAITER UN UTILISATEUR À LA FOIS (pas en parallèle)
-      for (const user of users) {
-        const result = await this.checkUserEmails(user);
-        if (result?.sent) {
-          totalSent += result.sent;
+      for (let i = 0; i < users.length; i += BATCH_SIZE) {
+        const batch = users.slice(i, i + BATCH_SIZE);
+        
+        const results = await Promise.allSettled(
+          batch.map(user => this.checkUserEmails(user))
+        );
+
+        results.forEach(result => {
+          if (result.status === 'fulfilled' && result.value?.sent) {
+            totalSent += result.value.sent;
+          }
+        });
+        
+        if (i + BATCH_SIZE < users.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
@@ -41,10 +62,23 @@ class MailPollingService {
 
     } catch (error) {
       console.error('❌ [Polling] Erreur:', error.message);
+    } finally {
+      // ✅ TOUJOURS libérer le verrou global
+      this.isPolling = false;
     }
   }
 
   async checkUserEmails(user) {
+    // ✅ BLOQUER si cet utilisateur est déjà en cours de traitement
+    const userKey = user._id.toString();
+    
+    if (this.processingUsers.has(userKey)) {
+      console.log(`  ⏭️ [${user.email}] Déjà en cours de traitement`);
+      return { processed: 0, sent: 0 };
+    }
+
+    this.processingUsers.add(userKey);
+
     try {
       const newMessages = await this.fetchNewEmails(user.emailConfig);
 
@@ -57,7 +91,6 @@ class MailPollingService {
       let sent = 0;
       let alreadyProcessedCount = 0;
 
-      // ✅ TRAITER UN MESSAGE À LA FOIS (séquentiel)
       for (const message of newMessages) {
         const result = await this.processMessage(message, user);
         if (result?.sent) {
@@ -76,6 +109,9 @@ class MailPollingService {
     } catch (error) {
       console.error(`  ❌ [${user.email}] Erreur:`, error.message);
       return { processed: 0, sent: 0 };
+    } finally {
+      // ✅ TOUJOURS libérer le verrou utilisateur
+      this.processingUsers.delete(userKey);
     }
   }
 
@@ -234,14 +270,15 @@ class MailPollingService {
   async processMessage(message, user) {
     const lockKey = `${user._id}-${message.id}`;
     
+    // ✅ BLOQUER si ce message est déjà en cours de traitement
     if (this.processingMessages.has(lockKey)) {
-      console.log(`    ⏭️ Message déjà en cours de traitement`);
       return { sent: false, alreadyProcessed: true };
     }
 
     this.processingMessages.add(lockKey);
 
     try {
+      // ✅ VÉRIFIER SI DÉJÀ TRAITÉ EN BASE
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
         messageId: message.id
