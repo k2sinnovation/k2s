@@ -122,8 +122,6 @@ class MailPollingService {
     } catch (error) {
       if (error.response?.status === 429) {
         console.warn(`  ⚠️ [Quota] Limite atteinte`);
-      } else if (error.response) {
-        console.error(`  ❌ [Fetch] Erreur ${error.response.status}:`, error.response.data);
       } else {
         console.error(`  ❌ [Fetch] Erreur:`, error.message);
       }
@@ -131,37 +129,56 @@ class MailPollingService {
     }
   }
 
-  // ✅ UNE SEULE fetchFullMessage AVEC LOGS DÉTAILLÉS
   async fetchFullMessage(messageId, emailConfig) {
-    console.log(`🔍🔍🔍 DEBUT fetchFullMessage pour ${messageId}`);
-    
     const BASE_URL = 'https://k2s.onrender.com';
-    const url = `${BASE_URL}/api/mail/gmail/message/${messageId}`;
-    
-    console.log(`🔗 URL: ${url}`);
-    console.log(`🔑 Token présent: ${emailConfig.accessToken ? 'OUI' : 'NON'}`);
-    console.log(`🔑 Token longueur: ${emailConfig.accessToken?.length || 0}`);
 
     try {
-      const response = await axios.get(url, {
-        headers: { 
-          'Authorization': `Bearer ${emailConfig.accessToken}` 
-        },
+      const response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
         timeout: 15000
       });
 
-      console.log(`✅✅✅ Réponse OK: ${JSON.stringify(response.data).substring(0, 100)}`);
-      return response.data;
+      return response?.data || null;
 
     } catch (error) {
-      console.log(`❌❌❌ ERREUR COMPLETE:`, JSON.stringify({
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-        headers: error.response?.headers
-      }, null, 2));
-      
+      console.error(`      ❌ Erreur récupération:`, error.message);
       return null;
+    }
+  }
+
+  // ✅ NOUVELLE FONCTION : Marquer comme lu
+  async markAsRead(messageId, emailConfig) {
+    try {
+      if (emailConfig.provider === 'gmail') {
+        await axios.post(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+          {
+            removeLabelIds: ['UNREAD']
+          },
+          {
+            headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+            timeout: 10000
+          }
+        );
+        console.log(`      ✅ Message marqué comme lu`);
+      } else if (emailConfig.provider === 'outlook') {
+        await axios.patch(
+          `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
+          {
+            isRead: true
+          },
+          {
+            headers: { 
+              'Authorization': `Bearer ${emailConfig.accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          }
+        );
+        console.log(`      ✅ Message marqué comme lu`);
+      }
+    } catch (error) {
+      console.error(`      ⚠️ Erreur marquage lu:`, error.message);
     }
   }
 
@@ -182,7 +199,9 @@ class MailPollingService {
       const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
       
       if (!fullMessage) {
-        console.log(`    ❌ Impossible de récupérer le message complet`);
+        console.log(`    ❌ Impossible de récupérer le message`);
+        // ✅ MARQUER COMME LU MÊME EN CAS D'ERREUR
+        await this.markAsRead(message.id, user.emailConfig);
         return { sent: false };
       }
 
@@ -205,12 +224,14 @@ class MailPollingService {
           },
           status: 'ignored'
         });
+
+        // ✅ MARQUER COMME LU
+        await this.markAsRead(message.id, user.emailConfig);
         return { sent: false };
       }
 
       console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
 
-      console.log(`    🤖 Génération de la réponse...`);
       const response = await aiService.generateResponse(fullMessage, analysis, user);
 
       const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
@@ -239,6 +260,9 @@ class MailPollingService {
           sentAt: new Date()
         });
 
+        // ✅ MARQUER COMME LU
+        await this.markAsRead(message.id, user.emailConfig);
+
         console.log(`    ✅ Réponse envoyée à ${message.from}`);
         return { sent: true };
 
@@ -260,11 +284,16 @@ class MailPollingService {
           status: 'pending'
         });
 
+        // ✅ NE PAS MARQUER COMME LU si validation requise
+        // L'utilisateur doit voir l'email pour valider
+
         return { sent: false };
       }
 
     } catch (error) {
       console.error(`    ❌ Erreur traitement:`, error.message);
+      // ✅ MARQUER COMME LU MÊME EN CAS D'ERREUR
+      await this.markAsRead(message.id, user.emailConfig);
       return { sent: false };
     }
   }
