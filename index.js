@@ -4,7 +4,7 @@ const OpenAI = require("openai");
 const cors = require('cors');
 const multer = require('multer');
 const http = require('http');
-const cron = require('node-cron'); // ✅ AJOUT
+const cron = require('node-cron');
 
 require('dotenv').config();
 
@@ -139,7 +139,7 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.2.0',
+    version: '2.3.0',
     endpoints: {
       auth: '/api/auth/*',
       user: '/api/user/*',
@@ -155,9 +155,17 @@ app.get('/', (req, res) => {
         whatsapp: '/api/whatsapp/*',
       },
       autoReply: {
+        check: '/api/auto-reply/check/:messageId',
+        checkBatch: '/api/auto-reply/check-batch',
+        sent: '/api/auto-reply/sent',
+        stats: '/api/auto-reply/stats',
         aiSettings: '/api/user/ai-settings',
         prestations: '/api/user/prestations',
         appointments: '/api/user/appointments',
+      },
+      admin: {
+        forceCheck: '/api/admin/force-check',
+        pollingStatus: '/api/admin/polling-status',
       },
       analyze: '/api/analyze',
       answer: '/api/answer',
@@ -202,6 +210,50 @@ app.post('/api/ask', async (req, res) => {
   }
 });
 
+// ===== ROUTES DE DEBUG AUTO-REPLY =====
+
+// 🧪 Forcer un check manuel (utile pour tester)
+app.post('/api/admin/force-check', async (req, res) => {
+  try {
+    console.log('🔧 [Admin] Force check manuel déclenché');
+    
+    // Exécuter sans attendre
+    mailPollingService.checkAllUsers().catch(err => {
+      console.error('❌ Erreur force check:', err.message);
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Vérification manuelle démarrée en arrière-plan' 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🧪 Voir le statut du polling
+app.get('/api/admin/polling-status', async (req, res) => {
+  try {
+    const timeSinceLastPoll = Date.now() - mailPollingService.lastPollingStart;
+    const cooldownRemaining = Math.max(0, mailPollingService.POLLING_COOLDOWN - timeSinceLastPoll);
+    
+    const status = {
+      isPolling: mailPollingService.isPolling,
+      lastPollingStart: mailPollingService.lastPollingStart,
+      lastPollingDate: new Date(mailPollingService.lastPollingStart).toISOString(),
+      timeSinceLastPoll: Math.round(timeSinceLastPoll / 1000) + 's',
+      processingUsers: mailPollingService.processingUsers.size,
+      processingMessages: mailPollingService.processingMessages.size,
+      cooldownRemaining: Math.round(cooldownRemaining / 1000) + 's',
+      canPollNow: cooldownRemaining === 0 && !mailPollingService.isPolling
+    };
+    
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== GESTION D'ERREURS =====
 
 // Route 404
@@ -243,26 +295,34 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  🤖 OpenAI: configuré                  ║
 ║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
-║  🔄 Auto-Reply: actif (1 minute)       ║
+║  🔄 Auto-Reply: actif (5 minutes)      ║
 ╚════════════════════════════════════════╝
       `);
 
       // 🤖 DÉMARRER LE POLLING AUTOMATIQUE
       console.log('🤖 Initialisation du système d\'auto-réponse...');
       
-      // Check immédiat au démarrage
-      mailPollingService.checkAllUsers().catch(err => {
-        console.error('❌ Erreur check initial:', err.message);
-      });
+      // ✅ Check initial avec délai aléatoire (éviter les doublons multi-instances)
+      const initialDelay = Math.floor(Math.random() * 30000); // 0-30 secondes
+      console.log(`🤖 Premier check dans ${Math.round(initialDelay/1000)}s...`);
 
-      // ⏱️ POLLING TOUTES LES 1 MINUTE
-      cron.schedule('* * * * *', () => {
+      setTimeout(() => {
+        console.log('🔍 [Initial] Démarrage check initial...');
         mailPollingService.checkAllUsers().catch(err => {
-          console.error('❌ Erreur CRON:', err.message);
+          console.error('❌ [Initial] Erreur:', err.message);
+        });
+      }, initialDelay);
+
+      // ⏱️ POLLING TOUTES LES 5 MINUTES (recommandé pour production)
+      cron.schedule('*/5 * * * *', () => {
+        console.log('⏰ [CRON] Démarrage vérification emails automatique...');
+        mailPollingService.checkAllUsers().catch(err => {
+          console.error('❌ [CRON] Erreur:', err.message);
         });
       });
 
-      console.log('✅ Auto-Reply activé : vérification toutes les 1 minute');
+      console.log('✅ Auto-Reply activé : vérification toutes les 5 minutes');
+      console.log('💡 Astuce : Utilisez POST /api/admin/force-check pour forcer un check manuel');
     });
   })
   .catch((err) => {
