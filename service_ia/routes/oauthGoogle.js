@@ -353,4 +353,51 @@ function generateHtmlRedirect(deepLink, title, message) {
   `;
 }
 
+// ========================================
+// ROUTE REFRESH TOKEN GOOGLE
+// ========================================
+
+router.post('/oauth/google/refresh', async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+
+    if (!refresh_token) {
+      return res.status(400).json({ error: 'refresh_token manquant' });
+    }
+
+    console.log('🔄 [OAuth] Refresh token Google...');
+
+    const response = await axios.post(
+      'https://oauth2.googleapis.com/token',
+      new URLSearchParams({
+        refresh_token: refresh_token,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        grant_type: 'refresh_token',
+      }),
+      { 
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 10000,
+      }
+    );
+
+    const { access_token, expires_in, id_token } = response.data;
+
+    console.log('✅ [OAuth] Token Google rafraîchi');
+
+    res.json({
+      access_token,
+      expires_in: expires_in || 3600,
+      id_token: id_token || '',
+    });
+
+  } catch (error) {
+    console.error('❌ [OAuth] Erreur refresh:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Erreur refresh token',
+      details: error.message 
+    });
+  }
+});
+
 module.exports = router;
