@@ -283,11 +283,11 @@ router.put('/email-config', protect, async (req, res) => {
  */
 router.put('/prestations', protect, async (req, res) => {
   try {
-    const { id, ...data } = req.body;
+    const { id, ...data } = req.body; // Flutter envoie toujours 'id'
 
     await Prestation.findOneAndUpdate(
-      { userId: req.user._id, id },
-      { $set: { ...data, userId: req.user._id } },
+      { userId: req.user._id, flutterId: id }, // ✅ CHANGÉ : utilise 'flutterId'
+      { $set: { ...data, flutterId: id, userId: req.user._id } }, // ✅ CHANGÉ
       { upsert: true, new: true }
     );
 
@@ -307,11 +307,11 @@ router.put('/prestations', protect, async (req, res) => {
  */
 router.put('/appointments', protect, async (req, res) => {
   try {
-    const { id, ...data } = req.body;
+    const { id, ...data } = req.body; // Flutter envoie toujours 'id'
 
     await Appointment.findOneAndUpdate(
-      { userId: req.user._id, id },
-      { $set: { ...data, userId: req.user._id } },
+      { userId: req.user._id, flutterId: id }, // ✅ CHANGÉ : utilise 'flutterId'
+      { $set: { ...data, flutterId: id, userId: req.user._id } }, // ✅ CHANGÉ
       { upsert: true, new: true }
     );
 
