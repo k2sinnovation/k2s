@@ -79,8 +79,159 @@ class MailPollingService {
     }
   }
 
+  async fetchNewEmails(emailConfig) {
+    const BASE_URL = 'https://k2s.onrender.com';
+
+    try {
+      let response;
+
+      if (emailConfig.provider === 'gmail') {
+        response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          params: {
+            q: 'is:unread in:inbox'
+          },
+          timeout: 15000
+        });
+        
+        const messages = response?.data?.messages || [];
+        
+        if (messages.length > 0) {
+          console.log(`  📨 ${messages.length} messages non lus trouvés`);
+        }
+        
+        return messages;
+        
+      } else if (emailConfig.provider === 'outlook') {
+        response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 15000
+        });
+        
+        if (response?.data?.messages) {
+          const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
+          
+          if (unreadMessages.length > 0) {
+            console.log(`  📨 ${unreadMessages.length} messages non lus`);
+          }
+          
+          return unreadMessages;
+        }
+      }
+
+      return [];
+
+    } catch (error) {
+      if (error.response?.status === 429) {
+        console.warn(`  ⚠️ [Quota] Limite atteinte`);
+      } else {
+        console.error(`  ❌ [Fetch] Erreur:`, error.message);
+      }
+      return [];
+    }
+  }
+
+  async markAsRead(messageId, emailConfig) {
+    try {
+      if (emailConfig.provider === 'gmail') {
+        await axios.post(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+          {
+            removeLabelIds: ['UNREAD']
+          },
+          {
+            headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+            timeout: 10000
+          }
+        );
+        return true;
+        
+      } else if (emailConfig.provider === 'outlook') {
+        await axios.patch(
+          `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
+          {
+            isRead: true
+          },
+          {
+            headers: { 
+              'Authorization': `Bearer ${emailConfig.accessToken}`,
+              'Content-Type': 'application/json'
+          },
+            timeout: 10000
+          }
+        );
+        return true;
+      }
+      
+      return false;
+
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async getConversationHistory(threadId, emailConfig) {
+    try {
+      if (!threadId) return [];
+
+      const response = await axios.get(
+        `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`,
+        {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 15000
+        }
+      );
+
+      const messages = response?.data?.messages || [];
+      
+      const history = [];
+      for (const msg of messages) {
+        const headers = msg.payload?.headers || [];
+        const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || '';
+        const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
+        
+        let body = '';
+        const extractBody = (part) => {
+          if (part.mimeType === 'text/plain' || part.mimeType === 'text/html') {
+            const bodyData = part.body?.data;
+            if (bodyData) {
+              try {
+                body = Buffer.from(bodyData, 'base64').toString('utf-8');
+              } catch (e) {}
+            }
+          }
+          if (part.parts) {
+            part.parts.forEach(extractBody);
+          }
+        };
+        
+        if (msg.payload) {
+          extractBody(msg.payload);
+        }
+        
+        if (!body) {
+          body = msg.snippet || '';
+        }
+
+        history.push({
+          from,
+          subject,
+          body: body.substring(0, 500),
+          date: new Date(parseInt(msg.internalDate))
+        });
+      }
+
+      history.sort((a, b) => a.date - b.date);
+
+      return history;
+
+    } catch (error) {
+      console.error(`    ⚠️ Impossible de récupérer l'historique:`, error.message);
+      return [];
+    }
+  }
+
   async processMessage(message, user) {
-    // ✅ VÉRIFIER SI LE MESSAGE EST EN COURS DE TRAITEMENT
     const lockKey = `${user._id}-${message.id}`;
     
     if (this.processingMessages.has(lockKey)) {
@@ -88,11 +239,9 @@ class MailPollingService {
       return { sent: false, alreadyProcessed: true };
     }
 
-    // ✅ VERROUILLER LE MESSAGE
     this.processingMessages.add(lockKey);
 
     try {
-      // ✅ VÉRIFIER SI DÉJÀ TRAITÉ
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
         messageId: message.id
@@ -221,12 +370,65 @@ class MailPollingService {
       return { sent: false, alreadyProcessed: false };
       
     } finally {
-      // ✅ DÉVERROUILLER LE MESSAGE
       this.processingMessages.delete(lockKey);
     }
   }
 
-  // ... reste du code identique
+  async fetchFullMessage(messageId, emailConfig) {
+    const BASE_URL = 'https://k2s.onrender.com';
+
+    try {
+      const response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+
+      return response?.data || null;
+
+    } catch (error) {
+      console.error(`      ❌ Erreur récupération:`, error.message);
+      return null;
+    }
+  }
+
+  async sendReply(message, responseBody, user) {
+    const BASE_URL = 'https://k2s.onrender.com';
+
+    try {
+      if (user.emailConfig.provider === 'gmail') {
+        const response = await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
+          threadId: message.threadId,
+          to: message.from,
+          subject: message.subject || '(sans objet)',
+          body: responseBody
+        }, {
+          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+          timeout: 15000
+        });
+
+        return response.status === 200;
+        
+      } else if (user.emailConfig.provider === 'outlook') {
+        const response = await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
+          messageId: message.id,
+          to: message.from,
+          subject: message.subject || '(sans objet)',
+          body: responseBody
+        }, {
+          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+          timeout: 15000
+        });
+
+        return response.status === 200;
+      }
+
+      return false;
+      
+    } catch (error) {
+      console.error(`    ❌ Erreur envoi:`, error.message);
+      return false;
+    }
+  }
 }
 
 module.exports = new MailPollingService();
