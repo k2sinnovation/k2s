@@ -162,9 +162,10 @@ router.get('/oauth/google/callback', async (req, res) => {
     res.send(generateHtmlRedirect(deepLink, '❌ Erreur serveur', error.message));
   }
 });
+// ✅ VERSION AVEC POPUP DE CONFIRMATION (1 SEULE FOIS)
+// À utiliser si vous préférez demander confirmation à l'utilisateur
 
-// ✅ FONCTION HTML OPTIMISÉE - UNE SEULE REDIRECTION
-function generateHtmlRedirect(deepLink, title, message) {
+function generateHtmlRedirectWithConfirm(deepLink, title, message) {
   const isSuccess = title.includes('✓');
   const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
   const icon = isSuccess ? '✓' : '❌';
@@ -221,20 +222,7 @@ function generateHtmlRedirect(deepLink, title, message) {
           font-size: 14px;
           word-break: break-word;
         }
-        .spinner {
-          display: inline-block;
-          width: 20px;
-          height: 20px;
-          border: 3px solid rgba(255,255,255,0.3);
-          border-radius: 50%;
-          border-top-color: white;
-          animation: spin 1s ease-in-out infinite;
-          margin-top: 10px;
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .manual-link {
+        .btn {
           margin-top: 20px;
           padding: 15px 30px;
           background: white;
@@ -245,9 +233,30 @@ function generateHtmlRedirect(deepLink, title, message) {
           font-size: 16px;
           cursor: pointer;
           text-decoration: none;
-          display: none;
+          display: inline-block;
           box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+          transition: transform 0.2s;
         }
+        .btn:hover {
+          transform: scale(1.05);
+        }
+        .btn:active {
+          transform: scale(0.95);
+        }
+        .spinner {
+          display: inline-block;
+          width: 20px;
+          height: 20px;
+          border: 3px solid rgba(255,255,255,0.3);
+          border-radius: 50%;
+          border-top-color: white;
+          animation: spin 1s ease-in-out infinite;
+          margin-left: 10px;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        #redirecting { display: none; }
       </style>
     </head>
     <body>
@@ -256,21 +265,24 @@ function generateHtmlRedirect(deepLink, title, message) {
         <h1>${title}</h1>
         ${message ? `<div class="message">${message}</div>` : ''}
         
-        <div id="status">
-          Ouverture de l'application...
-          <div class="spinner"></div>
+        <div id="confirmSection">
+          <button class="btn" id="openAppBtn">
+            📱 Ouvrir l'application
+          </button>
         </div>
         
-        <a href="${deepLink}" class="manual-link" id="manualBtn">
-          📱 Ouvrir l'application
-        </a>
+        <div id="redirecting">
+          Ouverture en cours...
+          <div class="spinner"></div>
+        </div>
       </div>
       
       <script>
         const deepLink = ${JSON.stringify(deepLink)};
         let appOpened = false;
+        let userConfirmed = false;
         
-        console.log('🔗 Redirection vers l\'application...');
+        console.log('🔗 Popup de confirmation chargée');
         
         // ✅ DÉTECTION D'OUVERTURE APP
         function onAppOpened() {
@@ -278,42 +290,92 @@ function generateHtmlRedirect(deepLink, title, message) {
           appOpened = true;
           
           console.log('✅ Application ouverte');
-          document.getElementById('status').innerHTML = 
-            '✅ Retour à l\'application...<div style="margin-top:10px; font-size:14px; opacity:0.8;">Vous pouvez fermer cette page</div>';
+          
+          document.getElementById('confirmSection').style.display = 'none';
+          document.getElementById('redirecting').style.display = 'block';
+          document.getElementById('redirecting').innerHTML = 
+            '✅ Retour à l\'application...<div style="margin-top:10px; font-size:14px;">Vous pouvez fermer cette page</div>';
           
           // Tentative de fermeture automatique
           setTimeout(() => {
-            try { window.close(); } catch(e) {}
-          }, 1500);
+            try { window.close(); } catch(e) {
+              console.log('Fermeture auto impossible');
+            }
+          }, 2000);
         }
         
         // Événements de détection
-        window.addEventListener('blur', onAppOpened);
-        window.addEventListener('pagehide', onAppOpened);
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) onAppOpened();
+        window.addEventListener('blur', () => {
+          if (userConfirmed) {
+            console.log('📱 blur détecté après confirmation');
+            onAppOpened();
+          }
         });
         
-        // ✅ UNE SEULE REDIRECTION AUTOMATIQUE
-        setTimeout(() => {
-          if (!appOpened) {
-            console.log('🚀 Redirection automatique...');
-            window.location.href = deepLink;
+        window.addEventListener('pagehide', () => {
+          if (userConfirmed) {
+            console.log('📱 pagehide détecté après confirmation');
+            onAppOpened();
           }
-        }, 100);
+        });
         
-        // Bouton manuel de secours après 3s
-        setTimeout(() => {
-          if (!appOpened) {
-            console.log('🔘 Affichage bouton manuel');
-            document.getElementById('manualBtn').style.display = 'inline-block';
-            document.getElementById('status').style.display = 'none';
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden && userConfirmed) {
+            console.log('📱 visibilitychange détecté après confirmation');
+            onAppOpened();
           }
-        }, 3000);
+        });
+        
+        // ✅ BOUTON DE CONFIRMATION (UNE SEULE POPUP)
+        document.getElementById('openAppBtn').addEventListener('click', function() {
+          if (userConfirmed) {
+            console.log('⚠️ Déjà confirmé, abandon');
+            return;
+          }
+          
+          userConfirmed = true;
+          console.log('👆 Utilisateur a confirmé');
+          
+          // Afficher l'état de chargement
+          document.getElementById('confirmSection').style.display = 'none';
+          document.getElementById('redirecting').style.display = 'block';
+          
+          // Redirection unique
+          setTimeout(() => {
+            console.log('🚀 Redirection vers app...');
+            window.location.href = deepLink;
+            
+            // Si toujours là après 3s, c'est un échec
+            setTimeout(() => {
+              if (!appOpened) {
+                console.log('⚠️ Échec ouverture app');
+                document.getElementById('redirecting').innerHTML = 
+                  '⚠️ Impossible d\'ouvrir l\'application<div style="margin-top:15px; font-size:14px;">Vérifiez que l\'application est installée</div>' +
+                  '<button class="btn" onclick="location.reload()" style="margin-top:20px;">🔄 Réessayer</button>';
+              }
+            }, 3000);
+          }, 300);
+        });
+        
+        // ✅ AUTO-OUVERTURE APRÈS 2 SECONDES (optionnel, commentez si non désiré)
+        ${isSuccess ? `
+        setTimeout(() => {
+          if (!userConfirmed && !appOpened) {
+            console.log('⏱️ Auto-ouverture après 2s');
+            document.getElementById('openAppBtn').click();
+          }
+        }, 2000);
+        ` : ''}
       </script>
     </body>
     </html>
   `;
 }
 
-module.exports = router;
+// ✅ UTILISATION DANS LE ROUTER
+// Remplacez dans votre route OAuth callback:
+// res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
+// PAR:
+// res.send(generateHtmlRedirectWithConfirm(deepLink, '✓ Connexion réussie', email));
+
+module.exports = { generateHtmlRedirectWithConfirm };
