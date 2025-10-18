@@ -8,6 +8,10 @@ const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.goo
 const GOOGLE_CLIENT_SECRET = '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';
 const REDIRECT_URI = 'https://k2s.onrender.com/oauth/google/callback';
 
+// ========================================
+// ROUTE CALLBACK OAUTH GOOGLE
+// ========================================
+
 router.get('/oauth/google/callback', async (req, res) => {
   try {
     const { code, error, error_description } = req.query;
@@ -154,7 +158,13 @@ router.get('/oauth/google/callback', async (req, res) => {
     
     console.log('🔗 [OAuth] Deep link créé');
 
+    // ✅ CHOISIR LA VERSION (commentez celle que vous ne voulez pas)
+    
+    // VERSION 1: Auto-ouverture avec bouton de secours (recommandé)
     res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
+    
+    // VERSION 2: Avec bouton de confirmation (décommentez si préféré)
+    // res.send(generateHtmlRedirectWithConfirm(deepLink, '✓ Connexion réussie', email));
 
   } catch (error) {
     console.error('❌ [OAuth] Erreur:', error.message);
@@ -162,8 +172,214 @@ router.get('/oauth/google/callback', async (req, res) => {
     res.send(generateHtmlRedirect(deepLink, '❌ Erreur serveur', error.message));
   }
 });
-// ✅ VERSION AVEC POPUP DE CONFIRMATION (1 SEULE FOIS)
-// À utiliser si vous préférez demander confirmation à l'utilisateur
+
+// ========================================
+// VERSION 1: AUTO-OUVERTURE (1 TENTATIVE)
+// ========================================
+
+function generateHtmlRedirect(deepLink, title, message) {
+  const isSuccess = title.includes('✓');
+  const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
+  const icon = isSuccess ? '✓' : '❌';
+
+  return `
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${title}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 100vh;
+          background: linear-gradient(135deg, ${bgColor} 0%, ${bgColor}cc 100%);
+          color: white;
+          padding: 20px;
+        }
+        .container {
+          text-align: center;
+          padding: 40px;
+          background: rgba(255,255,255,0.1);
+          border-radius: 20px;
+          backdrop-filter: blur(10px);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+          max-width: 400px;
+          width: 100%;
+        }
+        .icon {
+          font-size: 80px;
+          margin-bottom: 20px;
+          animation: scale 0.5s ease-in-out;
+        }
+        @keyframes scale {
+          0% { transform: scale(0); }
+          50% { transform: scale(1.2); }
+          100% { transform: scale(1); }
+        }
+        h1 { 
+          margin: 20px 0; 
+          font-size: 28px;
+          font-weight: 600;
+        }
+        .message {
+          background: rgba(255,255,255,0.2);
+          padding: 15px 20px;
+          border-radius: 10px;
+          margin: 20px 0;
+          font-size: 14px;
+          word-break: break-word;
+        }
+        .spinner {
+          display: inline-block;
+          width: 20px;
+          height: 20px;
+          border: 3px solid rgba(255,255,255,0.3);
+          border-radius: 50%;
+          border-top-color: white;
+          animation: spin 1s ease-in-out infinite;
+          margin-top: 10px;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .manual-link {
+          margin-top: 20px;
+          padding: 15px 30px;
+          background: white;
+          color: ${bgColor};
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 16px;
+          cursor: pointer;
+          text-decoration: none;
+          display: none;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="icon">${icon}</div>
+        <h1>${title}</h1>
+        ${message ? `<div class="message">${message}</div>` : ''}
+        
+        <div id="status">
+          Ouverture de l'application...
+          <div class="spinner"></div>
+        </div>
+        
+        <a href="${deepLink}" class="manual-link" id="manualBtn">
+          📱 Ouvrir l'application
+        </a>
+      </div>
+      
+      <script>
+        const deepLink = ${JSON.stringify(deepLink)};
+        let appOpened = false;
+        let redirectAttempted = false;
+        
+        console.log('🔗 Préparation redirection...');
+        
+        // ✅ DÉTECTION D'OUVERTURE APP
+        function onAppOpened() {
+          if (appOpened) return;
+          appOpened = true;
+          
+          console.log('✅ Application ouverte');
+          document.getElementById('status').innerHTML = 
+            '✅ Retour à l\'application...<div style="margin-top:10px; font-size:14px; opacity:0.8;">Vous pouvez fermer cette page</div>';
+          
+          // Tentative de fermeture automatique
+          setTimeout(() => {
+            try { window.close(); } catch(e) {
+              console.log('Fermeture auto impossible, affichage message');
+            }
+          }, 1500);
+        }
+        
+        // ✅ FONCTION DE REDIRECTION (UNE SEULE FOIS)
+        function attemptRedirect() {
+          if (redirectAttempted) {
+            console.log('⚠️ Redirection déjà tentée, abandon');
+            return;
+          }
+          redirectAttempted = true;
+          
+          console.log('🚀 Redirection vers app...');
+          
+          // Détecter si on revient sur la page (échec redirection)
+          const startTime = Date.now();
+          
+          window.location.href = deepLink;
+          
+          // Si après 2s on est toujours là, c'est que ça a échoué
+          setTimeout(() => {
+            if (!appOpened) {
+              const elapsed = Date.now() - startTime;
+              console.log(\`⚠️ Toujours sur la page après \${elapsed}ms\`);
+              
+              // Afficher le bouton manuel
+              document.getElementById('manualBtn').style.display = 'inline-block';
+              document.getElementById('status').innerHTML = 
+                '⚠️ Ouverture automatique impossible<div style="margin-top:10px; font-size:14px;">Cliquez sur le bouton ci-dessous</div>';
+            }
+          }, 2000);
+        }
+        
+        // Événements de détection (avant la redirection pour iOS)
+        window.addEventListener('blur', () => {
+          console.log('📱 blur détecté');
+          onAppOpened();
+        });
+        
+        window.addEventListener('pagehide', () => {
+          console.log('📱 pagehide détecté');
+          onAppOpened();
+        });
+        
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) {
+            console.log('📱 visibilitychange (hidden) détecté');
+            onAppOpened();
+          }
+        });
+        
+        // ✅ REDIRECTION UNIQUE APRÈS 100MS
+        setTimeout(attemptRedirect, 100);
+        
+        // ✅ BOUTON MANUEL après 3s si toujours là
+        setTimeout(() => {
+          if (!appOpened && !redirectAttempted) {
+            console.log('🔘 Affichage bouton manuel (timeout)');
+            document.getElementById('manualBtn').style.display = 'inline-block';
+            document.getElementById('status').style.display = 'none';
+          }
+        }, 3000);
+        
+        // ✅ ARRÊT DÉFINITIF après 10s (éviter boucle infinie)
+        setTimeout(() => {
+          if (!appOpened) {
+            console.log('⏱️ Timeout 10s atteint, arrêt');
+            document.getElementById('status').innerHTML = 
+              '⚠️ Impossible d\'ouvrir automatiquement<div style="margin-top:10px; font-size:14px;">Utilisez le bouton ci-dessous</div>';
+            document.getElementById('manualBtn').style.display = 'inline-block';
+          }
+        }, 10000);
+      </script>
+    </body>
+    </html>
+  `;
+}
+
+// ========================================
+// VERSION 2: AVEC POPUP DE CONFIRMATION
+// ========================================
 
 function generateHtmlRedirectWithConfirm(deepLink, title, message) {
   const isSuccess = title.includes('✓');
@@ -357,11 +573,11 @@ function generateHtmlRedirectWithConfirm(deepLink, title, message) {
           }, 300);
         });
         
-        // ✅ AUTO-OUVERTURE APRÈS 2 SECONDES (optionnel, commentez si non désiré)
+        // ✅ AUTO-OUVERTURE APRÈS 2 SECONDES (optionnel)
         ${isSuccess ? `
         setTimeout(() => {
           if (!userConfirmed && !appOpened) {
-            console.log('⏱️ Auto-ouverture après 2s');
+            console.log('⏱️ Auto-clic après 2s');
             document.getElementById('openAppBtn').click();
           }
         }, 2000);
@@ -372,10 +588,4 @@ function generateHtmlRedirectWithConfirm(deepLink, title, message) {
   `;
 }
 
-// ✅ UTILISATION DANS LE ROUTER
-// Remplacez dans votre route OAuth callback:
-// res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
-// PAR:
-// res.send(generateHtmlRedirectWithConfirm(deepLink, '✓ Connexion réussie', email));
-
-module.exports = { generateHtmlRedirectWithConfirm };
+module.exports = router;
