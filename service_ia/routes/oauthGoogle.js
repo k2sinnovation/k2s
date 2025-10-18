@@ -4,9 +4,21 @@ const axios = require('axios');
 const User = require('../models/User');
 const Session = require('../models/Session');
 
+// ✅ APRÈS - AJOUTER CETTE LIGNE
 const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
 const REDIRECT_URI = 'https://k2s.onrender.com/oauth/google/callback';
+
+// ✅ NOUVEAU : Scopes Google avec Drive
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/drive.appdata', // ✅ DOSSIER CACHÉ DRIVE
+  'openid',
+  'profile',
+].join(' ');
 
 router.get('/oauth/google/callback', async (req, res) => {
   try {
@@ -120,23 +132,41 @@ router.get('/oauth/google/callback', async (req, res) => {
       { isActive: false }
     );
 
-    const newSession = await Session.create({
-      userId: user._id,
-      deviceId: deviceId,
-      sessionToken: hashedToken,
-      emailProvider: 'gmail',
-      emailAccessToken: access_token,
-      emailRefreshToken: refresh_token || '',
-      ipAddress: req.ip || req.connection.remoteAddress,
-      deviceInfo: {
-        platform: 'mobile',
-        appVersion: '1.0.0'
-      }
-    });
+// ✅ APRÈS
+const newSession = await Session.create({
+  userId: user._id,
+  deviceId: deviceId,
+  sessionToken: hashedToken,
+  emailProvider: 'gmail',
+  emailAccessToken: access_token,
+  emailRefreshToken: refresh_token || '',
+  ipAddress: req.ip || req.connection.remoteAddress,
+  deviceInfo: {
+    platform: 'mobile',
+    appVersion: '1.0.0'
+  }
+});
 
-    console.log(`✅ [OAuth] Session créée (ID: ${newSession._id})`);
+console.log(`✅ [OAuth] Session créée (ID: ${newSession._id})`);
 
-    const params = new URLSearchParams({
+// ✅ NOUVEAU : VÉRIFIER DRIVE (NON BLOQUANT)
+const driveService = require('../services/google-drive.service');
+try {
+  console.log(`📂 [OAuth] Vérification Drive pour ${user.email}...`);
+  
+  const driveStatus = await driveService.checkDriveFiles(access_token, user._id.toString());
+  
+  console.log(`📂 [OAuth] Drive: business=${driveStatus.businessExists}, planning=${driveStatus.planningExists}`);
+  
+  if (driveStatus.needsSetup) {
+    console.log(`📂 [OAuth] Première connexion Drive détectée pour ${user.email}`);
+  }
+} catch (driveError) {
+  console.warn(`⚠️ [OAuth] Impossible de vérifier Drive (non bloquant):`, driveError.message);
+}
+
+// Construction des params...
+const params = new URLSearchParams({
       access_token,
       email,
       success: 'true',
