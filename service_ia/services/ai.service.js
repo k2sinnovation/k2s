@@ -7,12 +7,10 @@ class AIService {
    */
   async analyzeMessage(message, user) {
     const settings = user.aiSettings;
-
-    // ✅ CORRECTION : Utiliser la clé d'environnement
     const apiKey = process.env.OPENAI_API_KEY;
     
     if (!apiKey) {
-      throw new Error('Clé API OpenAI manquante dans les variables d\'environnement');
+      throw new Error('Clé API OpenAI manquante');
     }
 
     const systemPrompt = `Tu es un assistant qui analyse les emails pour "${settings.salonName || user.businessName}".
@@ -50,17 +48,17 @@ Réponds UNIQUEMENT au format JSON:
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: settings.aiModel || 'gpt-4',
+          model: 'gpt-4o-mini', // ✅ CHANGÉ : 10x moins cher !
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
           ],
-          temperature: settings.temperature || 0.7,
+          temperature: 0.7,
           max_tokens: 150
         },
         {
           headers: {
-            'Authorization': `Bearer ${apiKey}`, // ✅ Clé d'environnement
+            'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
           },
           timeout: 30000
@@ -87,19 +85,16 @@ Réponds UNIQUEMENT au format JSON:
    */
   async generateResponse(message, analysis, user) {
     const settings = user.aiSettings;
-
-    // ✅ CORRECTION : Utiliser la clé d'environnement
     const apiKey = process.env.OPENAI_API_KEY;
     
     if (!apiKey) {
-      throw new Error('Clé API OpenAI manquante dans les variables d\'environnement');
+      throw new Error('Clé API OpenAI manquante');
     }
 
     if (!analysis.is_relevant) {
       return this._generateOutOfScopeResponse(settings, user);
     }
 
-    // Construire le contexte complet
     const fullContext = await user.buildAIContext();
 
     let specificInstructions = '';
@@ -160,7 +155,7 @@ Génère une réponse professionnelle et complète.`;
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          model: settings.aiModel || 'gpt-4',
+          model: settings.aiModel || 'gpt-4', // ✅ Garder GPT-4 pour qualité
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
@@ -170,7 +165,7 @@ Génère une réponse professionnelle et complète.`;
         },
         {
           headers: {
-            'Authorization': `Bearer ${apiKey}`, // ✅ Clé d'environnement
+            'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
           },
           timeout: 30000
@@ -188,9 +183,6 @@ Génère une réponse professionnelle et complète.`;
     }
   }
 
-  /**
-   * Réponse hors-cadre
-   */
   _generateOutOfScopeResponse(settings, user) {
     return `Bonjour,
 
