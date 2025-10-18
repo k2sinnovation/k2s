@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+// ✅ FORCER LA SUPPRESSION DU MODÈLE EXISTANT
+if (mongoose.models.User) {
+  delete mongoose.models.User;
+  delete mongoose.connection.models.User;
+}
+
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -40,7 +46,6 @@ const userSchema = new mongoose.Schema({
     default: Date.now,
   },
 
-  // 📧 CONFIGURATION EMAIL
   emailConfig: {
     provider: { type: String, enum: ['gmail', 'outlook'] },
     accessToken: String,
@@ -50,13 +55,11 @@ const userSchema = new mongoose.Schema({
     webhookExpiration: Date,
   },
 
-  // 🤖 CONFIGURATION IA
   aiSettings: {
     isEnabled: { type: Boolean, default: false },
     autoReplyEnabled: { type: Boolean, default: false },
     requireValidation: { type: Boolean, default: true },
     
-    // Informations entreprise
     salonName: { type: String, default: '' },
     ownerEmail: String,
     ownerPhone: String,
@@ -64,13 +67,11 @@ const userSchema = new mongoose.Schema({
     website: String,
     description: String,
     
-    // Instructions IA
     role: { type: String, default: 'Assistant virtuel pour la gestion des rendez-vous et réponses clients' },
     instructions: { type: String, default: 'Sois professionnelle et amicale. Réponds uniquement aux demandes liées à mon activité.' },
     tone: { type: String, default: 'professionnel' },
     pricing: { type: String, default: '' },
     
-    // Horaires d'ouverture
     schedule: {
       type: Map,
       of: {
@@ -89,7 +90,6 @@ const userSchema = new mongoose.Schema({
       }
     },
     
-    // Paramètres OpenAI
     apiKey: String,
     aiModel: { type: String, default: 'gpt-4' },
     temperature: { type: Number, default: 0.7 },
@@ -98,11 +98,14 @@ const userSchema = new mongoose.Schema({
     lastUpdated: { type: Date, default: Date.now }
   },
 
-  // 📲 Token FCM pour notifications push
   fcmToken: String,
+}, {
+  // ✅ OPTIONS DU SCHÉMA POUR DÉSACTIVER LE CHAMP 'id' VIRTUEL
+  id: false,
+  toJSON: { virtuals: false },
+  toObject: { virtuals: false }
 });
 
-// ✅ Hash du mot de passe
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   
@@ -114,23 +117,19 @@ userSchema.pre('save', async function (next) {
   }
 });
 
-// ✅ Comparer mot de passe
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// 🆕 Construire le contexte IA dynamiquement
 userSchema.methods.buildAIContext = async function() {
   const Prestation = mongoose.model('Prestation');
   const Appointment = mongoose.model('Appointment');
 
-  // Récupérer les prestations actives
   const prestations = await Prestation.find({ 
     userId: this._id, 
     isActive: true 
   });
 
-  // Récupérer les RDV des 7 prochains jours
   const now = new Date();
   const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   const appointments = await Appointment.find({
@@ -193,9 +192,10 @@ userSchema.methods.buildAIContext = async function() {
   return context;
 };
 
-// 🆕 Récupérer les paramètres IA
 userSchema.methods.getAISettings = function() {
   return this.aiSettings;
 };
 
-module.exports = mongoose.models.User || mongoose.model('User', userSchema);
+// ✅ EXPORTER SANS CACHE
+const User = mongoose.model('User', userSchema);
+module.exports = User;
