@@ -66,6 +66,8 @@ class MailPollingService {
         return { processed: 0, sent: 0 };
       }
 
+      console.log(`  📨 ${newMessages.length} nouveaux messages non lus`);
+
       let sent = 0;
 
       for (const message of newMessages) {
@@ -76,248 +78,238 @@ class MailPollingService {
       return { processed: newMessages.length, sent };
 
     } catch (error) {
-      console.error(`❌ [Polling] Erreur ${user.email}:`, error.message);
+      console.error(`  ❌ [${user.email}] Erreur:`, error.message);
       return { processed: 0, sent: 0 };
     }
   }
 
-/**
- * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
- */
-async fetchNewEmails(emailConfig) {
-  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+  /**
+   * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
+   */
+  async fetchNewEmails(emailConfig) {
+    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-  try {
-    let response;
+    try {
+      let response;
 
-    if (emailConfig.provider === 'gmail') {
-      response = await axios.get(`${BASE_URL}/api/mail/gmail/search`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        params: { 
-          q: 'is:unread in:inbox' // ✅ FILTRE : SEULEMENT NON-LUS
-        },
-        timeout: 15000
-      });
-    } else if (emailConfig.provider === 'outlook') {
-      response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        timeout: 15000
-      });
-      
-      // ✅ FILTRE CÔTÉ SERVICE : Garder seulement les non-lus
-      if (response?.data?.messages) {
-        response.data.messages = response.data.messages.filter(msg => !msg.isRead);
+      if (emailConfig.provider === 'gmail') {
+        response = await axios.get(`${BASE_URL}/api/mail/gmail/search`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          params: { 
+            q: 'is:unread in:inbox'
+          },
+          timeout: 15000
+        });
+      } else if (emailConfig.provider === 'outlook') {
+        response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 15000
+        });
+        
+        if (response?.data?.messages) {
+          response.data.messages = response.data.messages.filter(msg => !msg.isRead);
+        }
       }
-    }
 
-    const messages = response?.data?.messages || [];
-    
-    if (messages.length > 0) {
-      console.log(`  📨 ${messages.length} nouveaux messages non lus`);
-    }
+      return response?.data?.messages || [];
 
-    return messages;
-
-  } catch (error) {
-    if (error.response?.status === 429) {
-      console.warn(`  ⚠️ [Quota] Limite atteinte`);
-    } else {
-      console.error(`  ❌ [Fetch] Erreur:`, error.message);
+    } catch (error) {
+      if (error.response?.status === 429) {
+        console.warn(`  ⚠️ [Quota] Limite atteinte`);
+      } else {
+        console.error(`  ❌ [Fetch] Erreur:`, error.message);
+      }
+      return [];
     }
-    return [];
   }
-}
 
-/**
- * 🤖 Traiter un message
- */
-async processMessage(message, user) {
-  try {
-    console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
+  /**
+   * 🤖 Traiter un message
+   */
+  async processMessage(message, user) {
+    try {
+      console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
 
-    // Vérifier si déjà traité
-    const alreadyProcessed = await AutoReply.findOne({
-      userId: user._id,
-      messageId: message.id
-    });
-
-    if (alreadyProcessed) {
-      console.log(`    ⏭️ Déjà traité`);
-      return { sent: false };
-    }
-
-    // ✅ RÉCUPÉRER LE CORPS COMPLET DU MESSAGE
-    const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
-    
-    if (!fullMessage) {
-      console.log(`    ❌ Impossible de récupérer le message complet`);
-      return { sent: false };
-    }
-
-    // 1️⃣ ANALYSE
-    const analysis = await aiService.analyzeMessage(fullMessage, user);
-
-    if (!analysis.is_relevant) {
-      console.log(`    ⏭️ Non pertinent: ${analysis.reason || 'Non lié à l\'activité'}`);
-      
-      await AutoReply.create({
+      // Vérifier si déjà traité
+      const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
-        messageId: message.id,
-        from: message.from,
-        subject: message.subject,
-        body: fullMessage.body,
-        analysis: {
-          isRelevant: false,
-          confidence: analysis.confidence,
-          intent: analysis.intent,
-          reason: analysis.reason
-        },
-        status: 'ignored'
+        messageId: message.id
       });
+
+      if (alreadyProcessed) {
+        console.log(`    ⏭️ Déjà traité`);
+        return { sent: false };
+      }
+
+      // ✅ RÉCUPÉRER LE CORPS COMPLET DU MESSAGE
+      const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
+      
+      if (!fullMessage) {
+        console.log(`    ❌ Impossible de récupérer le message complet`);
+        return { sent: false };
+      }
+
+      // 1️⃣ ANALYSE
+      const analysis = await aiService.analyzeMessage(fullMessage, user);
+
+      if (!analysis.is_relevant) {
+        console.log(`    ⏭️ Non pertinent: ${analysis.reason || 'Non lié à l\'activité'}`);
+        
+        await AutoReply.create({
+          userId: user._id,
+          messageId: message.id,
+          from: message.from,
+          subject: message.subject,
+          body: fullMessage.body,
+          analysis: {
+            isRelevant: false,
+            confidence: analysis.confidence,
+            intent: analysis.intent,
+            reason: analysis.reason
+          },
+          status: 'ignored'
+        });
+        return { sent: false };
+      }
+
+      console.log(`    ✅ Pertinent: ${analysis.intent} (confiance: ${(analysis.confidence * 100).toFixed(0)}%)`);
+
+      // 2️⃣ GÉNÉRATION
+      console.log(`    🤖 Génération de la réponse...`);
+      const response = await aiService.generateResponse(fullMessage, analysis, user);
+
+      // 3️⃣ DÉCISION D'ENVOI
+      const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
+                             !user.aiSettings.requireValidation &&
+                             analysis.confidence >= 0.8;
+
+      if (shouldAutoSend) {
+        // ✅ ENVOI AUTOMATIQUE
+        console.log(`    📤 Envoi automatique (confiance ${(analysis.confidence * 100).toFixed(0)}% ≥ 80%)...`);
+        
+        await this.sendReply(fullMessage, response, user);
+
+        await AutoReply.create({
+          userId: user._id,
+          messageId: message.id,
+          from: message.from,
+          subject: message.subject,
+          body: fullMessage.body,
+          analysis: {
+            isRelevant: true,
+            confidence: analysis.confidence,
+            intent: analysis.intent
+          },
+          generatedResponse: response,
+          sentResponse: response,
+          status: 'sent',
+          sentAt: new Date()
+        });
+
+        console.log(`    ✅ Réponse envoyée avec succès à ${message.from}`);
+        return { sent: true };
+
+      } else {
+        // ⏸️ EN ATTENTE DE VALIDATION
+        const reason = !user.aiSettings.autoReplyEnabled 
+          ? 'Auto-reply désactivé'
+          : user.aiSettings.requireValidation
+          ? 'Validation requise'
+          : `Confiance insuffisante (${(analysis.confidence * 100).toFixed(0)}% < 80%)`;
+        
+        console.log(`    ⏸️ En attente de validation: ${reason}`);
+        
+        await AutoReply.create({
+          userId: user._id,
+          messageId: message.id,
+          from: message.from,
+          subject: message.subject,
+          body: fullMessage.body,
+          analysis: {
+            isRelevant: true,
+            confidence: analysis.confidence,
+            intent: analysis.intent
+          },
+          generatedResponse: response,
+          status: 'pending'
+        });
+
+        return { sent: false };
+      }
+
+    } catch (error) {
+      console.error(`    ❌ Erreur traitement:`, error.message);
       return { sent: false };
     }
-
-    console.log(`    ✅ Pertinent: ${analysis.intent} (confiance: ${(analysis.confidence * 100).toFixed(0)}%)`);
-
-    // 2️⃣ GÉNÉRATION
-    console.log(`    🤖 Génération de la réponse...`);
-    const response = await aiService.generateResponse(fullMessage, analysis, user);
-
-    // 3️⃣ DÉCISION D'ENVOI
-    const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
-                           !user.aiSettings.requireValidation &&
-                           analysis.confidence >= 0.8;
-
-    if (shouldAutoSend) {
-      // ✅ ENVOI AUTOMATIQUE
-      console.log(`    📤 Envoi automatique (confiance ${(analysis.confidence * 100).toFixed(0)}% ≥ 80%)...`);
-      
-      await this.sendReply(fullMessage, response, user);
-
-      await AutoReply.create({
-        userId: user._id,
-        messageId: message.id,
-        from: message.from,
-        subject: message.subject,
-        body: fullMessage.body,
-        analysis: {
-          isRelevant: true,
-          confidence: analysis.confidence,
-          intent: analysis.intent
-        },
-        generatedResponse: response,
-        sentResponse: response,
-        status: 'sent',
-        sentAt: new Date()
-      });
-
-      console.log(`    ✅ Réponse envoyée avec succès à ${message.from}`);
-      return { sent: true };
-
-    } else {
-      // ⏸️ EN ATTENTE DE VALIDATION
-      const reason = !user.aiSettings.autoReplyEnabled 
-        ? 'Auto-reply désactivé'
-        : user.aiSettings.requireValidation
-        ? 'Validation requise'
-        : `Confiance insuffisante (${(analysis.confidence * 100).toFixed(0)}% < 80%)`;
-      
-      console.log(`    ⏸️ En attente de validation: ${reason}`);
-      
-      await AutoReply.create({
-        userId: user._id,
-        messageId: message.id,
-        from: message.from,
-        subject: message.subject,
-        body: fullMessage.body,
-        analysis: {
-          isRelevant: true,
-          confidence: analysis.confidence,
-          intent: analysis.intent
-        },
-        generatedResponse: response,
-        status: 'pending'
-      });
-
-      return { sent: false };
-    }
-
-  } catch (error) {
-    console.error(`    ❌ Erreur traitement:`, error.message);
-    if (error.stack) {
-      console.error(`    📄 Stack:`, error.stack.split('\n').slice(0, 3).join('\n'));
-    }
-    return { sent: false };
   }
-}
 
-/**
- * 📥 Récupérer le message complet avec le corps
- */
-async fetchFullMessage(messageId, emailConfig) {
-  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+  /**
+   * 📥 Récupérer le message complet avec le corps
+   */
+  async fetchFullMessage(messageId, emailConfig) {
+    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-  try {
-    let response;
+    try {
+      let response;
 
-    if (emailConfig.provider === 'gmail') {
-      response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        timeout: 15000
-      });
-    } else if (emailConfig.provider === 'outlook') {
-      response = await axios.get(`${BASE_URL}/api/mail/outlook/message/${messageId}`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        timeout: 15000
-      });
+      if (emailConfig.provider === 'gmail') {
+        response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 15000
+        });
+      } else if (emailConfig.provider === 'outlook') {
+        response = await axios.get(`${BASE_URL}/api/mail/outlook/message/${messageId}`, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 15000
+        });
+      }
+
+      return response?.data || null;
+
+    } catch (error) {
+      console.error(`    ❌ Erreur récupération message complet:`, error.message);
+      return null;
     }
-
-    return response?.data || null;
-
-  } catch (error) {
-    console.error(`    ❌ Erreur récupération message complet:`, error.message);
-    return null;
   }
-}
 
-/**
- * 📤 Envoyer une réponse
- */
-async sendReply(message, responseBody, user) {
-  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+  /**
+   * 📤 Envoyer une réponse
+   */
+  async sendReply(message, responseBody, user) {
+    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
-  try {
-    if (user.emailConfig.provider === 'gmail') {
-      await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
-        threadId: message.threadId,
-        to: message.from,
-        subject: message.subject || '(sans objet)',
-        body: responseBody
-      }, {
-        headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
-        timeout: 15000
-      });
+    try {
+      if (user.emailConfig.provider === 'gmail') {
+        await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
+          threadId: message.threadId,
+          to: message.from,
+          subject: message.subject || '(sans objet)',
+          body: responseBody
+        }, {
+          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+          timeout: 15000
+        });
+        
+      } else if (user.emailConfig.provider === 'outlook') {
+        await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
+          messageId: message.id,
+          to: message.from,
+          subject: message.subject || '(sans objet)',
+          body: responseBody
+        }, {
+          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+          timeout: 15000
+        });
+      }
+
+      return true;
       
-    } else if (user.emailConfig.provider === 'outlook') {
-      await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
-        messageId: message.id,
-        to: message.from,
-        subject: message.subject || '(sans objet)',
-        body: responseBody
-      }, {
-        headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
-        timeout: 15000
-      });
+    } catch (error) {
+      console.error(`    ❌ Erreur envoi réponse:`, error.message);
+      throw error;
     }
-
-    return true;
-    
-  } catch (error) {
-    console.error(`    ❌ Erreur envoi réponse:`, error.message);
-    if (error.response?.data) {
-      console.error(`    📄 Détails API:`, error.response.data);
-    }
-    throw error;
   }
-}
+
+} // ✅ ACCOLADE DE FIN DE CLASSE
+
 module.exports = new MailPollingService();
