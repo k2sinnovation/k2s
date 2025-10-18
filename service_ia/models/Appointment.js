@@ -7,7 +7,7 @@ const appointmentSchema = new mongoose.Schema({
     required: true, 
     index: true 
   },
-  flutterId: { type: String, required: true }, // ✅ CHANGÉ DE 'id' À 'flutterId'
+  id: { type: String }, // ✅ RETIRÉ 'required: true'
   clientName: { type: String, required: true },
   clientPhone: String,
   clientEmail: String,
@@ -25,7 +25,7 @@ const appointmentSchema = new mongoose.Schema({
 });
 
 // Index composite
-appointmentSchema.index({ userId: 1, flutterId: 1 }, { unique: true });
+appointmentSchema.index({ userId: 1, id: 1 });
 appointmentSchema.index({ userId: 1, dateTime: 1 });
 
 module.exports = mongoose.models.Appointment || mongoose.model('Appointment', appointmentSchema);
