@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Session = require('../models/Session'); // ✅ IMPORTANT
 
 const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
@@ -56,24 +56,29 @@ router.get('/oauth/google/callback', async (req, res) => {
     const email = userInfoResponse.data.email;
     console.log('✅ [OAuth] Email:', email);
 
-    // 🆕 CRÉER OU METTRE À JOUR L'UTILISATEUR
-    let user = await User.findOne({ email });
+    // ✅ CRÉER OU METTRE À JOUR L'UTILISATEUR
+    let user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
       console.log('🆕 [OAuth] Création nouvel utilisateur:', email);
       
       user = new User({
-        email,
+        email: email.toLowerCase(),
         password: Math.random().toString(36).slice(-12),
         businessName: email.split('@')[0] || 'Mon Entreprise',
         deviceId: `gmail_${Date.now()}`,
-        subscription: 'free',
         emailConfig: {
           provider: 'gmail',
           accessToken: access_token,
-          refreshToken: refresh_token || undefined,
+          refreshToken: refresh_token || '',
           email: email,
           connectedAt: new Date()
+        },
+        subscription: {
+          plan: 'free',
+          isActive: true,
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 jours gratuits
         },
         aiSettings: {
           isEnabled: false,
@@ -96,34 +101,53 @@ router.get('/oauth/google/callback', async (req, res) => {
     } else {
       console.log('🔄 [OAuth] Utilisateur existant, mise à jour tokens');
       
-      user.emailConfig = {
-        provider: 'gmail',
-        accessToken: access_token,
-        refreshToken: refresh_token || user.emailConfig?.refreshToken,
-        email: email,
-        connectedAt: new Date()
-      };
-      
+      user.emailConfig.provider = 'gmail';
+      user.emailConfig.accessToken = access_token;
+      if (refresh_token) {
+        user.emailConfig.refreshToken = refresh_token;
+      }
+      user.emailConfig.email = email;
+      user.emailConfig.connectedAt = new Date();
       user.lastLoginAt = new Date();
+      
       await user.save();
       console.log('✅ [OAuth] Tokens mis à jour');
     }
 
-    // 🆕 GÉNÉRER JWT
-    const jwtToken = jwt.sign(
-      { id: user._id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
+    // ✅ GÉNÉRER SESSION TOKEN PERMANENT (1 an)
+    const deviceId = req.query.state || `web_${Date.now()}`;
+    const sessionToken = Session.generateToken();
+    const hashedToken = Session.hashToken(sessionToken);
+
+    // ✅ Révoquer anciennes sessions du même device (optionnel)
+    await Session.updateMany(
+      { userId: user._id, deviceId: deviceId },
+      { isActive: false }
     );
 
-    console.log('✅ [OAuth] JWT généré');
+    // ✅ CRÉER NOUVELLE SESSION EN BASE
+    const newSession = await Session.create({
+      userId: user._id,
+      deviceId: deviceId,
+      sessionToken: hashedToken,
+      emailProvider: 'gmail',
+      emailAccessToken: access_token,
+      emailRefreshToken: refresh_token || '',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      deviceInfo: {
+        platform: 'mobile',
+        appVersion: '1.0.0'
+      }
+    });
 
-    // Construction du deep link
+    console.log(`✅ [OAuth] Session créée (ID: ${newSession._id}, expire: ${newSession.expiresAt})`);
+
+    // ✅ Construction du deep link avec SESSION TOKEN
     const params = new URLSearchParams({
       access_token,
       email,
       success: 'true',
-      jwt_token: jwtToken,
+      session_token: sessionToken, // ✅ SESSION TOKEN non hashé
       user_id: user._id.toString(),
       expires_in: (expires_in || 3600).toString(),
     });
@@ -134,6 +158,7 @@ router.get('/oauth/google/callback', async (req, res) => {
     const deepLink = `k2sdiag://auth?${params.toString()}`;
     
     console.log('🔗 [OAuth] Deep link créé (longueur:', deepLink.length, ')');
+    console.log('🎯 [OAuth] Session Token:', sessionToken.substring(0, 20) + '...');
 
     res.send(generateHtmlRedirect(deepLink, '✓ Connexion réussie', email));
 
@@ -144,6 +169,50 @@ router.get('/oauth/google/callback', async (req, res) => {
     }
     const deepLink = `k2sdiag://auth?error=server_error&error_description=${encodeURIComponent(error.message)}`;
     res.send(generateHtmlRedirect(deepLink, '❌ Erreur serveur', error.message));
+  }
+});
+
+// ✅ ROUTE DE REFRESH TOKEN OAUTH (pour compatibilité)
+router.post('/oauth/google/refresh', async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+
+    if (!refresh_token) {
+      return res.status(400).json({ error: 'refresh_token manquant' });
+    }
+
+    console.log('🔄 [OAuth] Refresh token Google...');
+
+    const response = await axios.post(
+      'https://oauth2.googleapis.com/token',
+      new URLSearchParams({
+        refresh_token: refresh_token,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        grant_type: 'refresh_token',
+      }),
+      { 
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 10000,
+      }
+    );
+
+    const { access_token, expires_in, id_token } = response.data;
+
+    console.log('✅ [OAuth] Token Google rafraîchi');
+
+    res.json({
+      access_token,
+      expires_in: expires_in || 3600,
+      id_token: id_token || '',
+    });
+
+  } catch (error) {
+    console.error('❌ [OAuth] Erreur refresh:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Erreur refresh token',
+      details: error.message 
+    });
   }
 });
 
@@ -308,52 +377,5 @@ function generateHtmlRedirect(deepLink, title, message) {
     </html>
   `;
 }
-// ===== ROUTE DE REFRESH TOKEN (temporaire, pour compatibilité) =====
 
-const axios = require('axios'); // ✅ Ajouter en haut si absent
-
-router.post('/oauth/google/refresh', async (req, res) => {
-  try {
-    const { refresh_token } = req.body;
-
-    if (!refresh_token) {
-      return res.status(400).json({ error: 'refresh_token manquant' });
-    }
-
-    console.log('🔄 [OAuth] Refresh token Google...');
-
-    const response = await axios.post(
-      'https://oauth2.googleapis.com/token',
-      new URLSearchParams({
-        refresh_token: refresh_token,
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        grant_type: 'refresh_token',
-      }),
-      { 
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 10000,
-      }
-    );
-
-    const { access_token, expires_in, id_token } = response.data;
-
-    console.log('✅ [OAuth] Token Google rafraîchi');
-
-    res.json({
-      access_token,
-      expires_in: expires_in || 3600,
-      id_token: id_token || '',
-    });
-
-  } catch (error) {
-    console.error('❌ [OAuth] Erreur refresh:', error.response?.data || error.message);
-    res.status(500).json({ 
-      error: 'Erreur refresh token',
-      details: error.message 
-    });
-  }
-});
-
-module.exports = router;
 module.exports = router;
