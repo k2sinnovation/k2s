@@ -161,7 +161,7 @@ router.get('/oauth/google/callback', async (req, res) => {
   }
 });
 
-// ✅ SOLUTION SANS BOUCLE INFINIE
+// ✅ CODE ORIGINAL MAIS AVEC 1 SEULE REDIRECTION
 function generateHtmlRedirect(deepLink, title, message) {
   const isSuccess = title.includes('✓');
   const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
@@ -219,27 +219,6 @@ function generateHtmlRedirect(deepLink, title, message) {
           font-size: 14px;
           word-break: break-word;
         }
-        .btn {
-          margin-top: 20px;
-          padding: 15px 30px;
-          background: white;
-          color: ${bgColor};
-          border: none;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-          cursor: pointer;
-          text-decoration: none;
-          display: inline-block;
-          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-          transition: transform 0.2s;
-        }
-        .btn:hover {
-          transform: scale(1.05);
-        }
-        .btn:active {
-          transform: scale(0.95);
-        }
         .spinner {
           display: inline-block;
           width: 20px;
@@ -253,8 +232,26 @@ function generateHtmlRedirect(deepLink, title, message) {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
-        #autoSection { display: block; }
-        #manualSection { display: none; }
+        .manual-link {
+          margin-top: 20px;
+          padding: 15px 30px;
+          background: white;
+          color: ${bgColor};
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 16px;
+          cursor: pointer;
+          text-decoration: none;
+          display: inline-block;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        #status.hidden { display: none; }
+        .closing-message {
+          margin-top: 15px;
+          font-size: 14px;
+          opacity: 0.9;
+        }
       </style>
     </head>
     <body>
@@ -263,105 +260,93 @@ function generateHtmlRedirect(deepLink, title, message) {
         <h1>${title}</h1>
         ${message ? `<div class="message">${message}</div>` : ''}
         
-        <div id="autoSection">
-          <div style="margin-top: 20px;">
-            Ouverture de l'application...
-            <div class="spinner"></div>
-          </div>
+        <div id="status">
+          Redirection automatique...
+          <div class="spinner"></div>
         </div>
         
-        <div id="manualSection">
-          <div style="margin-top: 20px; font-size: 14px; opacity: 0.9;">
-            Cliquez sur le bouton ci-dessous pour ouvrir l'application
-          </div>
-          <a href="${deepLink}" class="btn">
-            📱 Ouvrir l'application
-          </a>
-        </div>
+        <a href="#" class="manual-link" id="manualBtn" style="display:none;">
+          📱 Ouvrir l'application
+        </a>
+        
+        <div class="debug" id="debug" style="margin-top:20px; padding:10px; background:rgba(0,0,0,0.3); border-radius:5px; font-size:11px; font-family:monospace; max-height:100px; overflow:auto; word-break:break-all;"></div>
       </div>
       
       <script>
         const deepLink = ${JSON.stringify(deepLink)};
-        let appOpened = false;
-        let hasRedirected = false;
+        let opened = false;
         
-        console.log('🔗 Page de redirection chargée');
-        
-        // ✅ STOCKER QU'ON A DÉJÀ TENTÉ (éviter boucle si refresh)
-        const attemptKey = 'oauth_redirect_attempted';
-        const lastAttempt = sessionStorage.getItem(attemptKey);
-        const now = Date.now();
-        
-        if (lastAttempt && (now - parseInt(lastAttempt)) < 5000) {
-          console.log('⚠️ Tentative récente détectée, affichage bouton manuel');
-          document.getElementById('autoSection').style.display = 'none';
-          document.getElementById('manualSection').style.display = 'block';
-          hasRedirected = true;
+        function log(msg) {
+          console.log(msg);
+          const debugEl = document.getElementById('debug');
+          debugEl.innerHTML += msg + '<br>';
+          debugEl.scrollTop = debugEl.scrollHeight;
         }
         
-        // ✅ DÉTECTION D'OUVERTURE APP
-        function onAppOpened() {
-          if (appOpened) return;
-          appOpened = true;
-          
-          console.log('✅ Application ouverte');
-          
-          document.getElementById('autoSection').innerHTML = 
-            '✅ Retour à l\'application...<div style="margin-top:10px; font-size:14px;">Vous pouvez fermer cette page</div>';
-          
-          setTimeout(() => {
-            try { window.close(); } catch(e) {}
-          }, 1500);
-        }
+        log('🔗 Link: ' + deepLink.substring(0, 50) + '...');
         
-        // Événements de détection
-        window.addEventListener('blur', () => {
-          console.log('📱 blur');
-          onAppOpened();
-        });
-        
-        window.addEventListener('pagehide', () => {
-          console.log('📱 pagehide');
-          onAppOpened();
-        });
-        
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) {
-            console.log('📱 visibilitychange');
-            onAppOpened();
+        // ✅ UNE SEULE REDIRECTION (au lieu de 4)
+        function redirect() {
+          if (opened) {
+            log('⚠️ Déjà redirigé, abandon');
+            return;
           }
+          opened = true;
+          
+          log('🔄 Redirection unique...');
+          
+          // Méthode principale: window.location
+          window.location.href = deepLink;
+        }
+        
+        // ✅ DÉMARRER LA REDIRECTION (1 SEULE FOIS)
+        redirect();
+        
+        // ✅ Bouton manuel après 2s
+        setTimeout(() => {
+          const btn = document.getElementById('manualBtn');
+          btn.style.display = 'inline-block';
+          btn.onclick = (e) => {
+            e.preventDefault();
+            log('👆 Clic manuel');
+            window.location.href = deepLink;
+          };
+          document.getElementById('status').classList.add('hidden');
+          log('🔘 Bouton manuel affiché');
+        }, 2000);
+        
+        // Événements de détection d'ouverture
+        window.addEventListener('blur', () => { 
+          log('📱 App ouverte (blur)');
+          opened = true; 
         });
         
-        // ✅ TENTATIVE UNIQUE SI PAS DÉJÀ FAIT
-        if (!hasRedirected) {
-          console.log('🚀 Tentative d\'ouverture automatique');
-          
-          // Marquer qu'on a tenté
-          sessionStorage.setItem(attemptKey, now.toString());
-          
-          // Créer un iframe caché (méthode la plus sûre)
-          const iframe = document.createElement('iframe');
-          iframe.style.display = 'none';
-          iframe.src = deepLink;
-          document.body.appendChild(iframe);
-          
-          // Après 2s, si pas ouvert, afficher bouton manuel
-          setTimeout(() => {
-            if (!appOpened) {
-              console.log('⏱️ 2s écoulées, affichage bouton manuel');
-              document.getElementById('autoSection').style.display = 'none';
-              document.getElementById('manualSection').style.display = 'block';
-              
-              // Nettoyer iframe
-              try { document.body.removeChild(iframe); } catch(e) {}
+        window.addEventListener('pagehide', () => { 
+          log('📱 App ouverte (pagehide)');
+          opened = true; 
+        });
+        
+        // ✅ Fermeture auto après 10s (succès uniquement)
+        ${isSuccess ? `
+        setTimeout(() => {
+          if (opened) {
+            log('⏱️ 10s - tentative fermeture');
+            try { 
+              window.close(); 
+            } catch(e) {
+              document.body.innerHTML = \`
+                <div style="text-align:center; padding:40px; color:white;">
+                  <div style="font-size:60px; margin-bottom:20px;">✅</div>
+                  <h1>Authentification réussie</h1>
+                  <p style="margin-top:20px; opacity:0.8;">Vous pouvez fermer cette page</p>
+                </div>
+              \`;
             }
-          }, 2000);
-          
-          // Après 5s, nettoyer le marqueur
-          setTimeout(() => {
-            sessionStorage.removeItem(attemptKey);
-          }, 5000);
-        }
+          }
+        }, 10000);
+        ` : ''}
+        
+        log('📊 User Agent: ' + navigator.userAgent.substring(0, 30) + '...');
       </script>
     </body>
     </html>
