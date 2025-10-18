@@ -87,7 +87,7 @@ class MailPollingService {
         response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
           headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
           params: {
-            q: 'is:unread in:inbox'
+            q: 'is:unread in:inbox' // ✅ UNIQUEMENT les NON LUS
           },
           timeout: 15000
         });
@@ -133,20 +133,23 @@ class MailPollingService {
     const BASE_URL = 'https://k2s.onrender.com';
 
     try {
+      console.log(`📥 [Gmail] Message de récupération ${messageId}...`);
+      
       const response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
         headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
         timeout: 15000
       });
 
+      console.log(`✅ [Gmail] Message ${messageId} récupéré`);
       return response?.data || null;
 
     } catch (error) {
-      console.error(`      ❌ Erreur récupération:`, error.message);
+      console.error(`❌ Erreur récupération:`, error.message);
       return null;
     }
   }
 
-  // ✅ NOUVELLE FONCTION : Marquer comme lu
+  // ✅ MARQUAGE COMME LU AMÉLIORÉ
   async markAsRead(messageId, emailConfig) {
     try {
       if (emailConfig.provider === 'gmail') {
@@ -161,6 +164,7 @@ class MailPollingService {
           }
         );
         console.log(`      ✅ Message marqué comme lu`);
+        return true;
       } else if (emailConfig.provider === 'outlook') {
         await axios.patch(
           `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
@@ -176,133 +180,160 @@ class MailPollingService {
           }
         );
         console.log(`      ✅ Message marqué comme lu`);
+        return true;
       }
+      return false;
     } catch (error) {
       console.error(`      ⚠️ Erreur marquage lu:`, error.message);
+      return false;
     }
   }
 
   async processMessage(message, user) {
-  try {
-    console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
+    try {
+      console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
 
-    // Vérifier si déjà traité
-    const alreadyProcessed = await AutoReply.findOne({
-      userId: user._id,
-      messageId: message.id
-    });
-
-    if (alreadyProcessed) {
-      console.log(`    ⏭️ Déjà traité`);
-      
-      // ✅ MARQUER COMME LU QUAND MÊME !
-      await this.markAsRead(message.id, user.emailConfig);
-      
-      return { sent: false };
-    }
-
-    const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
-    
-    if (!fullMessage) {
-      console.log(`    ❌ Impossible de récupérer le message`);
-      await this.markAsRead(message.id, user.emailConfig);
-      return { sent: false };
-    }
-
-    const analysis = await aiService.analyzeMessage(fullMessage, user);
-
-    if (!analysis.is_relevant) {
-      console.log(`    ⏭️ Non pertinent`);
-      
-      await AutoReply.create({
+      // ✅ VÉRIFIER SI DÉJÀ TRAITÉ (EN BASE)
+      const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
-        messageId: message.id,
-        from: message.from,
-        subject: message.subject,
-        body: fullMessage.body,
-        analysis: {
-          isRelevant: false,
-          confidence: analysis.confidence,
-          intent: analysis.intent,
-          reason: analysis.reason
-        },
-        status: 'ignored'
+        messageId: message.id
       });
 
-      await this.markAsRead(message.id, user.emailConfig);
-      return { sent: false };
-    }
+      if (alreadyProcessed) {
+        console.log(`    ⏭️ Déjà traité`);
+        
+        // ✅ MARQUER COMME LU MÊME SI DÉJÀ TRAITÉ
+        await this.markAsRead(message.id, user.emailConfig);
+        
+        return { sent: false };
+      }
 
-    console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
+      // ✅ RÉCUPÉRER LE MESSAGE COMPLET UNE SEULE FOIS
+      const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
+      
+      if (!fullMessage) {
+        console.log(`    ❌ Impossible de récupérer le message`);
+        await this.markAsRead(message.id, user.emailConfig);
+        return { sent: false };
+      }
 
-    const response = await aiService.generateResponse(fullMessage, analysis, user);
+      // ✅ ANALYSE IA (UNE SEULE FOIS)
+      const analysis = await aiService.analyzeMessage(fullMessage, user);
 
-    const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
+      // ✅ SI NON PERTINENT : SAUVEGARDER ET MARQUER LU
+      if (!analysis.is_relevant) {
+        console.log(`    ⏭️ Non pertinent: ${analysis.reason}`);
+        
+        await AutoReply.create({
+          userId: user._id,
+          messageId: message.id,
+          from: message.from,
+          subject: message.subject,
+          body: fullMessage.body,
+          analysis: {
+            isRelevant: false,
+            confidence: analysis.confidence,
+            intent: analysis.intent,
+            reason: analysis.reason
+          },
+          status: 'ignored'
+        });
+
+        await this.markAsRead(message.id, user.emailConfig);
+        return { sent: false };
+      }
+
+      console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
+
+      // ✅ GÉNÉRER LA RÉPONSE
+      const response = await aiService.generateResponse(fullMessage, analysis, user);
+
+      const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
                            !user.aiSettings.requireValidation &&
                            analysis.confidence >= 0.8;
 
-    if (shouldAutoSend) {
-      console.log(`    📤 Envoi automatique...`);
+      if (shouldAutoSend) {
+        console.log(`📤 Envoi automatique...`);
+        
+        // ✅ ENVOYER LA RÉPONSE UNE SEULE FOIS
+        const sendSuccess = await this.sendReply(fullMessage, response, user);
+
+        if (!sendSuccess) {
+          console.log(`    ❌ Échec envoi`);
+          return { sent: false };
+        }
+
+        // ✅ SAUVEGARDER EN BASE APRÈS ENVOI RÉUSSI
+        await AutoReply.create({
+          userId: user._id,
+          messageId: message.id,
+          from: message.from,
+          subject: message.subject,
+          body: fullMessage.body,
+          analysis: {
+            isRelevant: true,
+            confidence: analysis.confidence,
+            intent: analysis.intent
+          },
+          generatedResponse: response,
+          sentResponse: response,
+          status: 'sent',
+          sentAt: new Date()
+        });
+
+        // ✅ MARQUER COMME LU APRÈS ENVOI
+        await this.markAsRead(message.id, user.emailConfig);
+
+        console.log(`    ✅ Réponse envoyée à ${message.from}`);
+        return { sent: true };
+
+      } else {
+        console.log(`    ⏸️ En attente de validation`);
+        
+        // ✅ SAUVEGARDER EN ATTENTE
+        await AutoReply.create({
+          userId: user._id,
+          messageId: message.id,
+          from: message.from,
+          subject: message.subject,
+          body: fullMessage.body,
+          analysis: {
+            isRelevant: true,
+            confidence: analysis.confidence,
+            intent: analysis.intent
+          },
+          generatedResponse: response,
+          status: 'pending'
+        });
+
+        // ✅ NE PAS MARQUER LU SI VALIDATION REQUISE
+        return { sent: false };
+      }
+
+    } catch (error) {
+      console.error(`    ❌ Erreur traitement:`, error.message);
       
-      await this.sendReply(fullMessage, response, user);
-
-      await AutoReply.create({
-        userId: user._id,
-        messageId: message.id,
-        from: message.from,
-        subject: message.subject,
-        body: fullMessage.body,
-        analysis: {
-          isRelevant: true,
-          confidence: analysis.confidence,
-          intent: analysis.intent
-        },
-        generatedResponse: response,
-        sentResponse: response,
-        status: 'sent',
-        sentAt: new Date()
-      });
-
-      await this.markAsRead(message.id, user.emailConfig);
-
-      console.log(`    ✅ Réponse envoyée à ${message.from}`);
-      return { sent: true };
-
-    } else {
-      console.log(`    ⏸️ En attente de validation`);
+      // ✅ MARQUER LU EN CAS D'ERREUR POUR ÉVITER BOUCLE INFINIE
+      try {
+        await this.markAsRead(message.id, user.emailConfig);
+      } catch (markError) {
+        console.error(`    ⚠️ Impossible de marquer lu:`, markError.message);
+      }
       
-      await AutoReply.create({
-        userId: user._id,
-        messageId: message.id,
-        from: message.from,
-        subject: message.subject,
-        body: fullMessage.body,
-        analysis: {
-          isRelevant: true,
-          confidence: analysis.confidence,
-          intent: analysis.intent
-        },
-        generatedResponse: response,
-        status: 'pending'
-      });
-
-      // Ne pas marquer comme lu si validation requise
       return { sent: false };
     }
-
-  } catch (error) {
-    console.error(`    ❌ Erreur traitement:`, error.message);
-    await this.markAsRead(message.id, user.emailConfig);
-    return { sent: false };
   }
-}
 
   async sendReply(message, responseBody, user) {
     const BASE_URL = 'https://k2s.onrender.com';
 
     try {
+      console.log(`📨 POST /api/mail/gmail/réponse`);
+      
       if (user.emailConfig.provider === 'gmail') {
-        await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
+        console.log(`📤 [Gmail] Envoi réponse à ${message.from}...`);
+        
+        const response = await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
           threadId: message.threadId,
           to: message.from,
           subject: message.subject || '(sans objet)',
@@ -311,9 +342,14 @@ class MailPollingService {
           headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
           timeout: 15000
         });
+
+        console.log(`✅ [Gmail] Réponse envoyée`);
+        return response.status === 200;
         
       } else if (user.emailConfig.provider === 'outlook') {
-        await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
+        console.log(`📤 [Outlook] Envoi réponse à ${message.from}...`);
+        
+        const response = await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
           messageId: message.id,
           to: message.from,
           subject: message.subject || '(sans objet)',
@@ -322,13 +358,16 @@ class MailPollingService {
           headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
           timeout: 15000
         });
+
+        console.log(`✅ [Outlook] Réponse envoyée`);
+        return response.status === 200;
       }
 
-      return true;
+      return false;
       
     } catch (error) {
       console.error(`    ❌ Erreur envoi:`, error.message);
-      throw error;
+      return false;
     }
   }
 }
