@@ -87,28 +87,27 @@ class MailPollingService {
  * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
  */
 async fetchNewEmails(emailConfig) {
-  const BASE_URL = 'https://k2s.onrender.com'; 
+  const BASE_URL = 'https://k2s.onrender.com';
 
   try {
     let response;
 
     if (emailConfig.provider === 'gmail') {
-      // ✅ UTILISER /inbox AU LIEU DE /search
       response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
         headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        params: {
+          q: 'is:unread in:inbox' // ✅ FILTRE GMAIL : Seulement non-lus
+        },
         timeout: 15000
       });
       
-      // ✅ FILTRER CÔTÉ SERVICE : Garder seulement les non-lus
-      if (response?.data?.messages) {
-        const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
-        
-        if (unreadMessages.length > 0) {
-          console.log(`  📨 ${unreadMessages.length} messages non lus sur ${response.data.messages.length} total`);
-        }
-        
-        return unreadMessages;
+      const messages = response?.data?.messages || [];
+      
+      if (messages.length > 0) {
+        console.log(`  📨 ${messages.length} messages non lus trouvés`);
       }
+      
+      return messages;
       
     } else if (emailConfig.provider === 'outlook') {
       response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
@@ -116,7 +115,6 @@ async fetchNewEmails(emailConfig) {
         timeout: 15000
       });
       
-      // ✅ FILTRER CÔTÉ SERVICE : Garder seulement les non-lus
       if (response?.data?.messages) {
         const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
         
@@ -139,6 +137,47 @@ async fetchNewEmails(emailConfig) {
       console.error(`  ❌ [Fetch] Erreur:`, error.message);
     }
     return [];
+  }
+}
+
+async fetchFullMessage(messageId, emailConfig) {
+  const BASE_URL = 'https://k2s.onrender.com';
+
+  try {
+    let response;
+
+    if (emailConfig.provider === 'gmail') {
+      console.log(`      📞 Récupération message ${messageId.substring(0, 10)}...`);
+      
+      response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+      
+      if (response?.data?.body) {
+        console.log(`      ✅ Corps récupéré (${response.data.body.length} caractères)`);
+      } else {
+        console.log(`      ⚠️ Message sans corps`);
+      }
+      
+    } else if (emailConfig.provider === 'outlook') {
+      response = await axios.get(`${BASE_URL}/api/mail/outlook/message/${messageId}`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+    }
+
+    return response?.data || null;
+
+  } catch (error) {
+    console.error(`      ❌ Erreur récupération message:`, {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      errorData: error.response?.data,
+      message: error.message,
+      url: `${BASE_URL}/api/mail/gmail/message/${messageId}`
+    });
+    return null;
   }
 }
 
