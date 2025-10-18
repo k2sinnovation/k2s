@@ -128,132 +128,196 @@ async fetchNewEmails(emailConfig) {
   }
 }
 
-  /**
-   * 🤖 Traiter un message
-   */
-  async processMessage(message, user) {
-    try {
-      // Vérifier si déjà traité
-      const alreadyProcessed = await AutoReply.findOne({
-        userId: user._id,
-        messageId: message.id
-      });
+/**
+ * 🤖 Traiter un message
+ */
+async processMessage(message, user) {
+  try {
+    console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
 
-      if (alreadyProcessed) {
-        return { sent: false };
-      }
+    // Vérifier si déjà traité
+    const alreadyProcessed = await AutoReply.findOne({
+      userId: user._id,
+      messageId: message.id
+    });
 
-      // 1️⃣ ANALYSE
-      const analysis = await aiService.analyzeMessage(message, user);
-
-      if (!analysis.is_relevant) {
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          from: message.from,
-          subject: message.subject,
-          body: message.body,
-          analysis: {
-            isRelevant: false,
-            confidence: analysis.confidence,
-            intent: analysis.intent
-          },
-          status: 'ignored'
-        });
-        return { sent: false };
-      }
-
-      // 2️⃣ GÉNÉRATION
-      const response = await aiService.generateResponse(message, analysis, user);
-
-      // 3️⃣ DÉCISION
-      const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
-                             !user.aiSettings.requireValidation &&
-                             analysis.confidence >= 0.8;
-
-      if (shouldAutoSend) {
-        // ✅ ENVOI AUTO
-        await this.sendReply(message, response, user);
-
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          from: message.from,
-          subject: message.subject,
-          body: message.body,
-          analysis: {
-            isRelevant: true,
-            confidence: analysis.confidence,
-            intent: analysis.intent
-          },
-          generatedResponse: response,
-          sentResponse: response,
-          status: 'sent',
-          sentAt: new Date()
-        });
-
-        console.log(`  ✅ Réponse envoyée à ${message.from}`);
-        return { sent: true };
-
-      } else {
-        // ⏸️ VALIDATION
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          from: message.from,
-          subject: message.subject,
-          body: message.body,
-          analysis: {
-            isRelevant: true,
-            confidence: analysis.confidence,
-            intent: analysis.intent
-          },
-          generatedResponse: response,
-          status: 'pending'
-        });
-
-        return { sent: false };
-      }
-
-    } catch (error) {
-      console.error(`  ❌ Erreur traitement:`, error.message);
+    if (alreadyProcessed) {
+      console.log(`    ⏭️ Déjà traité`);
       return { sent: false };
     }
-  }
 
-  /**
-   * 📤 Envoyer une réponse
-   */
-  async sendReply(message, responseBody, user) {
-    const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-
-    try {
-      if (user.emailConfig.provider === 'gmail') {
-        await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
-          threadId: message.threadId,
-          to: message.from,
-          subject: message.subject ? `Re: ${message.subject}` : 'Re:',
-          body: responseBody
-        }, {
-          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` }
-        });
-      } else if (user.emailConfig.provider === 'outlook') {
-        await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
-          messageId: message.id,
-          to: message.from,
-          subject: message.subject ? `Re: ${message.subject}` : 'Re:',
-          body: responseBody
-        }, {
-          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` }
-        });
-      }
-
-      return true;
-    } catch (error) {
-      console.error('❌ Erreur envoi:', error.message);
-      throw error;
+    // ✅ RÉCUPÉRER LE CORPS COMPLET DU MESSAGE
+    const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
+    
+    if (!fullMessage) {
+      console.log(`    ❌ Impossible de récupérer le message complet`);
+      return { sent: false };
     }
+
+    // 1️⃣ ANALYSE
+    const analysis = await aiService.analyzeMessage(fullMessage, user);
+
+    if (!analysis.is_relevant) {
+      console.log(`    ⏭️ Non pertinent: ${analysis.reason || 'Non lié à l\'activité'}`);
+      
+      await AutoReply.create({
+        userId: user._id,
+        messageId: message.id,
+        from: message.from,
+        subject: message.subject,
+        body: fullMessage.body,
+        analysis: {
+          isRelevant: false,
+          confidence: analysis.confidence,
+          intent: analysis.intent,
+          reason: analysis.reason
+        },
+        status: 'ignored'
+      });
+      return { sent: false };
+    }
+
+    console.log(`    ✅ Pertinent: ${analysis.intent} (confiance: ${(analysis.confidence * 100).toFixed(0)}%)`);
+
+    // 2️⃣ GÉNÉRATION
+    console.log(`    🤖 Génération de la réponse...`);
+    const response = await aiService.generateResponse(fullMessage, analysis, user);
+
+    // 3️⃣ DÉCISION D'ENVOI
+    const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
+                           !user.aiSettings.requireValidation &&
+                           analysis.confidence >= 0.8;
+
+    if (shouldAutoSend) {
+      // ✅ ENVOI AUTOMATIQUE
+      console.log(`    📤 Envoi automatique (confiance ${(analysis.confidence * 100).toFixed(0)}% ≥ 80%)...`);
+      
+      await this.sendReply(fullMessage, response, user);
+
+      await AutoReply.create({
+        userId: user._id,
+        messageId: message.id,
+        from: message.from,
+        subject: message.subject,
+        body: fullMessage.body,
+        analysis: {
+          isRelevant: true,
+          confidence: analysis.confidence,
+          intent: analysis.intent
+        },
+        generatedResponse: response,
+        sentResponse: response,
+        status: 'sent',
+        sentAt: new Date()
+      });
+
+      console.log(`    ✅ Réponse envoyée avec succès à ${message.from}`);
+      return { sent: true };
+
+    } else {
+      // ⏸️ EN ATTENTE DE VALIDATION
+      const reason = !user.aiSettings.autoReplyEnabled 
+        ? 'Auto-reply désactivé'
+        : user.aiSettings.requireValidation
+        ? 'Validation requise'
+        : `Confiance insuffisante (${(analysis.confidence * 100).toFixed(0)}% < 80%)`;
+      
+      console.log(`    ⏸️ En attente de validation: ${reason}`);
+      
+      await AutoReply.create({
+        userId: user._id,
+        messageId: message.id,
+        from: message.from,
+        subject: message.subject,
+        body: fullMessage.body,
+        analysis: {
+          isRelevant: true,
+          confidence: analysis.confidence,
+          intent: analysis.intent
+        },
+        generatedResponse: response,
+        status: 'pending'
+      });
+
+      return { sent: false };
+    }
+
+  } catch (error) {
+    console.error(`    ❌ Erreur traitement:`, error.message);
+    if (error.stack) {
+      console.error(`    📄 Stack:`, error.stack.split('\n').slice(0, 3).join('\n'));
+    }
+    return { sent: false };
   }
 }
 
+/**
+ * 📥 Récupérer le message complet avec le corps
+ */
+async fetchFullMessage(messageId, emailConfig) {
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
+  try {
+    let response;
+
+    if (emailConfig.provider === 'gmail') {
+      response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+    } else if (emailConfig.provider === 'outlook') {
+      response = await axios.get(`${BASE_URL}/api/mail/outlook/message/${messageId}`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+    }
+
+    return response?.data || null;
+
+  } catch (error) {
+    console.error(`    ❌ Erreur récupération message complet:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * 📤 Envoyer une réponse
+ */
+async sendReply(message, responseBody, user) {
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
+  try {
+    if (user.emailConfig.provider === 'gmail') {
+      await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
+        threadId: message.threadId,
+        to: message.from,
+        subject: message.subject || '(sans objet)',
+        body: responseBody
+      }, {
+        headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+        timeout: 15000
+      });
+      
+    } else if (user.emailConfig.provider === 'outlook') {
+      await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
+        messageId: message.id,
+        to: message.from,
+        subject: message.subject || '(sans objet)',
+        body: responseBody
+      }, {
+        headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+        timeout: 15000
+      });
+    }
+
+    return true;
+    
+  } catch (error) {
+    console.error(`    ❌ Erreur envoi réponse:`, error.message);
+    if (error.response?.data) {
+      console.error(`    📄 Détails API:`, error.response.data);
+    }
+    throw error;
+  }
+}
 module.exports = new MailPollingService();
