@@ -87,7 +87,7 @@ class MailPollingService {
  * 📥 Récupérer les nouveaux emails (NON-LUS UNIQUEMENT)
  */
 async fetchNewEmails(emailConfig) {
-  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+  const BASE_URL = 'https://k2s.onrender.com'; 
 
   try {
     let response;
