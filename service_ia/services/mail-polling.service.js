@@ -63,10 +63,20 @@ class MailPollingService {
       console.log(`  📨 ${newMessages.length} nouveaux messages non lus`);
 
       let sent = 0;
+      let alreadyProcessedCount = 0;
 
       for (const message of newMessages) {
         const result = await this.processMessage(message, user);
-        if (result?.sent) sent++;
+        if (result?.sent) {
+          sent++;
+        } else if (result?.alreadyProcessed) {
+          alreadyProcessedCount++;
+        }
+      }
+
+      // ✅ LOG GROUPÉ : Afficher une seule fois le nombre de messages déjà traités
+      if (alreadyProcessedCount > 0) {
+        console.log(`  ⏭️ ${alreadyProcessedCount} messages déjà traités (0 token consommé)`);
       }
 
       return { processed: newMessages.length, sent };
@@ -87,7 +97,7 @@ class MailPollingService {
         response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
           headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
           params: {
-            q: 'is:unread in:inbox' // ✅ UNIQUEMENT les NON LUS
+            q: 'is:unread in:inbox'
           },
           timeout: 15000
         });
@@ -129,27 +139,6 @@ class MailPollingService {
     }
   }
 
-  async fetchFullMessage(messageId, emailConfig) {
-    const BASE_URL = 'https://k2s.onrender.com';
-
-    try {
-      console.log(`📥 [Gmail] Message de récupération ${messageId}...`);
-      
-      const response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
-        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-        timeout: 15000
-      });
-
-      console.log(`✅ [Gmail] Message ${messageId} récupéré`);
-      return response?.data || null;
-
-    } catch (error) {
-      console.error(`❌ Erreur récupération:`, error.message);
-      return null;
-    }
-  }
-
-  // ✅ MARQUAGE COMME LU AMÉLIORÉ
   async markAsRead(messageId, emailConfig) {
     try {
       if (emailConfig.provider === 'gmail') {
@@ -163,8 +152,8 @@ class MailPollingService {
             timeout: 10000
           }
         );
-        console.log(`      ✅ Message marqué comme lu`);
         return true;
+        
       } else if (emailConfig.provider === 'outlook') {
         await axios.patch(
           `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
@@ -175,50 +164,122 @@ class MailPollingService {
             headers: { 
               'Authorization': `Bearer ${emailConfig.accessToken}`,
               'Content-Type': 'application/json'
-            },
+          },
             timeout: 10000
           }
         );
-        console.log(`      ✅ Message marqué comme lu`);
         return true;
       }
+      
       return false;
+
     } catch (error) {
-      console.error(`      ⚠️ Erreur marquage lu:`, error.message);
+      // Ignorer silencieusement les erreurs de marquage
       return false;
+    }
+  }
+
+  // ✅ NOUVELLE FONCTION : Récupérer l'historique de la conversation
+  async getConversationHistory(threadId, emailConfig) {
+    try {
+      if (!threadId) return [];
+
+      const response = await axios.get(
+        `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`,
+        {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 15000
+        }
+      );
+
+      const messages = response?.data?.messages || [];
+      
+      // Parser les messages de la conversation
+      const history = [];
+      for (const msg of messages) {
+        const headers = msg.payload?.headers || [];
+        const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || '';
+        const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
+        
+        // Extraire le body
+        let body = '';
+        const extractBody = (part) => {
+          if (part.mimeType === 'text/plain' || part.mimeType === 'text/html') {
+            const bodyData = part.body?.data;
+            if (bodyData) {
+              try {
+                body = Buffer.from(bodyData, 'base64').toString('utf-8');
+              } catch (e) {}
+            }
+          }
+          if (part.parts) {
+            part.parts.forEach(extractBody);
+          }
+        };
+        
+        if (msg.payload) {
+          extractBody(msg.payload);
+        }
+        
+        if (!body) {
+          body = msg.snippet || '';
+        }
+
+        history.push({
+          from,
+          subject,
+          body: body.substring(0, 500), // Limiter pour économiser tokens
+          date: new Date(parseInt(msg.internalDate))
+        });
+      }
+
+      // Trier par date (plus ancien en premier)
+      history.sort((a, b) => a.date - b.date);
+
+      return history;
+
+    } catch (error) {
+      console.error(`    ⚠️ Impossible de récupérer l'historique:`, error.message);
+      return [];
     }
   }
 
   async processMessage(message, user) {
     try {
-      console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
-
-      // ✅ VÉRIFIER SI DÉJÀ TRAITÉ (EN BASE)
+      // ✅ VÉRIFIER SI DÉJÀ TRAITÉ (SILENCIEUX)
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
         messageId: message.id
       });
 
       if (alreadyProcessed) {
-        console.log(`    ⏭️ Déjà traité`);
-        
-        // ✅ MARQUER COMME LU MÊME SI DÉJÀ TRAITÉ
+        // ✅ Marquer comme lu silencieusement (pas de log)
         await this.markAsRead(message.id, user.emailConfig);
         
-        return { sent: false };
+        // ✅ Retourner un flag pour compter les messages déjà traités
+        return { sent: false, alreadyProcessed: true };
       }
 
-      // ✅ RÉCUPÉRER LE MESSAGE COMPLET UNE SEULE FOIS
+      // ✅ NOUVEAU MESSAGE : Logger seulement celui-ci
+      console.log(`    📩 Nouveau: ${message.from} - "${message.subject}"`);
+
+      // ✅ RÉCUPÉRER LE MESSAGE COMPLET
       const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
       
       if (!fullMessage) {
         console.log(`    ❌ Impossible de récupérer le message`);
         await this.markAsRead(message.id, user.emailConfig);
-        return { sent: false };
+        return { sent: false, alreadyProcessed: false };
       }
 
-      // ✅ ANALYSE IA (UNE SEULE FOIS)
-      const analysis = await aiService.analyzeMessage(fullMessage, user);
+      // ✅ RÉCUPÉRER L'HISTORIQUE DE LA CONVERSATION
+      const conversationHistory = await this.getConversationHistory(
+        fullMessage.threadId, 
+        user.emailConfig
+      );
+
+      // ✅ ANALYSE IA (avec contexte de conversation)
+      const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
 
       // ✅ SI NON PERTINENT : SAUVEGARDER ET MARQUER LU
       if (!analysis.is_relevant) {
@@ -227,6 +288,7 @@ class MailPollingService {
         await AutoReply.create({
           userId: user._id,
           messageId: message.id,
+          threadId: fullMessage.threadId,
           from: message.from,
           subject: message.subject,
           body: fullMessage.body,
@@ -240,33 +302,39 @@ class MailPollingService {
         });
 
         await this.markAsRead(message.id, user.emailConfig);
-        return { sent: false };
+        return { sent: false, alreadyProcessed: false };
       }
 
       console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
 
-      // ✅ GÉNÉRER LA RÉPONSE
-      const response = await aiService.generateResponse(fullMessage, analysis, user);
+      // ✅ GÉNÉRER LA RÉPONSE (avec contexte de conversation)
+      const response = await aiService.generateResponse(
+        fullMessage, 
+        analysis, 
+        user, 
+        conversationHistory
+      );
 
       const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
                            !user.aiSettings.requireValidation &&
                            analysis.confidence >= 0.8;
 
       if (shouldAutoSend) {
-        console.log(`📤 Envoi automatique...`);
+        console.log(`    📤 Envoi réponse dans thread ${fullMessage.threadId}...`);
         
-        // ✅ ENVOYER LA RÉPONSE UNE SEULE FOIS
+        // ✅ RÉPONDRE DANS LE THREAD (pas créer nouveau message)
         const sendSuccess = await this.sendReply(fullMessage, response, user);
 
         if (!sendSuccess) {
           console.log(`    ❌ Échec envoi`);
-          return { sent: false };
+          return { sent: false, alreadyProcessed: false };
         }
 
-        // ✅ SAUVEGARDER EN BASE APRÈS ENVOI RÉUSSI
+        // ✅ SAUVEGARDER EN BASE
         await AutoReply.create({
           userId: user._id,
           messageId: message.id,
+          threadId: fullMessage.threadId,
           from: message.from,
           subject: message.subject,
           body: fullMessage.body,
@@ -281,19 +349,19 @@ class MailPollingService {
           sentAt: new Date()
         });
 
-        // ✅ MARQUER COMME LU APRÈS ENVOI
+        // ✅ MARQUER COMME LU
         await this.markAsRead(message.id, user.emailConfig);
 
         console.log(`    ✅ Réponse envoyée à ${message.from}`);
-        return { sent: true };
+        return { sent: true, alreadyProcessed: false };
 
       } else {
         console.log(`    ⏸️ En attente de validation`);
         
-        // ✅ SAUVEGARDER EN ATTENTE
         await AutoReply.create({
           userId: user._id,
           messageId: message.id,
+          threadId: fullMessage.threadId,
           from: message.from,
           subject: message.subject,
           body: fullMessage.body,
@@ -306,21 +374,34 @@ class MailPollingService {
           status: 'pending'
         });
 
-        // ✅ NE PAS MARQUER LU SI VALIDATION REQUISE
-        return { sent: false };
+        return { sent: false, alreadyProcessed: false };
       }
 
     } catch (error) {
       console.error(`    ❌ Erreur traitement:`, error.message);
       
-      // ✅ MARQUER LU EN CAS D'ERREUR POUR ÉVITER BOUCLE INFINIE
       try {
         await this.markAsRead(message.id, user.emailConfig);
-      } catch (markError) {
-        console.error(`    ⚠️ Impossible de marquer lu:`, markError.message);
-      }
+      } catch (markError) {}
       
-      return { sent: false };
+      return { sent: false, alreadyProcessed: false };
+    }
+  }
+
+  async fetchFullMessage(messageId, emailConfig) {
+    const BASE_URL = 'https://k2s.onrender.com';
+
+    try {
+      const response = await axios.get(`${BASE_URL}/api/mail/gmail/message/${messageId}`, {
+        headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+        timeout: 15000
+      });
+
+      return response?.data || null;
+
+    } catch (error) {
+      console.error(`      ❌ Erreur récupération:`, error.message);
+      return null;
     }
   }
 
@@ -328,13 +409,10 @@ class MailPollingService {
     const BASE_URL = 'https://k2s.onrender.com';
 
     try {
-      console.log(`📨 POST /api/mail/gmail/réponse`);
-      
       if (user.emailConfig.provider === 'gmail') {
-        console.log(`📤 [Gmail] Envoi réponse à ${message.from}...`);
-        
+        // ✅ UTILISER threadId pour répondre dans la conversation
         const response = await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
-          threadId: message.threadId,
+          threadId: message.threadId,  // ← Important pour garder la conversation
           to: message.from,
           subject: message.subject || '(sans objet)',
           body: responseBody
@@ -343,12 +421,9 @@ class MailPollingService {
           timeout: 15000
         });
 
-        console.log(`✅ [Gmail] Réponse envoyée`);
         return response.status === 200;
         
       } else if (user.emailConfig.provider === 'outlook') {
-        console.log(`📤 [Outlook] Envoi réponse à ${message.from}...`);
-        
         const response = await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
           messageId: message.id,
           to: message.from,
@@ -359,7 +434,6 @@ class MailPollingService {
           timeout: 15000
         });
 
-        console.log(`✅ [Outlook] Réponse envoyée`);
         return response.status === 200;
       }
 
