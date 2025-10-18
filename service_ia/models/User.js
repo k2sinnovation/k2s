@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-// ✅ Schema utilisateur ENRICHI
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -21,7 +20,6 @@ const userSchema = new mongoose.Schema({
   deviceId: {
     type: String,
     required: true,
-    unique: true,
     index: true,
   },
   subscription: {
@@ -42,7 +40,7 @@ const userSchema = new mongoose.Schema({
     default: Date.now,
   },
 
-  // 🆕 CONFIGURATION EMAIL (déjà présent ?)
+  // 📧 CONFIGURATION EMAIL
   emailConfig: {
     provider: { type: String, enum: ['gmail', 'outlook'] },
     accessToken: String,
@@ -52,7 +50,7 @@ const userSchema = new mongoose.Schema({
     webhookExpiration: Date,
   },
 
-  // 🆕 CONFIGURATION IA
+  // 🤖 CONFIGURATION IA
   aiSettings: {
     isEnabled: { type: Boolean, default: false },
     autoReplyEnabled: { type: Boolean, default: false },
@@ -100,7 +98,7 @@ const userSchema = new mongoose.Schema({
     lastUpdated: { type: Date, default: Date.now }
   },
 
-  // 🆕 Token FCM pour notifications push
+  // 📲 Token FCM pour notifications push
   fcmToken: String,
 });
 
@@ -121,7 +119,7 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// 🆕 MÉTHODE : Construire le contexte IA dynamiquement
+// 🆕 Construire le contexte IA dynamiquement
 userSchema.methods.buildAIContext = async function() {
   const Prestation = mongoose.model('Prestation');
   const Appointment = mongoose.model('Appointment');
@@ -195,7 +193,7 @@ userSchema.methods.buildAIContext = async function() {
   return context;
 };
 
-// 🆕 MÉTHODE : Récupérer les paramètres IA
+// 🆕 Récupérer les paramètres IA
 userSchema.methods.getAISettings = function() {
   return this.aiSettings;
 };
