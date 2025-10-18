@@ -14,7 +14,7 @@ const autoReplySchema = new mongoose.Schema({
     index: true 
   },
   
-  // ✅ NOUVEAU : Pour suivre les conversations Gmail/Outlook
+  // ✅ Pour suivre les conversations Gmail/Outlook
   threadId: { 
     type: String, 
     index: true,
@@ -45,7 +45,7 @@ const autoReplySchema = new mongoose.Schema({
   
   status: { 
     type: String, 
-    enum: ['analyzed', 'generated', 'pending', 'sent', 'rejected', 'ignored'],
+    enum: ['analyzed', 'generated', 'pending', 'sent', 'rejected', 'ignored', 'processing'], // ✅ AJOUT 'processing'
     default: 'analyzed',
     index: true
   },
@@ -62,7 +62,7 @@ const autoReplySchema = new mongoose.Schema({
 // ✅ Index composites optimisés
 autoReplySchema.index({ userId: 1, status: 1 });
 autoReplySchema.index({ userId: 1, createdAt: -1 });
-autoReplySchema.index({ userId: 1, messageId: 1 }, { unique: true }); // Éviter les doublons
-autoReplySchema.index({ userId: 1, threadId: 1 }); // ✅ NOUVEAU : Pour rechercher par conversation
+autoReplySchema.index({ userId: 1, messageId: 1 }, { unique: true }); // ✅ Éviter les doublons (CRUCIAL)
+autoReplySchema.index({ userId: 1, threadId: 1 }); // ✅ Pour rechercher par conversation
 
 module.exports = mongoose.models.AutoReply || mongoose.model('AutoReply', autoReplySchema);
