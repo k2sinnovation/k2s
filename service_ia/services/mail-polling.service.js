@@ -183,120 +183,119 @@ class MailPollingService {
   }
 
   async processMessage(message, user) {
-    try {
-      console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
+  try {
+    console.log(`    🔍 Analyse: ${message.from} - "${message.subject}"`);
 
-      const alreadyProcessed = await AutoReply.findOne({
-        userId: user._id,
-        messageId: message.id
-      });
+    // Vérifier si déjà traité
+    const alreadyProcessed = await AutoReply.findOne({
+      userId: user._id,
+      messageId: message.id
+    });
 
-      if (alreadyProcessed) {
-        console.log(`    ⏭️ Déjà traité`);
-        return { sent: false };
-      }
-
-      const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
+    if (alreadyProcessed) {
+      console.log(`    ⏭️ Déjà traité`);
       
-      if (!fullMessage) {
-        console.log(`    ❌ Impossible de récupérer le message`);
-        // ✅ MARQUER COMME LU MÊME EN CAS D'ERREUR
-        await this.markAsRead(message.id, user.emailConfig);
-        return { sent: false };
-      }
+      // ✅ MARQUER COMME LU QUAND MÊME !
+      await this.markAsRead(message.id, user.emailConfig);
+      
+      return { sent: false };
+    }
 
-      const analysis = await aiService.analyzeMessage(fullMessage, user);
-
-      if (!analysis.is_relevant) {
-        console.log(`    ⏭️ Non pertinent`);
-        
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          from: message.from,
-          subject: message.subject,
-          body: fullMessage.body,
-          analysis: {
-            isRelevant: false,
-            confidence: analysis.confidence,
-            intent: analysis.intent,
-            reason: analysis.reason
-          },
-          status: 'ignored'
-        });
-
-        // ✅ MARQUER COMME LU
-        await this.markAsRead(message.id, user.emailConfig);
-        return { sent: false };
-      }
-
-      console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
-
-      const response = await aiService.generateResponse(fullMessage, analysis, user);
-
-      const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
-                             !user.aiSettings.requireValidation &&
-                             analysis.confidence >= 0.8;
-
-      if (shouldAutoSend) {
-        console.log(`    📤 Envoi automatique...`);
-        
-        await this.sendReply(fullMessage, response, user);
-
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          from: message.from,
-          subject: message.subject,
-          body: fullMessage.body,
-          analysis: {
-            isRelevant: true,
-            confidence: analysis.confidence,
-            intent: analysis.intent
-          },
-          generatedResponse: response,
-          sentResponse: response,
-          status: 'sent',
-          sentAt: new Date()
-        });
-
-        // ✅ MARQUER COMME LU
-        await this.markAsRead(message.id, user.emailConfig);
-
-        console.log(`    ✅ Réponse envoyée à ${message.from}`);
-        return { sent: true };
-
-      } else {
-        console.log(`    ⏸️ En attente de validation`);
-        
-        await AutoReply.create({
-          userId: user._id,
-          messageId: message.id,
-          from: message.from,
-          subject: message.subject,
-          body: fullMessage.body,
-          analysis: {
-            isRelevant: true,
-            confidence: analysis.confidence,
-            intent: analysis.intent
-          },
-          generatedResponse: response,
-          status: 'pending'
-        });
-
-        // ✅ NE PAS MARQUER COMME LU si validation requise
-        // L'utilisateur doit voir l'email pour valider
-
-        return { sent: false };
-      }
-
-    } catch (error) {
-      console.error(`    ❌ Erreur traitement:`, error.message);
-      // ✅ MARQUER COMME LU MÊME EN CAS D'ERREUR
+    const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
+    
+    if (!fullMessage) {
+      console.log(`    ❌ Impossible de récupérer le message`);
       await this.markAsRead(message.id, user.emailConfig);
       return { sent: false };
     }
+
+    const analysis = await aiService.analyzeMessage(fullMessage, user);
+
+    if (!analysis.is_relevant) {
+      console.log(`    ⏭️ Non pertinent`);
+      
+      await AutoReply.create({
+        userId: user._id,
+        messageId: message.id,
+        from: message.from,
+        subject: message.subject,
+        body: fullMessage.body,
+        analysis: {
+          isRelevant: false,
+          confidence: analysis.confidence,
+          intent: analysis.intent,
+          reason: analysis.reason
+        },
+        status: 'ignored'
+      });
+
+      await this.markAsRead(message.id, user.emailConfig);
+      return { sent: false };
+    }
+
+    console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
+
+    const response = await aiService.generateResponse(fullMessage, analysis, user);
+
+    const shouldAutoSend = user.aiSettings.autoReplyEnabled &&
+                           !user.aiSettings.requireValidation &&
+                           analysis.confidence >= 0.8;
+
+    if (shouldAutoSend) {
+      console.log(`    📤 Envoi automatique...`);
+      
+      await this.sendReply(fullMessage, response, user);
+
+      await AutoReply.create({
+        userId: user._id,
+        messageId: message.id,
+        from: message.from,
+        subject: message.subject,
+        body: fullMessage.body,
+        analysis: {
+          isRelevant: true,
+          confidence: analysis.confidence,
+          intent: analysis.intent
+        },
+        generatedResponse: response,
+        sentResponse: response,
+        status: 'sent',
+        sentAt: new Date()
+      });
+
+      await this.markAsRead(message.id, user.emailConfig);
+
+      console.log(`    ✅ Réponse envoyée à ${message.from}`);
+      return { sent: true };
+
+    } else {
+      console.log(`    ⏸️ En attente de validation`);
+      
+      await AutoReply.create({
+        userId: user._id,
+        messageId: message.id,
+        from: message.from,
+        subject: message.subject,
+        body: fullMessage.body,
+        analysis: {
+          isRelevant: true,
+          confidence: analysis.confidence,
+          intent: analysis.intent
+        },
+        generatedResponse: response,
+        status: 'pending'
+      });
+
+      // Ne pas marquer comme lu si validation requise
+      return { sent: false };
+    }
+
+  } catch (error) {
+    console.error(`    ❌ Erreur traitement:`, error.message);
+    await this.markAsRead(message.id, user.emailConfig);
+    return { sent: false };
   }
+}
 
   async sendReply(message, responseBody, user) {
     const BASE_URL = 'https://k2s.onrender.com';
