@@ -66,13 +66,10 @@ class MailPollingService {
 
     } catch (error) {
       console.error('❌ [Polling] Erreur:', error.message);
-    } finally {
-      // ✅ TOUJOURS libérer le verrou global
-      this.isPolling = false;
     }
   }
 
-async checkUserEmails(user) {
+  async checkUserEmails(user) {
     const userKey = user._id.toString();
     const now = Date.now();
     
@@ -281,7 +278,7 @@ async checkUserEmails(user) {
     }
   }
 
-async processMessage(message, user) {
+  async processMessage(message, user) {
     const lockKey = `${user._id}-${message.id}`;
     const now = Date.now();
     
@@ -316,15 +313,15 @@ async processMessage(message, user) {
         return { sent: false, alreadyProcessed: true };
       }
 
-      // ✅ CRÉER UN ENREGISTREMENT "PROCESSING" IMMÉDIATEMENT
+      // ✅ CRÉER UN ENREGISTREMENT "PROCESSING" IMMÉDIATEMENT AVEC BODY
       const processingRecord = await AutoReply.create({
         userId: user._id,
         messageId: message.id,
         threadId: message.threadId,
         from: message.from,
-        subject: message.subject,
-        body: '',
-        status: 'processing', // 🆕 Nouvel état
+        subject: message.subject || '(sans objet)',
+        body: message.body || message.snippet || '(en cours de récupération...)', // ✅ CORRECTION CRITIQUE
+        status: 'processing',
         createdAt: new Date()
       });
 
@@ -334,6 +331,14 @@ async processMessage(message, user) {
       
       if (!fullMessage) {
         console.log(`    ❌ Impossible de récupérer le message`);
+        
+        // ✅ NETTOYER en cas d'échec
+        await AutoReply.deleteOne({
+          userId: user._id,
+          messageId: message.id,
+          status: 'processing'
+        });
+        
         await this.markAsRead(message.id, user.emailConfig);
         return { sent: false, alreadyProcessed: false };
       }
@@ -345,7 +350,7 @@ async processMessage(message, user) {
 
       const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
 
-   if (!analysis.is_relevant) {
+      if (!analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${analysis.reason}`);
         
         // ✅ METTRE À JOUR au lieu de créer un nouveau
@@ -376,7 +381,7 @@ async processMessage(message, user) {
                            !user.aiSettings.requireValidation &&
                            analysis.confidence >= 0.8;
 
-     if (shouldAutoSend) {
+      if (shouldAutoSend) {
         console.log(`    📤 Envoi réponse dans thread ${fullMessage.threadId}...`);
         
         const sendSuccess = await this.sendReply(fullMessage, response, user);
@@ -406,12 +411,13 @@ async processMessage(message, user) {
         processingRecord.status = 'sent';
         processingRecord.sentAt = new Date();
         await processingRecord.save();
+
         await this.markAsRead(message.id, user.emailConfig);
 
         console.log(`    ✅ Réponse envoyée à ${message.from}`);
         return { sent: true, alreadyProcessed: false };
 
-} else {
+      } else {
         console.log(`    ⏸️ En attente de validation`);
         
         // ✅ METTRE À JOUR au lieu de créer un nouveau
@@ -428,7 +434,7 @@ async processMessage(message, user) {
         return { sent: false, alreadyProcessed: false };
       }
 
-} catch (error) {
+    } catch (error) {
       console.error(`    ❌ Erreur traitement:`, error.message);
       
       // ✅ NETTOYER en cas d'erreur
