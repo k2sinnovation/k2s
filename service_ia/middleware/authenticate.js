@@ -1,11 +1,15 @@
 const Session = require('../models/Session');
 const User = require('../models/User');
+const driveCacheMiddleware = require('./drive-cache.middleware');
+const driveService = require('../services/google-drive.service');
 
 /**
  * Middleware d'authentification par SESSION TOKEN PERMANENT
- * Remplace l'ancien système JWT court
+ * + Chargement automatique des données Drive
  */
 module.exports = async (req, res, next) => {
+  const startTime = Date.now();
+  
   try {
     const authHeader = req.headers.authorization;
     
@@ -19,8 +23,6 @@ module.exports = async (req, res, next) => {
     
     const sessionToken = authHeader.replace('Bearer ', '');
     const hashedToken = Session.hashToken(sessionToken);
-    
-    console.log(`🔍 [Auth] Vérification session: ${sessionToken.substring(0, 20)}...`);
     
     // ✅ VÉRIFIER SESSION EN BASE
     const session = await Session.findOne({
@@ -37,9 +39,7 @@ module.exports = async (req, res, next) => {
       });
     }
     
-    console.log(`✅ [Auth] Session trouvée pour userId=${session.userId}`);
-    
-    // ✅ VÉRIFIER ABONNEMENT
+    // ✅ VÉRIFIER UTILISATEUR ET ABONNEMENT
     const user = await User.findById(session.userId);
     
     if (!user) {
@@ -71,15 +71,57 @@ module.exports = async (req, res, next) => {
     req.session = session;
     req.user = user;
     
-    // ✅ ATTACHER LES TOKENS EMAIL SI BESOIN
+    // ✅ ATTACHER LES TOKENS EMAIL
     req.emailAccessToken = session.emailAccessToken || user.emailConfig?.accessToken;
     req.emailRefreshToken = session.emailRefreshToken || user.emailConfig?.refreshToken;
     
-    console.log(`✅ [Auth] Middleware: userId=${req.userId}, device=${req.deviceId}`);
+    const authDuration = Date.now() - startTime;
+    console.log(`✅ [Auth:${req.userId}] Authentifié en ${authDuration}ms`);
+    
+    // ✅ NOUVEAU : CHARGER DONNÉES DRIVE EN CACHE (NON BLOQUANT)
+    if (req.emailAccessToken) {
+      try {
+        // Vérifier si déjà en cache
+        req.driveData = await driveCacheMiddleware.getCachedDriveData(user._id.toString());
+        
+        if (!req.driveData) {
+          // Charger depuis Drive en arrière-plan
+          console.log(`[Auth:${req.userId}] 📂 Chargement données Drive...`);
+          
+          const driveStartTime = Date.now();
+          
+          const data = await driveService.loadAllUserData(
+            req.emailAccessToken, 
+            user._id.toString()
+          );
+          
+          const driveDuration = Date.now() - driveStartTime;
+          console.log(`[Auth:${req.userId}] ✅ Drive chargé en ${driveDuration}ms`);
+          
+          req.driveData = data;
+          
+          // Mettre en cache (async)
+          driveCacheMiddleware.cacheUserDriveData(user._id.toString(), data);
+        } else {
+          console.log(`[Auth:${req.userId}] 📦 Drive depuis cache`);
+        }
+      } catch (driveError) {
+        // Ne pas bloquer si Drive échoue
+        console.warn(`[Auth:${req.userId}] ⚠️ Impossible de charger Drive (non bloquant):`, driveError.message);
+        req.driveData = null;
+      }
+    } else {
+      console.warn(`[Auth:${req.userId}] ⚠️ Pas de token Gmail, Drive non chargé`);
+      req.driveData = null;
+    }
+    
+    const totalDuration = Date.now() - startTime;
+    console.log(`✅ [Auth:${req.userId}] Middleware complet en ${totalDuration}ms`);
     
     next();
   } catch (error) {
-    console.error('❌ [Auth] Middleware erreur:', error.message);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [Auth] Erreur middleware (${duration}ms):`, error.message);
     res.status(500).json({ 
       error: 'Erreur authentification',
       code: 'AUTH_ERROR'
