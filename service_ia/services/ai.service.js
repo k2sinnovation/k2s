@@ -1,10 +1,247 @@
+// service_ia/services/ai.service.js
+// ✅ VERSION OPTIMISÉE - 1 seul appel OpenAI au lieu de 2
+
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
 
 class AIService {
   
   /**
-   * 🔍 Analyser un message (avec historique optionnel)
+   * 🎯 NOUVELLE MÉTHODE OPTIMISÉE
+   * Analyse + Génération en 1 SEUL appel OpenAI
+   * Économie : 50% de tokens et requêtes
+   */
+  async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
+    const settings = user.aiSettings;
+    const apiKey = process.env.OPENAI_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('Clé API OpenAI manquante');
+    }
+
+    console.log(`[AI:${user._id}] 🤖 Analyse + Génération en 1 appel...`);
+
+    // ✅ Charger contexte Drive UNE SEULE FOIS (ou utiliser celui passé en param)
+    const accessToken = user.emailConfig?.accessToken;
+    let driveContext = '';
+    
+    if (driveData) {
+      // Utiliser driveData déjà chargé (0 requête supplémentaire)
+      driveContext = this._buildContextFromDriveData(driveData);
+      console.log(`[AI:${user._id}] ✅ Contexte Drive depuis cache (${driveContext.length} chars)`);
+    } else if (accessToken) {
+      try {
+        driveContext = await contextBuilder.buildContextFromDrive(
+          accessToken, 
+          user._id.toString(),
+          { includeAppointments: true }
+        );
+        console.log(`[AI:${user._id}] ✅ Contexte Drive chargé (${driveContext.length} chars)`);
+      } catch (driveError) {
+        console.warn(`[AI:${user._id}] ⚠️ Erreur Drive:`, driveError.message);
+        driveContext = contextBuilder._buildMinimalContext();
+      }
+    } else {
+      driveContext = contextBuilder._buildMinimalContext();
+    }
+
+    // Construire le prompt COMBINÉ
+    const systemPrompt = this._buildCombinedSystemPrompt(driveContext, settings);
+    const userPrompt = this._buildCombinedUserPrompt(message, conversationHistory);
+
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: settings.aiModel || 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.5, // Équilibre entre créativité et précision
+          max_tokens: 800, // Assez pour analyse + réponse
+          response_format: { type: "json_object" } // ✅ FORCER JSON
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
+
+      const content = response.data.choices[0].message.content;
+
+      // Parser la réponse JSON combinée
+      let result;
+      try {
+        result = JSON.parse(content);
+      } catch (parseError) {
+        console.error(`[AI:${user._id}] ❌ Erreur parsing JSON:`, parseError.message);
+        return {
+          analysis: {
+            is_relevant: false,
+            confidence: 0.1,
+            intent: 'error',
+            reason: 'Erreur parsing réponse IA'
+          },
+          response: null
+        };
+      }
+
+      // ✅ Normaliser la réponse
+      const normalizedResult = {
+        analysis: {
+          is_relevant: result.is_relevant ?? result.analysis?.is_relevant ?? false,
+          confidence: result.confidence ?? result.analysis?.confidence ?? 0.5,
+          intent: result.intent ?? result.analysis?.intent ?? 'unknown',
+          reason: result.reason ?? result.analysis?.reason ?? 'Non spécifié',
+          details: result.details ?? result.analysis?.details ?? {}
+        },
+        response: result.response ?? null
+      };
+
+      console.log(`[AI:${user._id}] ✅ Analyse: ${normalizedResult.analysis.intent} (${(normalizedResult.analysis.confidence * 100).toFixed(0)}%) - Pertinent: ${normalizedResult.analysis.is_relevant}`);
+      
+      if (normalizedResult.response) {
+        console.log(`[AI:${user._id}] ✅ Réponse générée (${normalizedResult.response.length} chars)`);
+      }
+
+      return normalizedResult;
+
+    } catch (error) {
+      console.error(`[AI:${user._id}] ❌ Erreur IA combinée:`, error.message);
+      if (error.response) {
+        console.error('Détails API:', error.response.data);
+      }
+      
+      return {
+        analysis: {
+          is_relevant: false,
+          confidence: 0.0,
+          intent: 'error',
+          reason: `Erreur IA: ${error.message}`
+        },
+        response: null
+      };
+    }
+  }
+
+  /**
+   * 📝 Construire le prompt système COMBINÉ (analyse + génération)
+   */
+  _buildCombinedSystemPrompt(driveContext, settings) {
+    const tone = settings.tone || 'professionnel';
+    
+    return `${driveContext}
+
+---
+
+Tu es ${settings.role || 'un assistant virtuel'} pour ${settings.salonName || 'cette entreprise'}.
+
+**INSTRUCTIONS** :
+${settings.instructions || 'Sois professionnel et courtois.'}
+
+**TON** : ${tone}
+
+**TÂCHE EN 2 ÉTAPES** :
+
+1️⃣ **ANALYSE** : Détermine si le message est pertinent
+   - ✅ Pertinent : RDV, questions prestations/tarifs/horaires, annulation/modification
+   - ❌ Non pertinent : spam, pub, newsletter, notification auto (TikTok, LinkedIn, etc.)
+
+2️⃣ **RÉPONSE** : Si pertinent, génère une réponse professionnelle
+   - Utilise les infos du contexte Drive
+   - Concis (3-5 phrases max)
+   - Propose des créneaux concrets si pertinent
+   - Termine par formule de politesse
+   - N'invente JAMAIS d'infos non présentes
+
+**RÉPONDS UNIQUEMENT EN JSON VALIDE** :
+{
+  "is_relevant": true/false,
+  "confidence": 0.0 à 1.0,
+  "intent": "prise_rdv"|"question_info"|"annulation"|"modification"|"reclamation"|"spam"|"autre",
+  "reason": "Explication courte",
+  "details": {
+    "date_souhaitee": "si mentionnée",
+    "prestation_souhaitee": "si mentionnée"
+  },
+  "response": "Ta réponse si is_relevant=true, sinon null"
+}`;
+  }
+
+  /**
+   * 📝 Construire le prompt utilisateur COMBINÉ
+   */
+  _buildCombinedUserPrompt(message, conversationHistory) {
+    let prompt = '';
+
+    if (conversationHistory.length > 0) {
+      prompt += '**HISTORIQUE CONVERSATION** :\n';
+      conversationHistory.slice(-3).forEach(msg => {
+        prompt += `- ${msg.from}: ${msg.body.substring(0, 100)}...\n`;
+      });
+      prompt += '\n';
+    }
+
+    prompt += `**MESSAGE À ANALYSER ET RÉPONDRE** :
+De: ${message.from}
+Sujet: ${message.subject || '(sans objet)'}
+
+Corps:
+${message.body}
+
+---
+
+Analyse ce message ET génère une réponse appropriée si pertinent.
+Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, details, response`;
+
+    return prompt;
+  }
+
+  /**
+   * 🔨 Construire contexte depuis driveData (évite rechargement)
+   */
+  _buildContextFromDriveData(driveData) {
+    if (!driveData) return '';
+    
+    let context = '**INFORMATIONS ENTREPRISE** :\n';
+    
+    if (driveData.businessInfo && !driveData.businessInfo._empty) {
+      const biz = driveData.businessInfo;
+      context += `- Nom: ${biz.name || 'N/A'}\n`;
+      context += `- Description: ${biz.description || 'N/A'}\n`;
+      if (biz.services?.length > 0) {
+        context += `- Services: ${biz.services.join(', ')}\n`;
+      }
+      if (biz.prices) {
+        context += `- Tarifs: ${JSON.stringify(biz.prices)}\n`;
+      }
+      if (biz.hours) {
+        context += `- Horaires: ${JSON.stringify(biz.hours)}\n`;
+      }
+    }
+    
+    if (driveData.planningInfo && !driveData.planningInfo._empty) {
+      const planning = driveData.planningInfo;
+      context += `\n**DISPONIBILITÉS** :\n`;
+      if (planning.availableSlots?.length > 0) {
+        context += `- Créneaux dispos: ${planning.availableSlots.slice(0, 5).join(', ')}\n`;
+      }
+    }
+    
+    return context;
+  }
+
+  // ========================================
+  // 🔄 MÉTHODES ANCIENNES (compatibilité)
+  // Garder pour ne pas casser le code existant
+  // ========================================
+
+  /**
+   * 🔍 Analyser un message (ANCIENNE VERSION - conservée pour compatibilité)
    */
   async analyzeMessage(message, user, conversationHistory = []) {
     const settings = user.aiSettings;
@@ -16,7 +253,6 @@ class AIService {
 
     console.log(`[AI:${user._id}] 🤖 Analyse message de "${message.from}"...`);
 
-    // Charger contexte Drive
     const accessToken = user.emailConfig?.accessToken;
     let driveContext = '';
     
@@ -33,11 +269,9 @@ class AIService {
         driveContext = contextBuilder._buildMinimalContext();
       }
     } else {
-      console.warn(`[AI:${user._id}] ⚠️ Pas de token Gmail, contexte minimal`);
       driveContext = contextBuilder._buildMinimalContext();
     }
 
-    // Construire le prompt d'analyse
     const analysisPrompt = this._buildAnalysisSystemPrompt(driveContext);
     const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
 
@@ -52,7 +286,7 @@ class AIService {
           ],
           temperature: 0.3,
           max_tokens: 200,
-          response_format: { type: "json_object" } // ✅ FORCER JSON
+          response_format: { type: "json_object" }
         },
         {
           headers: {
@@ -64,26 +298,8 @@ class AIService {
       );
 
       const content = response.data.choices[0].message.content;
-      console.log(`[AI:${user._id}] 📝 Réponse brute OpenAI:`, content.substring(0, 200));
+      let analysis = JSON.parse(content);
 
-      // Parser la réponse JSON
-      let analysis;
-      try {
-        analysis = JSON.parse(content);
-      } catch (parseError) {
-        console.error(`[AI:${user._id}] ❌ Erreur parsing JSON:`, parseError.message);
-        console.error('Contenu reçu:', content);
-        
-        // Fallback : marquer comme non pertinent
-        analysis = {
-          is_relevant: false,
-          confidence: 0.1,
-          intent: 'unknown',
-          reason: 'Erreur de parsing de la réponse IA'
-        };
-      }
-
-      // ✅ NORMALISER LES CLÉS (snake_case vers camelCase si nécessaire)
       const normalizedAnalysis = {
         is_relevant: analysis.is_relevant ?? analysis.isRelevant ?? false,
         confidence: analysis.confidence ?? 0.5,
@@ -92,17 +308,12 @@ class AIService {
         details: analysis.details ?? {}
       };
 
-      console.log(`[AI:${user._id}] ✅ Analyse: ${normalizedAnalysis.intent} (${(normalizedAnalysis.confidence * 100).toFixed(0)}%) - Pertinent: ${normalizedAnalysis.is_relevant}`);
+      console.log(`[AI:${user._id}] ✅ Analyse: ${normalizedAnalysis.intent} (${(normalizedAnalysis.confidence * 100).toFixed(0)}%)`);
 
       return normalizedAnalysis;
 
     } catch (error) {
       console.error(`[AI:${user._id}] ❌ Erreur analyse:`, error.message);
-      if (error.response) {
-        console.error('Détails API:', error.response.data);
-      }
-      
-      // Retourner une analyse par défaut en cas d'erreur
       return {
         is_relevant: false,
         confidence: 0.0,
@@ -113,7 +324,7 @@ class AIService {
   }
 
   /**
-   * 🤖 Générer une réponse (avec historique conversation)
+   * 🤖 Générer une réponse (ANCIENNE VERSION - conservée pour compatibilité)
    */
   async generateResponse(message, analysis, user, conversationHistory = []) {
     const settings = user.aiSettings;
@@ -125,12 +336,10 @@ class AIService {
 
     console.log(`[AI:${user._id}] 💬 Génération réponse pour intent="${analysis.intent}"...`);
 
-    // Si non pertinent, réponse standard
     if (!analysis.is_relevant) {
       return this._generateOutOfScopeResponse(settings, user);
     }
 
-    // Charger contexte Drive
     const accessToken = user.emailConfig?.accessToken;
     let driveContext = '';
     
@@ -143,15 +352,12 @@ class AIService {
         );
         console.log(`[AI:${user._id}] ✅ Contexte Drive chargé (${driveContext.length} caractères)`);
       } catch (driveError) {
-        console.warn(`[AI:${user._id}] ⚠️ Impossible de charger Drive:`, driveError.message);
         driveContext = contextBuilder._buildMinimalContext();
       }
     } else {
-      console.warn(`[AI:${user._id}] ⚠️ Pas de token Gmail, contexte minimal`);
       driveContext = contextBuilder._buildMinimalContext();
     }
 
-    // Construire le prompt de réponse
     const systemPrompt = this._buildResponseSystemPrompt(driveContext, settings);
     const userPrompt = this._buildResponseUserPrompt(message, analysis, conversationHistory);
 
@@ -177,25 +383,16 @@ class AIService {
       );
 
       const generatedResponse = response.data.choices[0].message.content.trim();
-      
       console.log(`[AI:${user._id}] ✅ Réponse générée (${generatedResponse.length} caractères)`);
 
       return generatedResponse;
 
     } catch (error) {
       console.error(`[AI:${user._id}] ❌ Erreur génération:`, error.message);
-      if (error.response) {
-        console.error('Détails API:', error.response.data);
-      }
-      
-      // Réponse de secours
       return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\n${settings.salonName || user.businessName}`;
     }
   }
 
-  /**
-   * 📝 Construire le prompt système pour l'ANALYSE
-   */
   _buildAnalysisSystemPrompt(driveContext) {
     return `${driveContext}
 
@@ -222,9 +419,6 @@ Tu es un expert en analyse de messages clients pour un salon/commerce.
 }`;
   }
 
-  /**
-   * 📝 Construire le prompt utilisateur pour l'ANALYSE
-   */
   _buildAnalysisUserPrompt(message, conversationHistory) {
     let prompt = '';
 
@@ -248,9 +442,6 @@ Analyse ce message et réponds en JSON.`;
     return prompt;
   }
 
-  /**
-   * 📝 Construire le prompt système pour la RÉPONSE
-   */
   _buildResponseSystemPrompt(driveContext, settings) {
     const tone = settings.tone || 'professionnel';
     
@@ -276,9 +467,6 @@ ${settings.instructions || 'Sois professionnel et courtois.'}
 **FORMAT DE RÉPONSE** : Texte brut uniquement (pas de JSON, pas de markdown).`;
   }
 
-  /**
-   * 📝 Construire le prompt utilisateur pour la RÉPONSE
-   */
   _buildResponseUserPrompt(message, analysis, conversationHistory) {
     let prompt = '';
 
@@ -309,9 +497,6 @@ Génère une réponse professionnelle et personnalisée.`;
     return prompt;
   }
 
-  /**
-   * 📧 Réponse standard pour messages hors scope
-   */
   _generateOutOfScopeResponse(settings, user) {
     return `Bonjour,
 
