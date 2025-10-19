@@ -14,90 +14,44 @@ const authMiddleware = (req, res, next) => {
 };
 
 // ========================================
-// GMAIL API ROUTES
+// GMAIL API ROUTES - VERSION OPTIMISÉE
 // ========================================
 
-// GET /api/mail/gmail/inbox - Récupérer les emails Gmail
+// ⚡ GET /api/mail/gmail/inbox - VERSION ULTRA-OPTIMISÉE (1 SEULE REQUÊTE)
 router.get('/gmail/inbox', authMiddleware, async (req, res) => {
   try {
-    const { pageToken, q } = req.query; // ⭐ Récupérer le paramètre 'q'
-    const url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages';
+    const { q } = req.query;
+    const query = q || 'in:inbox';
     
-    const params = {
-      maxResults: 20,
-    };
-    
-    // ⭐ CRUCIAL : Utiliser le filtre 'q' si fourni, sinon INBOX par défaut
-    if (q) {
-      params.q = q; // ⭐ Appliquer le filtre (ex: "is:unread in:inbox")
-      console.log(`📥 [Gmail] Récupération inbox avec filtre: "${q}"`);
-    } else {
-      params.labelIds = 'INBOX';
-      console.log('📥 [Gmail] Récupération inbox...');
-    }
-    
-    if (pageToken) params.pageToken = pageToken;
+    console.log(`📥 [Gmail] Récupération avec filtre: "${query}"`);
 
-    const response = await axios.get(url, {
-      headers: { Authorization: `Bearer ${req.accessToken}` },
-      params,
-    });
+    // ⚡ 1 SEULE REQUÊTE : Récupérer juste les IDs
+    const response = await axios.get(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+      {
+        headers: { Authorization: `Bearer ${req.accessToken}` },
+        params: { 
+          q: query, // ⭐ Filtre appliqué (ex: "is:unread in:inbox")
+          maxResults: 20 
+        },
+      }
+    );
 
     if (!response.data.messages) {
       console.log('📭 [Gmail] Aucun message');
-      return res.json({ messages: [], nextPageToken: null });
+      return res.json({ messages: [] });
     }
 
-    console.log(`📨 [Gmail] ${response.data.messages.length} messages trouvés par l'API`);
+    // ⚡ Retourner juste les IDs + threadIds
+    // Les détails seront récupérés UNIQUEMENT si nécessaire
+    const messages = response.data.messages.map(msg => ({
+      id: msg.id,
+      threadId: msg.threadId
+    }));
 
-    // Récupérer les détails de chaque message
-    const messages = await Promise.all(
-      response.data.messages.map(async (msg) => {
-        try {
-          const detailResponse = await axios.get(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`,
-            {
-              headers: { Authorization: `Bearer ${req.accessToken}` },
-              params: { format: 'full' },
-            }
-          );
-          
-          const message = detailResponse.data;
-          const headers = message.payload.headers;
-          const isUnread = message.labelIds?.includes('UNREAD');
-          
-          return {
-            id: message.id,
-            threadId: message.threadId,
-            from: headers.find(h => h.name === 'From')?.value || '',
-            subject: headers.find(h => h.name === 'Subject')?.value || '(sans objet)',
-            date: new Date(parseInt(message.internalDate)),
-            snippet: message.snippet,
-            isRead: !isUnread,
-            labelIds: message.labelIds, // ⭐ Inclure pour debug
-          };
-        } catch (err) {
-          console.error(`❌ Erreur détail message ${msg.id}:`, err.message);
-          return null;
-        }
-      })
-    );
+    console.log(`✅ [Gmail] ${messages.length} message(s)`);
 
-    const validMessages = messages.filter(m => m !== null);
-    
-    // ⭐ FILTRAGE CÔTÉ SERVEUR en sécurité (au cas où l'API Gmail rate le filtre)
-    let finalMessages = validMessages;
-    if (q && q.includes('is:unread')) {
-      finalMessages = validMessages.filter(m => !m.isRead);
-      console.log(`📨 [Gmail] Filtre non-lu appliqué: ${finalMessages.length}/${validMessages.length}`);
-    }
-    
-    console.log(`✅ [Gmail] ${finalMessages.length} emails récupérés`);
-
-    res.json({
-      messages: finalMessages,
-      nextPageToken: response.data.nextPageToken,
-    });
+    res.json({ messages });
 
   } catch (error) {
     console.error('❌ [Gmail] Erreur inbox:', error.message);
@@ -108,7 +62,7 @@ router.get('/gmail/inbox', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/mail/gmail/message/:id - Récupérer un email complet
+// GET /api/mail/gmail/message/:id - Récupérer UN email complet
 router.get('/gmail/message/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
@@ -167,7 +121,7 @@ router.get('/gmail/message/:id', authMiddleware, async (req, res) => {
       date: new Date(parseInt(message.internalDate)),
       body,
       isHtml,
-      isRead: !message.labelIds?.includes('UNREAD'),
+      labelIds: message.labelIds,
     });
 
   } catch (error) {
@@ -201,39 +155,15 @@ router.get('/gmail/search', authMiddleware, async (req, res) => {
       return res.json({ messages: [] });
     }
 
-    // Récupérer les détails
-    const messages = await Promise.all(
-      response.data.messages.map(async (msg) => {
-        try {
-          const detailResponse = await axios.get(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`,
-            {
-              headers: { Authorization: `Bearer ${req.accessToken}` },
-              params: { format: 'full' },
-            }
-          );
-          
-          const message = detailResponse.data;
-          const headers = message.payload.headers;
-          
-          return {
-            id: message.id,
-            from: headers.find(h => h.name === 'From')?.value || '',
-            subject: headers.find(h => h.name === 'Subject')?.value || '',
-            date: new Date(parseInt(message.internalDate)),
-            snippet: message.snippet,
-            isRead: !message.labelIds?.includes('UNREAD'),
-          };
-        } catch (err) {
-          return null;
-        }
-      })
-    );
+    // Retourner juste les IDs
+    const messages = response.data.messages.map(msg => ({
+      id: msg.id,
+      threadId: msg.threadId
+    }));
 
-    const validMessages = messages.filter(m => m !== null);
-    console.log(`✅ [Gmail] ${validMessages.length} résultats trouvés`);
+    console.log(`✅ [Gmail] ${messages.length} résultat(s)`);
 
-    res.json({ messages: validMessages });
+    res.json({ messages });
 
   } catch (error) {
     console.error('❌ [Gmail] Erreur recherche:', error.message);
@@ -253,9 +183,8 @@ router.post('/gmail/reply', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Destinataire et corps requis' });
     }
 
-    console.log(`📤 [Gmail] Envoi réponse à ${to} dans thread ${threadId || 'nouveau'}...`);
+    console.log(`📤 [Gmail] Envoi réponse à ${to}...`);
 
-    // ✅ CORRECTION CRITIQUE : Construire l'email avec In-Reply-To et References
     const emailLines = [
       `To: ${to}`,
       `Subject: ${subject.startsWith('Re:') ? subject : `Re: ${subject}`}`,
@@ -267,20 +196,15 @@ router.post('/gmail/reply', authMiddleware, async (req, res) => {
 
     const email = emailLines.join('\r\n');
 
-    // ✅ Encoder en base64url
     const encodedEmail = Buffer.from(email)
       .toString('base64')
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
-    // ✅ IMPORTANT : Inclure threadId pour grouper dans la conversation
-    const payload = {
-      raw: encodedEmail
-    };
-
+    const payload = { raw: encodedEmail };
     if (threadId) {
-      payload.threadId = threadId; // ✅ CECI EST CRUCIAL
+      payload.threadId = threadId;
     }
 
     const response = await axios.post(
@@ -294,23 +218,54 @@ router.post('/gmail/reply', authMiddleware, async (req, res) => {
       }
     );
 
-    console.log(`✅ [Gmail] Réponse envoyée (messageId: ${response.data.id}, threadId: ${response.data.threadId})`);
+    console.log(`✅ [Gmail] Réponse envoyée (messageId: ${response.data.id})`);
 
     res.json({ 
       success: true, 
-      message: 'Réponse envoyée',
       messageId: response.data.id,
       threadId: response.data.threadId
     });
 
   } catch (error) {
     console.error('❌ [Gmail] Erreur envoi:', error.message);
-    if (error.response) {
-      console.error('Détails:', error.response.data);
-    }
     res.status(error.response?.status || 500).json({ 
       error: 'Erreur envoi réponse',
       details: error.response?.data || error.message 
+    });
+  }
+});
+
+// POST /api/mail/gmail/mark-read - Marquer comme lu
+router.post('/gmail/mark-read', authMiddleware, async (req, res) => {
+  try {
+    const { messageId } = req.body;
+
+    if (!messageId) {
+      return res.status(400).json({ error: 'messageId requis' });
+    }
+
+    await axios.post(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+      {
+        removeLabelIds: ['UNREAD']
+      },
+      {
+        headers: { 
+          'Authorization': `Bearer ${req.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+      }
+    );
+
+    console.log(`✓ Message ${messageId} marqué comme lu`);
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error('❌ [Gmail] Erreur mark-read:', error.message);
+    res.status(error.response?.status || 500).json({ 
+      error: 'Erreur marquage',
+      details: error.message 
     });
   }
 });
@@ -319,10 +274,10 @@ router.post('/gmail/reply', authMiddleware, async (req, res) => {
 // OUTLOOK API ROUTES
 // ========================================
 
-// GET /api/mail/outlook/inbox - Récupérer les 20 derniers emails Outlook
+// GET /api/mail/outlook/inbox - Récupérer les emails Outlook
 router.get('/outlook/inbox', authMiddleware, async (req, res) => {
   try {
-    const { skip } = req.query;
+    const { skip, filter } = req.query;
     const url = 'https://graph.microsoft.com/v1.0/me/messages';
     
     const params = {
@@ -332,6 +287,7 @@ router.get('/outlook/inbox', authMiddleware, async (req, res) => {
     };
     
     if (skip) params.$skip = parseInt(skip);
+    if (filter) params.$filter = filter; // ex: "isRead eq false"
 
     console.log('📥 [Outlook] Récupération inbox...');
 
@@ -435,7 +391,7 @@ router.get('/outlook/search', authMiddleware, async (req, res) => {
       isRead: msg.isRead,
     }));
 
-    console.log(`✅ [Outlook] ${messages.length} résultats trouvés`);
+    console.log(`✅ [Outlook] ${messages.length} résultat(s)`);
 
     res.json({ messages });
 
@@ -461,9 +417,7 @@ router.post('/outlook/reply', authMiddleware, async (req, res) => {
 
     await axios.post(
       `https://graph.microsoft.com/v1.0/me/messages/${messageId}/reply`,
-      {
-        comment: body,
-      },
+      { comment: body },
       {
         headers: {
           Authorization: `Bearer ${req.accessToken}`,
