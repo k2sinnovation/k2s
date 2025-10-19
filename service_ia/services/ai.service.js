@@ -3,7 +3,7 @@
 
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
-const quotaService = require('./quota.service'); // ✅ AJOUT
+const quotaService = require('../quota.service'); // ✅ AJOUT
 
 class AIService {
   
