@@ -291,7 +291,6 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
     const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
 
     try {
-    try {
       // ✅ Construction de la requête avec response_format conditionnel
       const requestBody = {
         model: 'gpt-4o-mini',
