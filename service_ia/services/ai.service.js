@@ -89,10 +89,45 @@ class AIService {
           cleanContent = cleanContent.replace(/^```\s*/, '').replace(/```\s*$/, '');
         }
         
+        // ✅ FIX CRITIQUE : Nettoyer les caractères de contrôle avant parsing
+        // Mistral génère parfois des \n non échappés dans les strings JSON
+        cleanContent = cleanContent
+          .replace(/\r\n/g, '\\n')  // Windows line endings
+          .replace(/\r/g, '\\n')    // Mac line endings
+          .replace(/\n/g, '\\n')    // Unix line endings
+          .replace(/\t/g, '\\t');   // Tabs
+        
         result = JSON.parse(cleanContent);
       } catch (parseError) {
         console.error(`[AI:${user._id}] ❌ Erreur parsing JSON:`, parseError.message);
         console.error('Contenu brut:', content.substring(0, 500));
+        
+        // ✅ Fallback : Extraire manuellement is_relevant et intent
+        try {
+          const isRelevantMatch = content.match(/"is_relevant"\s*:\s*(true|false)/i);
+          const intentMatch = content.match(/"intent"\s*:\s*"([^"]+)"/i);
+          const confidenceMatch = content.match(/"confidence"\s*:\s*([0-9.]+)/);
+          
+          if (isRelevantMatch) {
+            const fallbackResult = {
+              is_relevant: isRelevantMatch[1] === 'true',
+              confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+              intent: intentMatch ? intentMatch[1] : 'unknown',
+              reason: 'Parsing partiel (erreur JSON)',
+              details: {}
+            };
+            
+            console.log(`[AI:${user._id}] ⚠️ Parsing partiel réussi: ${fallbackResult.intent}`);
+            
+            return {
+              analysis: fallbackResult,
+              response: null
+            };
+          }
+        } catch (fallbackError) {
+          console.error(`[AI:${user._id}] ❌ Fallback parsing échoué`);
+        }
+        
         return {
           analysis: {
             is_relevant: false,
