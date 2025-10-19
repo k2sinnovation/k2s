@@ -219,7 +219,10 @@ class MailPollingService {
         try {
           response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
-            params: { q: 'is:unread in:inbox' }, // ✅ Filtre Gmail
+            params: { 
+              q: 'is:unread in:inbox',
+              minimal: 'true' // ✅ Mode minimal pour polling (IDs uniquement)
+            },
             timeout: 15000
           });
         } catch (error) {
