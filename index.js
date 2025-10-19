@@ -333,12 +333,15 @@ mongoose.connect(process.env.MONGO_URI, {
           });
         }, 10000);
 
-        // ⏱️ CRON UNIQUE : Toutes les 5 minutes
-        cronJob = cron.schedule('*/5 * * * *', () => {
-          console.log('⏰ [CRON] Démarrage vérification emails...');
-          mailPollingService.checkAllUsers().catch(err => {
-            console.error('❌ [CRON] Erreur:', err.message);
-          });
+      // ⏱️ TEST : Toutes les 10 secondes (au lieu de CRON 5 minutes)
+cronJob = setInterval(() => {
+  console.log('⏰ [TEST-10s] Démarrage vérification emails...');
+  mailPollingService.checkAllUsers().catch(err => {
+    console.error('❌ [TEST] Erreur:', err.message);
+  });
+}, 10000); // 10 secondes
+
+console.log('✅ Auto-Reply TEST : vérification toutes les 10 secondes');
         }, {
           scheduled: true,
           timezone: "Europe/Paris"
