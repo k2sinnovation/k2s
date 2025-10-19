@@ -435,7 +435,7 @@ router.get('/drive/debug/list', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`❌ [DriveDebug:${userId}] Erreur:`, error.message);
+    console.error(`❌ [DriveDebug:${req.userId}] Erreur:`, error.message);
     handleDriveError(error, req, res);
   }
 });
