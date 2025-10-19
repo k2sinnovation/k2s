@@ -343,7 +343,8 @@ class MailPollingService {
         user.emailConfig
       );
 
-      console.log(`    🤖 Analyse + Génération IA (2 étapes)...`);
+      console.log(`    🤖 Analyse + Génération IA (2 étapes) avec contexte enrichi...`);
+      console.log(`    📋 Settings: ${user.aiSettings.salonName || 'N/A'}, role: ${user.aiSettings.role || 'assistant'}`);
       
       const aiResult = await aiService.analyzeAndGenerateResponse(
         fullMessage, 
