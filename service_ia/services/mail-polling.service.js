@@ -311,17 +311,17 @@ class MailPollingService {
       );
       // requestCount++; // Commenté car on peut l'éviter si pas critique
 
-      // 🤖 REQUÊTE 3 : Analyse IA (1 seul appel OpenAI)
+      // 🤖 REQUÊTE 3 : Analyse + Génération IA (1 SEUL appel OpenAI)
       console.log(`    🤖 Analyse + Génération IA...`);
       
-      // ✅ OPTIMISATION : Analyse + Génération en 1 SEUL appel
+      // ✅ NOUVELLE MÉTHODE OPTIMISÉE : 1 appel au lieu de 2
       const aiResult = await aiService.analyzeAndGenerateResponse(
         fullMessage, 
         user, 
         conversationHistory,
-        driveData // Passer driveData déjà chargé
+        driveData // Utiliser driveData déjà chargé (0 requête supplémentaire)
       );
-      requestCount++; // 1 seul appel OpenAI au lieu de 2
+      requestCount++; // 1 seul appel OpenAI = -50% tokens
 
       if (!aiResult.analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${aiResult.analysis.reason}`);
