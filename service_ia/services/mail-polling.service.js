@@ -7,16 +7,16 @@ const driveCacheMiddleware = require('../middleware/drive-cache.middleware');
 
 class MailPollingService {
   constructor() {
-    this.processingMessages = new Map(); // ✅ Map pour stocker timestamps
-    this.processingUsers = new Map();    // ✅ Map pour stocker timestamps
-    this.lastPollingStart = 0;           // ✅ Timestamp du dernier polling
-    this.POLLING_COOLDOWN = 30000;       // ✅ 30 secondes minimum entre polling
+    this.processingMessages = new Map();
+    this.processingUsers = new Map();
+    this.processedThreads = new Map(); 
+    this.lastPollingStart = 0;
+    this.POLLING_COOLDOWN = 30000;
   }
 
   async checkAllUsers() {
     const now = Date.now();
     
-    // ✅ VÉRIFICATION AVEC COOLDOWN
     if (now - this.lastPollingStart < this.POLLING_COOLDOWN) {
       const remainingTime = Math.ceil((this.POLLING_COOLDOWN - (now - this.lastPollingStart)) / 1000);
       console.log(`⏭️ [Polling] Trop tôt, attendre ${remainingTime}s`);
@@ -75,12 +75,10 @@ class MailPollingService {
     const userKey = user._id.toString();
     const now = Date.now();
     
-    // ✅ VÉRIFICATION AVEC TIMESTAMP
     if (this.processingUsers.has(userKey)) {
       const lockTime = this.processingUsers.get(userKey);
       const elapsed = now - lockTime;
       
-      // Si le verrou a plus de 5 minutes, on le réinitialise
       if (elapsed > 300000) {
         console.log(`  ⚠️ [${user.email}] Verrou expiré (${Math.round(elapsed/1000)}s), réinitialisation`);
         this.processingUsers.delete(userKey);
@@ -90,7 +88,7 @@ class MailPollingService {
       }
     }
 
-    this.processingUsers.set(userKey, now); // ✅ Stocker le timestamp
+    this.processingUsers.set(userKey, now);
 
     try {
       const newMessages = await this.fetchNewEmails(user.emailConfig);
@@ -123,7 +121,6 @@ class MailPollingService {
       console.error(`  ❌ [${user.email}] Erreur:`, error.message);
       return { processed: 0, sent: 0 };
     } finally {
-      // ✅ TOUJOURS libérer le verrou utilisateur
       this.processingUsers.delete(userKey);
     }
   }
@@ -284,12 +281,10 @@ class MailPollingService {
     const lockKey = `${user._id}-${message.id}`;
     const now = Date.now();
     
-    // ✅ VÉRIFICATION AVEC TIMESTAMP
     if (this.processingMessages.has(lockKey)) {
       const lockTime = this.processingMessages.get(lockKey);
       const elapsed = now - lockTime;
       
-      // Si le verrou a plus de 2 minutes, on considère qu'il est bloqué
       if (elapsed > 120000) {
         console.log(`    ⚠️ Verrou expiré pour ${lockKey} (${Math.round(elapsed/1000)}s), réinitialisation`);
         this.processingMessages.delete(lockKey);
@@ -299,14 +294,14 @@ class MailPollingService {
       }
     }
 
-    this.processingMessages.set(lockKey, now); // ✅ Stocker le timestamp
+    this.processingMessages.set(lockKey, now);
 
     try {
-      // ✅ DOUBLE VÉRIFICATION EN BASE **AVANT** TOUTE ANALYSE
+      // ✅ VÉRIFICATION 1 : Message déjà traité ?
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
         messageId: message.id,
-        status: { $in: ['sent', 'pending', 'processing'] } // ✅ Inclure processing
+        status: { $in: ['sent', 'pending', 'processing'] }
       });
 
       if (alreadyProcessed) {
@@ -315,14 +310,33 @@ class MailPollingService {
         return { sent: false, alreadyProcessed: true };
       }
 
-      // ✅ CRÉER UN ENREGISTREMENT "PROCESSING" IMMÉDIATEMENT AVEC BODY
+      // ✅ VÉRIFICATION 2 : Thread déjà répondu ? (éviter doublons)
+      if (message.threadId) {
+        const threadKey = `${user._id}-${message.threadId}`;
+        
+        // Vérifier si on a déjà répondu dans ce thread
+        const threadAlreadyReplied = await AutoReply.findOne({
+          userId: user._id,
+          threadId: message.threadId,
+          status: 'sent',
+          sentAt: { $gte: new Date(Date.now() - 3600000) } // Dans la dernière heure
+        });
+
+        if (threadAlreadyReplied) {
+          console.log(`    ⏭️ Thread déjà répondu récemment (${threadAlreadyReplied.sentAt.toLocaleTimeString()})`);
+          await this.markAsRead(message.id, user.emailConfig);
+          return { sent: false, alreadyProcessed: true };
+        }
+      }
+
+      // ✅ CRÉER UN ENREGISTREMENT "PROCESSING" IMMÉDIATEMENT
       const processingRecord = await AutoReply.create({
         userId: user._id,
         messageId: message.id,
         threadId: message.threadId,
         from: message.from,
         subject: message.subject || '(sans objet)',
-        body: message.body || message.snippet || '(en cours de récupération...)', // ✅ CORRECTION CRITIQUE
+        body: message.body || message.snippet || '(en cours de récupération...)',
         status: 'processing',
         createdAt: new Date()
       });
@@ -333,66 +347,52 @@ class MailPollingService {
       
       if (!fullMessage) {
         console.log(`    ❌ Impossible de récupérer le message`);
-        
-        // ✅ NETTOYER en cas d'échec
         await AutoReply.deleteOne({
           userId: user._id,
           messageId: message.id,
           status: 'processing'
         });
-        
         await this.markAsRead(message.id, user.emailConfig);
         return { sent: false, alreadyProcessed: false };
       }
 
-     // ✅ APRÈS - AJOUTER CHARGEMENT DRIVE AVANT ANALYSE
-const conversationHistory = await this.getConversationHistory(
-  fullMessage.threadId, 
-  user.emailConfig
-);
+      // ✅ CHARGER DONNÉES DRIVE AVANT ANALYSE
+      try {
+        const accessToken = user.emailConfig?.accessToken;
+        
+        if (accessToken) {
+          let driveData = await driveCacheMiddleware.getCachedDriveData(user._id.toString());
+          
+          if (!driveData) {
+            console.log(`  📂 [${user.email}] Chargement Drive...`);
+            const driveStartTime = Date.now();
+            driveData = await driveService.loadAllUserData(accessToken, user._id.toString());
+            const driveDuration = Date.now() - driveStartTime;
+            console.log(`  ✅ [${user.email}] Drive chargé en ${driveDuration}ms`);
+            driveCacheMiddleware.cacheUserDriveData(user._id.toString(), driveData).catch(() => {});
+          } else {
+            console.log(`  📦 [${user.email}] Drive depuis cache`);
+          }
+          
+          const hasBusinessInfo = !driveData.businessInfo._empty;
+          const hasPlanningInfo = !driveData.planningInfo._empty;
+          console.log(`  📊 [${user.email}] Drive: business=${hasBusinessInfo}, planning=${hasPlanningInfo}`);
+        }
+      } catch (driveError) {
+        console.warn(`  ⚠️ [${user.email}] Erreur Drive (non bloquant):`, driveError.message);
+      }
 
-// ✅ NOUVEAU : CHARGER DONNÉES DRIVE AVANT ANALYSE
-try {
-  const accessToken = user.emailConfig?.accessToken;
-  
-  if (accessToken) {
-    // Vérifier cache d'abord (performance)
-    let driveData = await driveCacheMiddleware.getCachedDriveData(user._id.toString());
-    
-    if (!driveData) {
-      console.log(`  📂 [${user.email}] Chargement Drive...`);
-      
-      const driveStartTime = Date.now();
-      driveData = await driveService.loadAllUserData(accessToken, user._id.toString());
-      const driveDuration = Date.now() - driveStartTime;
-      
-      console.log(`  ✅ [${user.email}] Drive chargé en ${driveDuration}ms`);
-      
-      // Mettre en cache (async, sans attendre)
-      driveCacheMiddleware.cacheUserDriveData(user._id.toString(), driveData).catch(() => {});
-    } else {
-      console.log(`  📦 [${user.email}] Drive depuis cache`);
-    }
-    
-    const hasBusinessInfo = !driveData.businessInfo._empty;
-    const hasPlanningInfo = !driveData.planningInfo._empty;
-    
-    console.log(`  📊 [${user.email}] Drive: business=${hasBusinessInfo}, planning=${hasPlanningInfo}`);
-  } else {
-    console.warn(`  ⚠️ [${user.email}] Pas de token Gmail, Drive non chargé`);
-  }
-} catch (driveError) {
-  // Ne pas bloquer si Drive échoue
-  console.warn(`  ⚠️ [${user.email}] Erreur Drive (non bloquant):`, driveError.message);
-}
+      // ✅ RÉCUPÉRER L'HISTORIQUE DU THREAD
+      const conversationHistory = await this.getConversationHistory(
+        fullMessage.threadId, 
+        user.emailConfig
+      );
 
-// Analyser le message (utilise maintenant le contexte Drive chargé)
-const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
+      // Analyser le message
+      const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
 
       if (!analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${analysis.reason}`);
-        
-        // ✅ METTRE À JOUR au lieu de créer un nouveau
         processingRecord.body = fullMessage.body;
         processingRecord.analysis = {
           isRelevant: false,
@@ -402,7 +402,6 @@ const analysis = await aiService.analyzeMessage(fullMessage, user, conversationH
         };
         processingRecord.status = 'ignored';
         await processingRecord.save();
-
         await this.markAsRead(message.id, user.emailConfig);
         return { sent: false, alreadyProcessed: false };
       }
@@ -423,22 +422,19 @@ const analysis = await aiService.analyzeMessage(fullMessage, user, conversationH
       if (shouldAutoSend) {
         console.log(`    📤 Envoi réponse dans thread ${fullMessage.threadId}...`);
         
+        // ✅ ENVOI EN RÉPONSE (dans le thread)
         const sendSuccess = await this.sendReply(fullMessage, response, user);
 
         if (!sendSuccess) {
           console.log(`    ❌ Échec envoi`);
-          
-          // ✅ NETTOYER en cas d'échec
           await AutoReply.deleteOne({
             userId: user._id,
             messageId: message.id,
             status: 'processing'
           });
-          
           return { sent: false, alreadyProcessed: false };
         }
 
-        // ✅ METTRE À JOUR au lieu de créer un nouveau
         processingRecord.body = fullMessage.body;
         processingRecord.analysis = {
           isRelevant: true,
@@ -458,8 +454,6 @@ const analysis = await aiService.analyzeMessage(fullMessage, user, conversationH
 
       } else {
         console.log(`    ⏸️ En attente de validation`);
-        
-        // ✅ METTRE À JOUR au lieu de créer un nouveau
         processingRecord.body = fullMessage.body;
         processingRecord.analysis = {
           isRelevant: true,
@@ -476,7 +470,6 @@ const analysis = await aiService.analyzeMessage(fullMessage, user, conversationH
     } catch (error) {
       console.error(`    ❌ Erreur traitement:`, error.message);
       
-      // ✅ NETTOYER en cas d'erreur
       try {
         await AutoReply.deleteOne({
           userId: user._id,
@@ -520,8 +513,9 @@ const analysis = await aiService.analyzeMessage(fullMessage, user, conversationH
 
     try {
       if (user.emailConfig.provider === 'gmail') {
+        // ✅ IMPORTANT : Répondre dans le THREAD existant
         const response = await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
-          threadId: message.threadId,
+          threadId: message.threadId, // ✅ Ceci maintient la conversation
           to: message.from,
           subject: message.subject || '(sans objet)',
           body: responseBody
