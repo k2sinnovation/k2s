@@ -309,19 +309,17 @@ class AIService {
   }
 
   /**
-   * 📝 PROMPT : Analyse (JSON simple) - ENRICHI AVEC SETTINGS
+   * 📝 PROMPT : Analyse (JSON simple) - BASÉ 100% SUR DRIVE
    */
-  _buildAnalysisSystemPrompt(driveContext, settings) {
+  _buildAnalysisSystemPrompt(driveContext) {
+    // ✅ ON UTILISE UNIQUEMENT LE CONTEXTE DRIVE (qui contient TOUT)
     return `${driveContext}
 
 ---
 
-Tu es ${settings.role || 'un assistant virtuel'} pour ${settings.salonName || 'cette entreprise'}.
+## TÂCHE D'ANALYSE
 
-**CONTEXTE ENTREPRISE** :
-${settings.instructions ? settings.instructions : 'Analyse les messages clients pour déterminer leur pertinence.'}
-
-**TÂCHE** : Analyse ce message et détermine s'il est pertinent pour ${settings.salonName || 'l\'entreprise'}.
+Analyse le message suivant et détermine s'il est pertinent pour ton entreprise.
 
 **CRITÈRES** :
 - ✅ Pertinent : RDV, questions prestations/tarifs/horaires, annulation, modification
