@@ -10,8 +10,76 @@ class MailPollingService {
     this.processingMessages = new Map();
     this.processingUsers = new Map();
     this.processedThreads = new Map();
+    this.webhookSubscriptions = new Map(); // ✅ Stocke les abonnements Gmail Push
     this.lastPollingStart = 0;
-    this.POLLING_COOLDOWN = 30000;
+    this.POLLING_COOLDOWN = 120000; // ✅ 2 minutes au lieu de 30s (backup si pas de push)
+  }
+
+  /**
+   * ✅ NOUVEAU : Abonner un utilisateur aux notifications Gmail Push
+   * Permet de recevoir les nouveaux emails en temps réel (0 latence)
+   */
+  async subscribeToGmailPush(user) {
+    if (user.emailConfig.provider !== 'gmail') {
+      console.log(`  ⏭️ [${user.email}] Push notifications non supportées pour ${user.emailConfig.provider}`);
+      return;
+    }
+
+    try {
+      const topicName = `projects/YOUR_PROJECT_ID/topics/gmail-notifications`; // ✅ À configurer
+      
+      const response = await axios.post(
+        'https://gmail.googleapis.com/gmail/v1/users/me/watch',
+        {
+          topicName: topicName,
+          labelIds: ['INBOX'],
+          labelFilterAction: 'include'
+        },
+        {
+          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+          timeout: 10000
+        }
+      );
+
+      this.webhookSubscriptions.set(user._id.toString(), {
+        historyId: response.data.historyId,
+        expiration: response.data.expiration
+      });
+
+      console.log(`  ✅ [${user.email}] Abonné aux notifications push (expire: ${new Date(parseInt(response.data.expiration))})`);
+      
+    } catch (error) {
+      console.error(`  ❌ [${user.email}] Erreur abonnement push:`, error.message);
+    }
+  }
+
+  /**
+   * ✅ NOUVEAU : Traiter une notification push Gmail (webhook)
+   * Appelé par une route POST /webhook/gmail
+   */
+  async handleGmailPushNotification(userId, historyId) {
+    console.log(`📬 [Push] Notification reçue pour userId=${userId}, historyId=${historyId}`);
+
+    try {
+      const user = await User.findById(userId);
+      
+      if (!user) {
+        console.warn(`  ⚠️ [Push] Utilisateur ${userId} introuvable`);
+        return;
+      }
+
+      // ✅ VÉRIFIER SI L'IA EST ACTIVÉE
+      if (!user.aiSettings?.isEnabled || !user.aiSettings?.autoReplyEnabled) {
+        console.log(`  ⏭️ [${user.email}] IA désactivée, skip notification (0 token consommé)`);
+        return;
+      }
+
+      // Traiter immédiatement les nouveaux messages
+      await this.checkUserEmails(user);
+
+    } catch (error) {
+      console.error(`  ❌ [Push] Erreur traitement notification:`, error.message);
+    }
   }
 
   async checkAllUsers() {
@@ -29,18 +97,19 @@ class MailPollingService {
       const startTime = Date.now();
       console.log('🔍 [Polling] Démarrage avec verrou timestamp:', startTime);
 
+      // ✅ FILTRER UNIQUEMENT LES UTILISATEURS AVEC IA ACTIVÉE
       const users = await User.find({
-        'aiSettings.isEnabled': true,
-        'aiSettings.autoReplyEnabled': true,
+        'aiSettings.isEnabled': true,          // ✅ IA activée
+        'aiSettings.autoReplyEnabled': true,   // ✅ Réponses auto activées
         'emailConfig.accessToken': { $exists: true }
       });
 
       if (users.length === 0) {
-        console.log('ℹ️ [Polling] Aucun utilisateur actif');
+        console.log('ℹ️ [Polling] Aucun utilisateur avec IA activée (0 token consommé)');
         return;
       }
 
-      console.log(`👥 [Polling] ${users.length} utilisateurs`);
+      console.log(`👥 [Polling] ${users.length} utilisateurs avec IA activée`);
 
       const BATCH_SIZE = 20;
       let totalSent = 0;
@@ -75,6 +144,12 @@ class MailPollingService {
     const userKey = user._id.toString();
     const now = Date.now();
     
+    // ✅ VÉRIFICATION CRITIQUE : IA activée ?
+    if (!user.aiSettings?.isEnabled || !user.aiSettings?.autoReplyEnabled) {
+      console.log(`  🔴 [${user.email}] IA désactivée, skip (0 token consommé)`);
+      return { processed: 0, sent: 0 };
+    }
+    
     if (this.processingUsers.has(userKey)) {
       const lockTime = this.processingUsers.get(userKey);
       const elapsed = now - lockTime;
@@ -91,21 +166,11 @@ class MailPollingService {
     this.processingUsers.set(userKey, now);
 
     try {
-      // ✅ ÉTAPE 1 : Récupérer les 20 premiers messages de l'inbox
-      const messages = await this.fetchRecentInboxMessages(user.emailConfig, user);
-
-      if (messages.length === 0) {
-        console.log(`  ℹ️ [${user.email}] Aucun message dans les 20 premiers`);
-        return { processed: 0, sent: 0 };
-      }
-
-      console.log(`  📬 [${user.email}] ${messages.length} messages récupérés`);
-
-      // ✅ ÉTAPE 2 : Filtrer uniquement les NON LUS
-      const unreadMessages = messages.filter(msg => msg.isUnread);
+      // ✅ Récupérer UNIQUEMENT les messages non lus
+      const unreadMessages = await this.fetchRecentInboxMessages(user.emailConfig, user);
 
       if (unreadMessages.length === 0) {
-        console.log(`  ✅ [${user.email}] Tous les messages sont lus (0 token consommé)`);
+        console.log(`  ✅ [${user.email}] Aucun message non lu (1 requête, 0 token consommé)`);
         return { processed: 0, sent: 0 };
       }
 
@@ -114,7 +179,6 @@ class MailPollingService {
       let sent = 0;
       let alreadyProcessedCount = 0;
 
-      // ✅ ÉTAPE 3 : Traiter uniquement les messages non lus
       for (const message of unreadMessages) {
         const result = await this.processMessage(message, user);
         if (result?.sent) {
@@ -139,7 +203,7 @@ class MailPollingService {
   }
 
   /**
-   * ✅ NOUVELLE MÉTHODE : Récupère les 20 premiers messages avec leur statut de lecture
+   * ✅ OPTIMISÉ : Récupère UNIQUEMENT les messages non lus (1 seule requête)
    */
   async fetchRecentInboxMessages(emailConfig, user) {
     const BASE_URL = 'https://k2s.onrender.com';
@@ -150,11 +214,12 @@ class MailPollingService {
 
       if (emailConfig.provider === 'gmail') {
         try {
-          // ✅ Récupérer les 20 premiers messages (lus + non lus)
+          // ✅ OPTIMISATION : Récupérer UNIQUEMENT les non lus
           response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
             params: {
-              maxResults: 20 // Limiter à 20 messages
+              q: 'is:unread in:inbox', // ✅ Filtre côté serveur
+              maxResults: 20
             },
             timeout: 15000
           });
@@ -179,6 +244,7 @@ class MailPollingService {
               response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
                 headers: { 'Authorization': `Bearer ${accessToken}` },
                 params: {
+                  q: 'is:unread in:inbox',
                   maxResults: 20
                 },
                 timeout: 15000
@@ -194,43 +260,58 @@ class MailPollingService {
         
         const messages = response?.data?.messages || [];
         
-        // ✅ Enrichir avec le statut de lecture
-        const enrichedMessages = await Promise.all(
-          messages.map(async (msg) => {
-            try {
-              const details = await axios.get(
-                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
-                {
-                  headers: { 'Authorization': `Bearer ${accessToken}` },
-                  timeout: 10000
-                }
-              );
+        if (messages.length === 0) {
+          console.log(`  ✅ [${user.email}] Aucun message non lu (1 requête, 0 token)`);
+          return [];
+        }
+        
+        // ✅ BATCH : Récupérer les détails en parallèle
+        const BATCH_SIZE = 50;
+        const enrichedMessages = [];
+        
+        for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+          const batch = messages.slice(i, i + BATCH_SIZE);
+          
+          const batchResults = await Promise.all(
+            batch.map(async (msg) => {
+              try {
+                const details = await axios.get(
+                  `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
+                  {
+                    headers: { 'Authorization': `Bearer ${accessToken}` },
+                    timeout: 10000
+                  }
+                );
 
-              const labels = details.data.labelIds || [];
-              const headers = details.data.payload?.headers || [];
-              
-              return {
-                id: msg.id,
-                threadId: msg.threadId,
-                isUnread: labels.includes('UNREAD'), // ✅ Détection du statut
-                from: headers.find(h => h.name === 'From')?.value || '',
-                subject: headers.find(h => h.name === 'Subject')?.value || '',
-                snippet: details.data.snippet || ''
-              };
-            } catch (err) {
-              console.warn(`  ⚠️ Erreur enrichissement message ${msg.id}:`, err.message);
-              return null;
-            }
-          })
-        );
+                const headers = details.data.payload?.headers || [];
+                
+                return {
+                  id: msg.id,
+                  threadId: msg.threadId,
+                  isUnread: true, // ✅ Déjà filtré par la requête
+                  from: headers.find(h => h.name === 'From')?.value || '',
+                  subject: headers.find(h => h.name === 'Subject')?.value || '',
+                  snippet: details.data.snippet || ''
+                };
+              } catch (err) {
+                console.warn(`  ⚠️ Erreur enrichissement message ${msg.id}:`, err.message);
+                return null;
+              }
+            })
+          );
+          
+          enrichedMessages.push(...batchResults.filter(msg => msg !== null));
+        }
 
-        return enrichedMessages.filter(msg => msg !== null);
+        console.log(`  📨 [${user.email}] ${enrichedMessages.length} messages non lus (${1 + enrichedMessages.length} requêtes)`);
+        return enrichedMessages;
         
       } else if (emailConfig.provider === 'outlook') {
         response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
           headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
           params: {
-            $top: 20 // Limiter à 20 messages
+            $filter: 'isRead eq false', // ✅ Filtre Outlook
+            $top: 20
           },
           timeout: 15000
         });
@@ -240,7 +321,7 @@ class MailPollingService {
         return messages.map(msg => ({
           id: msg.id,
           threadId: msg.conversationId,
-          isUnread: !msg.isRead, // ✅ Outlook fournit directement isRead
+          isUnread: !msg.isRead,
           from: msg.from?.emailAddress?.address || '',
           subject: msg.subject || '',
           snippet: msg.bodyPreview || ''
@@ -363,6 +444,12 @@ class MailPollingService {
     const lockKey = `${user._id}-${message.id}`;
     const now = Date.now();
     
+    // ✅ DOUBLE VÉRIFICATION : IA toujours activée ?
+    if (!user.aiSettings?.isEnabled || !user.aiSettings?.autoReplyEnabled) {
+      console.log(`    🔴 IA désactivée pendant le traitement, skip (0 token)`);
+      return { sent: false, alreadyProcessed: true };
+    }
+    
     if (this.processingMessages.has(lockKey)) {
       const lockTime = this.processingMessages.get(lockKey);
       const elapsed = now - lockTime;
@@ -475,12 +562,12 @@ class MailPollingService {
         user.emailConfig
       );
 
-      // ✅ ANALYSE IA (consomme des tokens)
-      console.log(`    🤖 Analyse IA en cours...`);
+      // ✅ APPEL GPT 1 : Analyse
+      console.log(`    🤖 [GPT 1/2] Analyse du message...`);
       const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
 
       if (!analysis.is_relevant) {
-        console.log(`    ⏭️ Non pertinent: ${analysis.reason}`);
+        console.log(`    ⏭️ Non pertinent: ${analysis.reason} (1 appel GPT consommé)`);
         processingRecord.body = fullMessage.body;
         processingRecord.analysis = {
           isRelevant: false,
@@ -496,8 +583,8 @@ class MailPollingService {
 
       console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
 
-      // ✅ GÉNÉRATION RÉPONSE (consomme des tokens)
-      console.log(`    ✍️ Génération de la réponse...`);
+      // ✅ APPEL GPT 2 : Génération de réponse
+      console.log(`    ✍️ [GPT 2/2] Génération de la réponse...`);
       const response = await aiService.generateResponse(
         fullMessage, 
         analysis, 
@@ -539,7 +626,7 @@ class MailPollingService {
 
         await this.markAsRead(message.id, user.emailConfig);
 
-        console.log(`    ✅ Réponse envoyée à ${message.from}`);
+        console.log(`    ✅ Réponse envoyée (2 appels GPT consommés)`);
         return { sent: true, alreadyProcessed: false };
 
       } else {
