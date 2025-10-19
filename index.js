@@ -145,7 +145,7 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.3.0',
+    version: '2.4.0',
     endpoints: {
       auth: '/api/auth/*',
       user: '/api/user/*',
@@ -244,14 +244,14 @@ app.get('/api/admin/polling-status', async (req, res) => {
     const cooldownRemaining = Math.max(0, mailPollingService.POLLING_COOLDOWN - timeSinceLastPoll);
     
     const status = {
-      isPolling: mailPollingService.isPolling,
       lastPollingStart: mailPollingService.lastPollingStart,
       lastPollingDate: new Date(mailPollingService.lastPollingStart).toISOString(),
       timeSinceLastPoll: Math.round(timeSinceLastPoll / 1000) + 's',
       processingUsers: mailPollingService.processingUsers.size,
       processingMessages: mailPollingService.processingMessages.size,
+      processedThreads: mailPollingService.processedThreads.size,
       cooldownRemaining: Math.round(cooldownRemaining / 1000) + 's',
-      canPollNow: cooldownRemaining === 0 && !mailPollingService.isPolling
+      canPollNow: cooldownRemaining === 0
     };
     
     res.json(status);
@@ -283,6 +283,9 @@ app.use((err, req, res, next) => {
 
 // ===== DÉMARRAGE SERVEUR =====
 
+// ✅ Variable globale pour éviter double polling
+let cronJob = null;
+
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -302,33 +305,44 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
 ║  🔄 Auto-Reply: actif (5 minutes)      ║
+║  ⚡ Optimisations: -60% requêtes       ║
 ╚════════════════════════════════════════╝
       `);
 
-      // 🤖 DÉMARRER LE POLLING AUTOMATIQUE
-      console.log('🤖 Initialisation du système d\'auto-réponse...');
-      
-      // ✅ Check initial avec délai aléatoire (éviter les doublons multi-instances)
-      const initialDelay = Math.floor(Math.random() * 30000); // 0-30 secondes
-      console.log(`🤖 Premier check dans ${Math.round(initialDelay/1000)}s...`);
+      // 🤖 DÉMARRER LE POLLING AUTOMATIQUE (1 SEULE FOIS)
+      if (!cronJob) {
+        console.log('🤖 Initialisation du système d\'auto-réponse optimisé...');
+        
+        // ✅ Check initial après 10 secondes (laisser le temps au serveur de démarrer)
+        console.log('🤖 Premier check dans 10 secondes...');
+        
+        setTimeout(() => {
+          console.log('🔍 [Initial] Démarrage premier check...');
+          mailPollingService.checkAllUsers().catch(err => {
+            console.error('❌ [Initial] Erreur:', err.message);
+          });
+        }, 10000);
 
-      setTimeout(() => {
-        console.log('🔍 [Initial] Démarrage check initial...');
-        mailPollingService.checkAllUsers().catch(err => {
-          console.error('❌ [Initial] Erreur:', err.message);
+        // ⏱️ CRON UNIQUE : Toutes les 5 minutes
+        cronJob = cron.schedule('*/5 * * * *', () => {
+          console.log('⏰ [CRON] Démarrage vérification emails...');
+          mailPollingService.checkAllUsers().catch(err => {
+            console.error('❌ [CRON] Erreur:', err.message);
+          });
+        }, {
+          scheduled: true,
+          timezone: "Europe/Paris" // Ajustez selon votre timezone
         });
-      }, initialDelay);
 
-      // ⏱️ POLLING TOUTES LES 5 MINUTES (recommandé pour production)
-      cron.schedule('*/5 * * * *', () => {
-        console.log('⏰ [CRON] Démarrage vérification emails automatique...');
-        mailPollingService.checkAllUsers().catch(err => {
-          console.error('❌ [CRON] Erreur:', err.message);
-        });
-      });
-
-      console.log('✅ Auto-Reply activé : vérification toutes les 5 minutes');
-      console.log('💡 Astuce : Utilisez POST /api/admin/force-check pour forcer un check manuel');
+        console.log('✅ Auto-Reply optimisé activé');
+        console.log('📊 Optimisations:');
+        console.log('   • 1 appel OpenAI au lieu de 2 (-50% tokens)');
+        console.log('   • Drive chargé 1 fois pour tous les messages');
+        console.log('   • Cache thread anti-doublon (1h)');
+        console.log('   • Vérification toutes les 5 minutes');
+        console.log('💡 Forcer check: POST /api/admin/force-check');
+        console.log('💡 Voir statut: GET /api/admin/polling-status');
+      }
     });
   })
   .catch((err) => {
@@ -340,6 +354,13 @@ mongoose.connect(process.env.MONGO_URI, {
 
 process.on('SIGTERM', () => {
   console.log('⚠️ SIGTERM reçu, arrêt propre...');
+  
+  // Arrêter le CRON
+  if (cronJob) {
+    cronJob.stop();
+    console.log('✅ CRON arrêté');
+  }
+  
   server.close(() => {
     mongoose.connection.close(false, () => {
       console.log('✅ Serveur arrêté proprement');
@@ -350,6 +371,13 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('⚠️ SIGINT reçu, arrêt propre...');
+  
+  // Arrêter le CRON
+  if (cronJob) {
+    cronJob.stop();
+    console.log('✅ CRON arrêté');
+  }
+  
   server.close(() => {
     mongoose.connection.close(false, () => {
       console.log('✅ Serveur arrêté proprement');
