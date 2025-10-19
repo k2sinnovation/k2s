@@ -1,5 +1,5 @@
 // service_ia/services/mail-polling.service.js
-// ✅ VERSION AVEC LOGIQUE INTELLIGENTE DE THREAD
+// ✅ VERSION AVEC LOGIQUE INTELLIGENTE DE THREAD + FIX RÉPONSES GMAIL
 
 const User = require('../models/User');
 const AutoReply = require('../models/AutoReply');
@@ -12,7 +12,7 @@ class MailPollingService {
   constructor() {
     this.processingMessages = new Map();
     this.processingUsers = new Map();
-    this.processedThreads = new Map(); // On garde pour compatibilité
+    this.processedThreads = new Map();
     this.lastPollingStart = 0;
     this.POLLING_COOLDOWN = 5000;
     
@@ -25,7 +25,6 @@ class MailPollingService {
     
     console.log(`🆔 Instance MailPollingService créée: ${this.instanceId}`);
     
-    // Nettoyage périodique des caches
     setInterval(() => {
       const now = Date.now();
       for (const [key, timestamp] of this.processingMessages.entries()) {
@@ -168,7 +167,6 @@ class MailPollingService {
 
       console.log(`  🆕 [${user.email}] ${messagesToProcess.length} nouveau(x) à analyser`);
 
-      // Pré-charger Drive UNE FOIS
       let driveData = null;
       try {
         const accessToken = user.emailConfig?.accessToken;
@@ -237,9 +235,6 @@ class MailPollingService {
         return { sent: false, alreadyProcessed: false, filtered: false };
       }
 
-      // ===== FILTRES PRÉ-IA =====
-      
-      // 1. Filtrage taille
       const bodySize = (fullMessage.body || '').length;
       if (bodySize > this.MAX_EMAIL_SIZE) {
         console.log(`    🔍 Trop volumineux (${Math.round(bodySize/1000)}KB)`);
@@ -263,7 +258,6 @@ class MailPollingService {
         return { sent: false, alreadyProcessed: false, filtered: true };
       }
 
-      // 2. Filtrage intervalle (même expéditeur)
       const lastMailKey = `${user._id}-${fullMessage.from}`;
       const lastMail = this.lastProcessedMail.get(lastMailKey);
       
@@ -290,8 +284,6 @@ class MailPollingService {
         return { sent: false, alreadyProcessed: false, filtered: true };
       }
 
-      // ===== 3. LOGIQUE INTELLIGENTE DE THREAD ✨ =====
-      
       if (fullMessage.threadId) {
         const shouldSkipThread = await this.shouldSkipThreadReply(
           fullMessage.threadId,
@@ -322,8 +314,6 @@ class MailPollingService {
         }
       }
 
-      // ===== TRAITEMENT IA =====
-      
       const processingRecord = await AutoReply.create({
         userId: user._id,
         messageId: message.id,
@@ -337,7 +327,6 @@ class MailPollingService {
 
       console.log(`    📩 Nouveau: ${fullMessage.from} - "${fullMessage.subject}"`);
 
-      // Récupérer l'historique de conversation COMPLET
       const conversationHistory = await this.getConversationHistory(
         fullMessage.threadId, 
         user.emailConfig
@@ -355,8 +344,6 @@ class MailPollingService {
         driveData
       );
 
-      // ===== TRAITER LE RÉSULTAT =====
-      
       if (!aiResult.analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${aiResult.analysis.reason}`);
         
@@ -482,17 +469,8 @@ class MailPollingService {
     }
   }
 
-  /**
-   * 🧠 LOGIQUE INTELLIGENTE : Doit-on ignorer ce thread ?
-   * 
-   * Règles :
-   * 1. Si le dernier message du thread était du BOT il y a < 5min → SKIP (attendre que le client réponde)
-   * 2. Si le dernier message était du CLIENT → OK (traiter normalement)
-   * 3. Si alternance BOT → CLIENT → Ce nouveau message → OK (conversation continue)
-   */
   async shouldSkipThreadReply(threadId, user, currentSenderEmail) {
     try {
-      // 1️⃣ Récupérer la dernière réponse AUTO envoyée dans ce thread
       const lastBotReply = await AutoReply.findOne({
         userId: user._id,
         threadId: threadId,
@@ -500,24 +478,20 @@ class MailPollingService {
       }).sort({ sentAt: -1 }).limit(1);
 
       if (!lastBotReply) {
-        // Aucune réponse auto dans ce thread → OK, c'est le 1er message
         return { skip: false };
       }
 
       const timeSinceLastBotReply = Date.now() - lastBotReply.sentAt.getTime();
 
-      // 2️⃣ Récupérer l'historique Gmail complet du thread
       const conversationHistory = await this.getConversationHistory(
         threadId,
         user.emailConfig
       );
 
       if (conversationHistory.length === 0) {
-        // Pas d'historique disponible → OK par défaut
         return { skip: false };
       }
 
-      // 3️⃣ Identifier qui a envoyé le dernier message
       const lastMessage = conversationHistory[conversationHistory.length - 1];
       const botEmailAddresses = [
         user.email,
@@ -529,24 +503,17 @@ class MailPollingService {
         lastMessage.from.toLowerCase().includes(botEmail)
       );
 
-      // 4️⃣ DÉCISION INTELLIGENTE
-      
       if (lastMessageFromBot && timeSinceLastBotReply < 300000) {
-        // Le dernier message était du BOT il y a < 5min
-        // → SKIP (attendre que le client ait le temps de répondre)
         return {
           skip: true,
           reason: `Dernière réponse du bot il y a ${Math.round(timeSinceLastBotReply/60000)} min, attente réponse client`
         };
       }
 
-      // Le dernier message était du CLIENT
-      // → OK, traiter normalement
       return { skip: false };
 
     } catch (error) {
       console.error(`    ⚠️ Erreur analyse thread:`, error.message);
-      // En cas d'erreur, on traite quand même le message
       return { skip: false };
     }
   }
@@ -693,24 +660,90 @@ class MailPollingService {
     }
   }
 
+  // ✅ CORRECTION : Fonction sendReply avec support correct des réponses Gmail
   async sendReply(message, responseBody, user) {
-    const BASE_URL = process.env.BASE_URL || 'https://k2s.onrender.com';
-
     try {
       if (user.emailConfig.provider === 'gmail') {
-        const response = await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
-          threadId: message.threadId,
-          to: message.from,
-          subject: message.subject || '(sans objet)',
-          body: responseBody
-        }, {
-          headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
-          timeout: 15000
-        });
+        // 🔍 Récupérer le Message-ID original du thread
+        let originalMessageId = '';
+        let references = '';
+        
+        if (message.threadId) {
+          try {
+            const threadResponse = await axios.get(
+              `https://gmail.googleapis.com/gmail/v1/users/me/threads/${message.threadId}`,
+              {
+                headers: { 'Authorization': `Bearer ${user.emailConfig.accessToken}` },
+                params: { format: 'metadata', metadataHeaders: 'Message-ID,References' },
+                timeout: 15000
+              }
+            );
 
-        return response.status === 200;
+            const messages = threadResponse.data.messages || [];
+            if (messages.length > 0) {
+              const lastMessage = messages[messages.length - 1];
+              const headers = lastMessage.payload?.headers || [];
+              
+              originalMessageId = headers.find(h => h.name === 'Message-ID')?.value || '';
+              references = headers.find(h => h.name === 'References')?.value || '';
+            }
+          } catch (err) {
+            console.warn('    ⚠️ Impossible de récupérer Message-ID:', err.message);
+          }
+        }
+
+        // ✅ Construction du message avec les BONS headers pour une réponse
+        const messageParts = [
+          'Content-Type: text/plain; charset=utf-8',
+          'MIME-Version: 1.0',
+          `To: ${message.from}`,
+          `Subject: Re: ${(message.subject || '(sans objet)').replace(/^Re:\s*/i, '')}`,
+        ];
+
+        // 🔑 CRITICAL : Headers pour lier la réponse au message original
+        if (originalMessageId) {
+          messageParts.push(`In-Reply-To: ${originalMessageId}`);
+          
+          // Construire la chaîne References (historique du thread)
+          if (references) {
+            messageParts.push(`References: ${references} ${originalMessageId}`);
+          } else {
+            messageParts.push(`References: ${originalMessageId}`);
+          }
+        }
+
+        messageParts.push(''); // Ligne vide avant le body
+        messageParts.push(responseBody);
+
+        const email = messageParts.join('\r\n');
+        const encodedMessage = Buffer.from(email)
+          .toString('base64')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+
+        // 🚀 Envoi via Gmail API avec threadId
+        const response = await axios.post(
+          'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+          {
+            raw: encodedMessage,
+            threadId: message.threadId // ✅ Forcer le thread
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${user.emailConfig.accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 15000
+          }
+        );
+
+        console.log(`    ✅ Réponse envoyée dans thread ${message.threadId}`);
+        return true;
         
       } else if (user.emailConfig.provider === 'outlook') {
+        const BASE_URL = process.env.BASE_URL || 'https://k2s.onrender.com';
+        
         const response = await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
           messageId: message.id,
           to: message.from,
@@ -728,6 +761,9 @@ class MailPollingService {
       
     } catch (error) {
       console.error(`    ❌ Erreur envoi:`, error.message);
+      if (error.response?.data) {
+        console.error(`    📝 Détails:`, JSON.stringify(error.response.data));
+      }
       return false;
     }
   }
