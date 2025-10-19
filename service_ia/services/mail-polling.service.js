@@ -343,8 +343,10 @@ class MailPollingService {
         user.emailConfig
       );
 
-      console.log(`    🤖 Analyse + Génération IA (2 étapes) avec contexte enrichi...`);
-      console.log(`    📋 Settings: ${user.aiSettings.salonName || 'N/A'}, role: ${user.aiSettings.role || 'assistant'}`);
+      console.log(`    🤖 Analyse + Génération IA (2 étapes) avec contexte Drive...`);
+      if (driveData?.businessInfo?.business?.name) {
+        console.log(`    🏢 Entreprise: ${driveData.businessInfo.business.name}`);
+      }
       
       const aiResult = await aiService.analyzeAndGenerateResponse(
         fullMessage, 
