@@ -4,7 +4,6 @@ const OpenAI = require("openai");
 const cors = require('cors');
 const multer = require('multer');
 const http = require('http');
-const cron = require('node-cron');
 
 require('dotenv').config();
 
@@ -145,7 +144,7 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.4.0',
+    version: '2.5.0',
     endpoints: {
       auth: '/api/auth/*',
       user: '/api/user/*',
@@ -284,7 +283,7 @@ app.use((err, req, res, next) => {
 // ===== DÉMARRAGE SERVEUR =====
 
 // ✅ Variable globale pour éviter double polling
-let cronJob = null;
+let autoCheckInterval = null;
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -301,47 +300,46 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  📡 Port: ${PORT.toString().padEnd(28)}║
 ║  🗄️  MongoDB: connecté                 ║
 ║  🔌 WebSocket: actif                   ║
-║  🤖 OpenAI: configuré                  ║
+║  🤖 Mistral AI: configuré              ║
 ║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
-║  🔄 Auto-Reply: actif (5 minutes)      ║
-║  ⚡ Optimisations: -60% requêtes       ║
+║  🔄 Auto-Reply: actif (20 secondes)    ║
+║  ⚡ MODE TEST: Vérif toutes les 20s    ║
 ╚════════════════════════════════════════╝
       `);
 
       // 🤖 DÉMARRER LE POLLING AUTOMATIQUE (1 SEULE FOIS)
-      if (!cronJob) {
+      if (!autoCheckInterval) {
         console.log('🤖 Initialisation du système d\'auto-réponse optimisé...');
         
-        // ✅ Check initial après 10 secondes (laisser le temps au serveur de démarrer)
-        console.log('🤖 Premier check dans 10 secondes...');
+        // ✅ Check initial après 5 secondes
+        console.log('🤖 Premier check dans 5 secondes...');
         
         setTimeout(() => {
           console.log('🔍 [Initial] Démarrage premier check...');
           mailPollingService.checkAllUsers().catch(err => {
             console.error('❌ [Initial] Erreur:', err.message);
           });
-        }, 10000);
+        }, 5000);
 
-        // ⏱️ CRON UNIQUE : Toutes les 5 minutes
-        cronJob = cron.schedule('*/5 * * * *', () => {
-          console.log('⏰ [CRON] Démarrage vérification emails...');
+        // ⏱️ INTERVAL : Toutes les 20 secondes (MODE TEST)
+        autoCheckInterval = setInterval(() => {
+          console.log('⏰ [AUTO] Démarrage vérification emails...');
           mailPollingService.checkAllUsers().catch(err => {
-            console.error('❌ [CRON] Erreur:', err.message);
+            console.error('❌ [AUTO] Erreur:', err.message);
           });
-        }, {
-          scheduled: true,
-          timezone: "Europe/Paris" // Ajustez selon votre timezone
-        });
+        }, 20000);
 
-        console.log('✅ Auto-Reply optimisé activé');
+        console.log('✅ Auto-Reply optimisé activé (MODE TEST)');
         console.log('📊 Optimisations:');
-        console.log('   • 1 appel OpenAI au lieu de 2 (-50% tokens)');
+        console.log('   • 1 appel Mistral au lieu de 2 (-50% tokens)');
         console.log('   • Drive chargé 1 fois pour tous les messages');
         console.log('   • Cache thread anti-doublon (1h)');
-        console.log('   • Vérification toutes les 5 minutes');
+        console.log('   • ⚡ MODE TEST: Vérification toutes les 20 secondes');
         console.log('💡 Forcer check: POST /api/admin/force-check');
         console.log('💡 Voir statut: GET /api/admin/polling-status');
+        console.log('');
+        console.log('⚠️  ATTENTION: Pense à remettre 5 minutes en production !');
       }
     });
   })
@@ -355,10 +353,10 @@ mongoose.connect(process.env.MONGO_URI, {
 process.on('SIGTERM', () => {
   console.log('⚠️ SIGTERM reçu, arrêt propre...');
   
-  // Arrêter le CRON
-  if (cronJob) {
-    cronJob.stop();
-    console.log('✅ CRON arrêté');
+  // Arrêter l'interval
+  if (autoCheckInterval) {
+    clearInterval(autoCheckInterval);
+    console.log('✅ Auto-check arrêté');
   }
   
   server.close(() => {
@@ -372,10 +370,10 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('⚠️ SIGINT reçu, arrêt propre...');
   
-  // Arrêter le CRON
-  if (cronJob) {
-    cronJob.stop();
-    console.log('✅ CRON arrêté');
+  // Arrêter l'interval
+  if (autoCheckInterval) {
+    clearInterval(autoCheckInterval);
+    console.log('✅ Auto-check arrêté');
   }
   
   server.close(() => {
