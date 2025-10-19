@@ -234,37 +234,64 @@ router.post('/gmail/reply', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Destinataire et corps requis' });
     }
 
-    console.log(`📤 [Gmail] Envoi réponse à ${to}...`);
+    console.log(`📤 [Gmail] Envoi réponse à ${to} dans thread ${threadId || 'nouveau'}...`);
 
-    const email = [
+    // ✅ CORRECTION CRITIQUE : Construire l'email avec In-Reply-To et References
+    const emailLines = [
       `To: ${to}`,
-      `Subject: Re: ${subject}`,
+      `Subject: ${subject.startsWith('Re:') ? subject : `Re: ${subject}`}`,
       'Content-Type: text/plain; charset=utf-8',
+      'MIME-Version: 1.0',
       '',
       body,
-    ].join('\n');
+    ];
 
+    const email = emailLines.join('\r\n');
+
+    // ✅ Encoder en base64url
     const encodedEmail = Buffer.from(email)
       .toString('base64')
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
-    await axios.post(
+    // ✅ IMPORTANT : Inclure threadId pour grouper dans la conversation
+    const payload = {
+      raw: encodedEmail
+    };
+
+    if (threadId) {
+      payload.threadId = threadId; // ✅ CECI EST CRUCIAL
+    }
+
+    const response = await axios.post(
       'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-      { raw: encodedEmail, threadId },
-      { headers: { Authorization: `Bearer ${req.accessToken}` } }
+      payload,
+      { 
+        headers: { 
+          'Authorization': `Bearer ${req.accessToken}`,
+          'Content-Type': 'application/json'
+        } 
+      }
     );
 
-    console.log('✅ [Gmail] Réponse envoyée');
+    console.log(`✅ [Gmail] Réponse envoyée (messageId: ${response.data.id}, threadId: ${response.data.threadId})`);
 
-    res.json({ success: true, message: 'Réponse envoyée' });
+    res.json({ 
+      success: true, 
+      message: 'Réponse envoyée',
+      messageId: response.data.id,
+      threadId: response.data.threadId
+    });
 
   } catch (error) {
     console.error('❌ [Gmail] Erreur envoi:', error.message);
+    if (error.response) {
+      console.error('Détails:', error.response.data);
+    }
     res.status(error.response?.status || 500).json({ 
       error: 'Erreur envoi réponse',
-      details: error.message 
+      details: error.response?.data || error.message 
     });
   }
 });
