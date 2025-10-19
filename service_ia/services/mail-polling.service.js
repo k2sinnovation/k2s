@@ -4,7 +4,7 @@
 const User = require('../models/User');
 const AutoReply = require('../models/AutoReply');
 const aiService = require('../services/ai.service');
-const quotaService = require('../quota.service'); // ✅ AJOUT
+const quotaService = require('../service_ia/quota.service'); // ✅ AJOUT
 const axios = require('axios');
 const driveService = require('./google-drive.service'); 
 const driveCacheMiddleware = require('../middleware/drive-cache.middleware'); 
