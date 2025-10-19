@@ -312,7 +312,7 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  🤖 OpenAI: configuré                  ║
 ║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
-║  🔄 Auto-Reply: actif (5 minutes)      ║
+║  🔄 Auto-Reply: actif (TEST 10s)       ║
 ║  ⚡ Optimisations: -60% requêtes       ║
 ║  🆔 Instance: ${process.pid}           ║
 ╚════════════════════════════════════════╝
@@ -333,36 +333,31 @@ mongoose.connect(process.env.MONGO_URI, {
           });
         }, 10000);
 
-      // ⏱️ TEST : Toutes les 10 secondes (au lieu de CRON 5 minutes)
-cronJob = setInterval(() => {
-  console.log('⏰ [TEST-10s] Démarrage vérification emails...');
-  mailPollingService.checkAllUsers().catch(err => {
-    console.error('❌ [TEST] Erreur:', err.message);
-  });
-}, 10000); // 10 secondes
+        // ⏱️ TEST : Toutes les 10 secondes (au lieu de CRON 5 minutes)
+        cronJob = setInterval(() => {
+          console.log('⏰ [TEST-10s] Démarrage vérification emails...');
+          mailPollingService.checkAllUsers().catch(err => {
+            console.error('❌ [TEST] Erreur:', err.message);
+          });
+        }, 10000); // 10 secondes
 
-console.log('✅ Auto-Reply TEST : vérification toutes les 10 secondes');
-        }, {
-          scheduled: true,
-          timezone: "Europe/Paris"
-        });
-
-        console.log('✅ Auto-Reply optimisé activé');
+        console.log('✅ Auto-Reply TEST : vérification toutes les 10 secondes');
         console.log('📊 Optimisations:');
         console.log('   • 1 appel OpenAI au lieu de 2 (-50% tokens)');
         console.log('   • Drive chargé 1 fois pour tous les messages');
         console.log('   • Cache thread anti-doublon (1h)');
         console.log('   • Verrou global anti-double exécution');
-        console.log('   • Vérification toutes les 5 minutes');
+        console.log('   • ⚠️ MODE TEST : vérification toutes les 10 secondes');
         console.log('💡 Forcer check: POST /api/admin/force-check');
         console.log('💡 Voir statut: GET /api/admin/polling-status');
         
         // Nettoyer le timeout si le serveur s'arrête
         process.on('exit', () => {
           clearTimeout(initialTimeout);
+          if (cronJob) clearInterval(cronJob);
         });
       } else {
-        console.log('⚠️ CRON déjà configuré, skip');
+        console.log('⚠️ Polling déjà configuré, skip');
       }
     });
   })
@@ -376,10 +371,10 @@ console.log('✅ Auto-Reply TEST : vérification toutes les 10 secondes');
 process.on('SIGTERM', () => {
   console.log('⚠️ SIGTERM reçu, arrêt propre...');
   
-  // Arrêter le CRON
+  // Arrêter le polling (setInterval)
   if (cronJob) {
-    cronJob.stop();
-    console.log('✅ CRON arrêté');
+    clearInterval(cronJob);
+    console.log('✅ Polling arrêté');
   }
   
   server.close(() => {
@@ -393,10 +388,10 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('⚠️ SIGINT reçu, arrêt propre...');
   
-  // Arrêter le CRON
+  // Arrêter le polling (setInterval)
   if (cronJob) {
-    cronJob.stop();
-    console.log('✅ CRON arrêté');
+    clearInterval(cronJob);
+    console.log('✅ Polling arrêté');
   }
   
   server.close(() => {
