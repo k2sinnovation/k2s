@@ -16,6 +16,12 @@ class MailPollingService {
     this.lastPollingStart = 0;
     this.POLLING_COOLDOWN = 30000;
     
+    // ✅ NOUVEAU : Lock global pour éviter double exécution
+    this.isGlobalPollingActive = false;
+    this.instanceId = `instance-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    
+    console.log(`🆔 Instance MailPollingService créée: ${this.instanceId}`);
+    
     // 🧹 Nettoyage cache toutes les heures
     setInterval(() => {
       const now = Date.now();
@@ -32,12 +38,21 @@ class MailPollingService {
   async checkAllUsers() {
     const now = Date.now();
     
+    // ✅ VERROU GLOBAL : Un seul polling à la fois (toutes instances confondues)
+    if (this.isGlobalPollingActive) {
+      console.log(`⏭️ [${this.instanceId}] Polling déjà actif, skip`);
+      return { checked: 0, processed: 0, sent: 0 };
+    }
+    
+    // Vérifier cooldown
     if (now - this.lastPollingStart < this.POLLING_COOLDOWN) {
       const remainingTime = Math.ceil((this.POLLING_COOLDOWN - (now - this.lastPollingStart)) / 1000);
-      console.log(`⏭️ [Polling] Cooldown ${remainingTime}s`);
-      return;
+      console.log(`⏭️ [${this.instanceId}] Cooldown ${remainingTime}s`);
+      return { checked: 0, processed: 0, sent: 0 };
     }
 
+    // ✅ ACTIVER LE VERROU
+    this.isGlobalPollingActive = true;
     this.lastPollingStart = now;
 
     try {
