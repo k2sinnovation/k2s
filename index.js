@@ -169,6 +169,7 @@ app.get('/', (req, res) => {
         appointments: '/api/user/appointments',
       },
       admin: {
+        checkMigrations: '/api/admin/check-migrations',
         forceCheck: '/api/admin/force-check',
         pollingStatus: '/api/admin/polling-status',
       },
@@ -216,6 +217,46 @@ app.post('/api/ask', async (req, res) => {
 });
 
 // ===== ROUTES DE DEBUG AUTO-REPLY =====
+
+// ✅ NOUVEAU : Vérifier l'état de la migration des subscriptions
+app.get('/api/admin/check-migrations', async (req, res) => {
+  try {
+    const stringFormat = await User.countDocuments({ subscription: { $type: 'string' } });
+    const objectFormat = await User.countDocuments({ 'subscription.plan': { $exists: true } });
+    const noSubscription = await User.countDocuments({ subscription: { $exists: false } });
+    const totalUsers = await User.countDocuments({});
+    
+    const samples = await User.find({}).limit(5).select('email subscription createdAt');
+    
+    const migrationComplete = stringFormat === 0 && noSubscription === 0 && objectFormat === totalUsers;
+    
+    res.json({
+      success: true,
+      migration_complete: migrationComplete,
+      stats: {
+        total_users: totalUsers,
+        old_format_remaining: stringFormat,      // ✅ Doit être 0
+        new_format: objectFormat,                 // ✅ Doit être = total_users
+        no_subscription: noSubscription,          // ✅ Doit être 0
+      },
+      status: migrationComplete 
+        ? '✅ Migration complète - Tous les users sont au bon format'
+        : '⚠️ Migration incomplète - Lance "node migrate-subscriptions.js"',
+      samples: samples.map(u => ({
+        email: u.email,
+        subscription: u.subscription,
+        type: typeof u.subscription,
+        has_plan: u.subscription?.plan ? '✅' : '❌',
+        createdAt: u.createdAt
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
 
 // 🧪 Forcer un check manuel (utile pour tester)
 app.post('/api/admin/force-check', async (req, res) => {
@@ -336,6 +377,7 @@ mongoose.connect(process.env.MONGO_URI, {
         console.log('   • Drive chargé 1 fois pour tous les messages');
         console.log('   • Cache thread anti-doublon (1h)');
         console.log('   • ⚡ MODE TEST: Vérification toutes les 20 secondes');
+        console.log('💡 Vérifier migration: GET /api/admin/check-migrations');
         console.log('💡 Forcer check: POST /api/admin/force-check');
         console.log('💡 Voir statut: GET /api/admin/polling-status');
         console.log('');
