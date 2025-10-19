@@ -3,10 +3,6 @@ const User = require('../models/User');
 const driveCacheMiddleware = require('./drive-cache.middleware');
 const driveService = require('../services/google-drive.service');
 
-/**
- * Middleware d'authentification par SESSION TOKEN PERMANENT
- * + Chargement automatique des données Drive
- */
 module.exports = async (req, res, next) => {
   const startTime = Date.now();
   
@@ -24,7 +20,6 @@ module.exports = async (req, res, next) => {
     const sessionToken = authHeader.replace('Bearer ', '');
     const hashedToken = Session.hashToken(sessionToken);
     
-    // ✅ VÉRIFIER SESSION EN BASE
     const session = await Session.findOne({
       sessionToken: hashedToken,
       isActive: true,
@@ -39,7 +34,6 @@ module.exports = async (req, res, next) => {
       });
     }
     
-    // ✅ VÉRIFIER UTILISATEUR ET ABONNEMENT
     const user = await User.findById(session.userId);
     
     if (!user) {
@@ -50,69 +44,60 @@ module.exports = async (req, res, next) => {
       });
     }
     
-    if (!user.subscription.isActive || user.subscription.endDate < new Date()) {
-      console.error(`❌ [Auth] Abonnement expiré pour ${user.email}`);
-      return res.status(403).json({ 
-        error: 'Abonnement expiré',
-        code: 'SUBSCRIPTION_EXPIRED',
-        endDate: user.subscription.endDate
-      });
+    // ✅ CORRECTION : Bypass abonnement pour routes Drive
+    const isDriveRoute = req.path.startsWith('/drive');
+    
+    if (!isDriveRoute) {
+      if (!user.subscription.isActive || user.subscription.endDate < new Date()) {
+        console.error(`❌ [Auth] Abonnement expiré pour ${user.email}`);
+        return res.status(403).json({ 
+          error: 'Abonnement expiré',
+          code: 'SUBSCRIPTION_EXPIRED',
+          endDate: user.subscription.endDate
+        });
+      }
+    } else {
+      console.log(`✅ [Auth:Drive] ${user.email} - ${req.method} ${req.path}`);
     }
     
-    // ✅ METTRE À JOUR lastUsedAt (async, sans attendre)
     Session.updateOne(
       { _id: session._id },
       { lastUsedAt: new Date() }
     ).exec();
     
-    // ✅ ATTACHER INFOS À LA REQUÊTE
     req.userId = user._id;
     req.deviceId = session.deviceId;
     req.session = session;
     req.user = user;
-    
-    // ✅ ATTACHER LES TOKENS EMAIL
     req.emailAccessToken = session.emailAccessToken || user.emailConfig?.accessToken;
     req.emailRefreshToken = session.emailRefreshToken || user.emailConfig?.refreshToken;
     
     const authDuration = Date.now() - startTime;
     console.log(`✅ [Auth:${req.userId}] Authentifié en ${authDuration}ms`);
     
-    // ✅ NOUVEAU : CHARGER DONNÉES DRIVE EN CACHE (NON BLOQUANT)
-    if (req.emailAccessToken) {
+    if (isDriveRoute) {
+      console.log(`   📂 Token Gmail: ${req.emailAccessToken ? '✅ Présent' : '❌ Absent'}`);
+    }
+    
+    if (!isDriveRoute && req.emailAccessToken) {
       try {
-        // Vérifier si déjà en cache
         req.driveData = await driveCacheMiddleware.getCachedDriveData(user._id.toString());
         
         if (!req.driveData) {
-          // Charger depuis Drive en arrière-plan
           console.log(`[Auth:${req.userId}] 📂 Chargement données Drive...`);
-          
           const driveStartTime = Date.now();
-          
-          const data = await driveService.loadAllUserData(
-            req.emailAccessToken, 
-            user._id.toString()
-          );
-          
+          const data = await driveService.loadAllUserData(req.emailAccessToken, user._id.toString());
           const driveDuration = Date.now() - driveStartTime;
           console.log(`[Auth:${req.userId}] ✅ Drive chargé en ${driveDuration}ms`);
-          
           req.driveData = data;
-          
-          // Mettre en cache (async)
           driveCacheMiddleware.cacheUserDriveData(user._id.toString(), data);
         } else {
           console.log(`[Auth:${req.userId}] 📦 Drive depuis cache`);
         }
       } catch (driveError) {
-        // Ne pas bloquer si Drive échoue
-        console.warn(`[Auth:${req.userId}] ⚠️ Impossible de charger Drive (non bloquant):`, driveError.message);
+        console.warn(`[Auth:${req.userId}] ⚠️ Drive non chargé:`, driveError.message);
         req.driveData = null;
       }
-    } else {
-      console.warn(`[Auth:${req.userId}] ⚠️ Pas de token Gmail, Drive non chargé`);
-      req.driveData = null;
     }
     
     const totalDuration = Date.now() - startTime;
@@ -121,7 +106,7 @@ module.exports = async (req, res, next) => {
     next();
   } catch (error) {
     const duration = Date.now() - startTime;
-    console.error(`❌ [Auth] Erreur middleware (${duration}ms):`, error.message);
+    console.error(`❌ [Auth] Erreur (${duration}ms):`, error.message);
     res.status(500).json({ 
       error: 'Erreur authentification',
       code: 'AUTH_ERROR'
