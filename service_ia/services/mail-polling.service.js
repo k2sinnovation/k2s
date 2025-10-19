@@ -73,6 +73,7 @@ class MailPollingService {
       console.log(`👥 [Polling] ${users.length} utilisateur(s) actif(s)`);
 
       const BATCH_SIZE = 20;
+      let totalProcessed = 0;
       let totalSent = 0;
       let totalRequests = 0;
 
@@ -85,6 +86,7 @@ class MailPollingService {
 
         results.forEach(result => {
           if (result.status === 'fulfilled' && result.value) {
+            totalProcessed += result.value.processed || 0;
             totalSent += result.value.sent || 0;
             totalRequests += result.value.requests || 0;
           }
@@ -95,11 +97,27 @@ class MailPollingService {
         }
       }
 
-      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      console.log(`✅ [Polling] Terminé (${duration}s) - ${totalSent} réponse(s) - ${totalRequests} requêtes\n`);
+      console.log('\n📊 ===== RÉSUMÉ POLLING =====');
+      console.log(`  ✅ Utilisateurs vérifiés: ${users.length}`);
+      console.log(`  📧 Messages traités: ${totalProcessed}`);
+      console.log(`  ✉️  Réponses envoyées: ${totalSent}`);
+      console.log(`  ⏱️  Durée: ${duration}s`);
+      console.log(`  🆔 Instance: ${this.instanceId}`);
+      console.log('🔄 ===== FIN POLLING =====\n');
+
+      return { 
+        checked: users.length, 
+        processed: totalProcessed, 
+        sent: totalSent 
+      };
 
     } catch (error) {
-      console.error('❌ [Polling] Erreur:', error.message);
+      console.error(`❌ [${this.instanceId}] Erreur critique:`, error.message);
+      console.error(error.stack);
+      return { checked: 0, processed: 0, sent: 0 };
+    } finally {
+      // ✅ LIBÉRER LE VERROU
+      this.isGlobalPollingActive = false;
     }
   }
 
