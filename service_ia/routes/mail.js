@@ -43,7 +43,6 @@ router.get('/gmail/inbox', authMiddleware, async (req, res) => {
     }
 
     // ⚡ Retourner juste les IDs + threadIds
-    // Les détails seront récupérés UNIQUEMENT si nécessaire
     const messages = response.data.messages.map(msg => ({
       id: msg.id,
       threadId: msg.threadId
@@ -155,7 +154,6 @@ router.get('/gmail/search', authMiddleware, async (req, res) => {
       return res.json({ messages: [] });
     }
 
-    // Retourner juste les IDs
     const messages = response.data.messages.map(msg => ({
       id: msg.id,
       threadId: msg.threadId
@@ -287,9 +285,9 @@ router.get('/outlook/inbox', authMiddleware, async (req, res) => {
     };
     
     if (skip) params.$skip = parseInt(skip);
-    if (filter) params.$filter = filter; // ex: "isRead eq false"
+    if (filter) params.$filter = filter; // ✅ Support du filtre (ex: "isRead eq false")
 
-    console.log('📥 [Outlook] Récupération inbox...');
+    console.log(`📥 [Outlook] Récupération inbox${filter ? ` (filtre: ${filter})` : ''}...`);
 
     const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${req.accessToken}` },
@@ -298,6 +296,7 @@ router.get('/outlook/inbox', authMiddleware, async (req, res) => {
 
     const messages = response.data.value.map(msg => ({
       id: msg.id,
+      threadId: msg.conversationId || msg.id, // ✅ Outlook utilise conversationId
       from: msg.from?.emailAddress?.address || '',
       subject: msg.subject || '(sans objet)',
       date: new Date(msg.receivedDateTime),
@@ -332,7 +331,7 @@ router.get('/outlook/message/:id', authMiddleware, async (req, res) => {
       `https://graph.microsoft.com/v1.0/me/messages/${id}`,
       {
         headers: { Authorization: `Bearer ${req.accessToken}` },
-        params: { $select: 'id,from,toRecipients,subject,receivedDateTime,body,isRead' },
+        params: { $select: 'id,conversationId,from,toRecipients,subject,receivedDateTime,body,isRead' },
       }
     );
 
@@ -342,6 +341,7 @@ router.get('/outlook/message/:id', authMiddleware, async (req, res) => {
 
     res.json({
       id: msg.id,
+      threadId: msg.conversationId || msg.id, // ✅ Outlook conversationId
       from: msg.from?.emailAddress?.address || '',
       to: msg.toRecipients?.map(r => r.emailAddress?.address).join(', ') || '',
       subject: msg.subject || '(sans objet)',
@@ -377,13 +377,14 @@ router.get('/outlook/search', authMiddleware, async (req, res) => {
         params: {
           $search: `"${q}"`,
           $top: 20,
-          $select: 'id,from,subject,receivedDateTime,bodyPreview,isRead',
+          $select: 'id,conversationId,from,subject,receivedDateTime,bodyPreview,isRead',
         },
       }
     );
 
     const messages = response.data.value.map(msg => ({
       id: msg.id,
+      threadId: msg.conversationId || msg.id,
       from: msg.from?.emailAddress?.address || '',
       subject: msg.subject || '',
       date: new Date(msg.receivedDateTime),
@@ -409,15 +410,18 @@ router.post('/outlook/reply', authMiddleware, async (req, res) => {
   try {
     const { messageId, to, subject, body } = req.body;
 
-    if (!to || !body) {
-      return res.status(400).json({ error: 'Destinataire et corps requis' });
+    if (!messageId || !body) {
+      return res.status(400).json({ error: 'messageId et corps requis' });
     }
 
     console.log(`📤 [Outlook] Envoi réponse à ${to}...`);
 
+    // ✅ Utiliser l'API de réponse Outlook (répond automatiquement dans le fil)
     await axios.post(
       `https://graph.microsoft.com/v1.0/me/messages/${messageId}/reply`,
-      { comment: body },
+      { 
+        comment: body 
+      },
       {
         headers: {
           Authorization: `Bearer ${req.accessToken}`,
@@ -434,6 +438,35 @@ router.post('/outlook/reply', authMiddleware, async (req, res) => {
     console.error('❌ [Outlook] Erreur envoi:', error.message);
     res.status(error.response?.status || 500).json({ 
       error: 'Erreur envoi réponse',
+      details: error.message 
+    });
+  }
+});
+
+// PATCH /api/mail/outlook/mark-read - Marquer comme lu (Outlook)
+router.patch('/outlook/mark-read/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await axios.patch(
+      `https://graph.microsoft.com/v1.0/me/messages/${id}`,
+      { isRead: true },
+      {
+        headers: { 
+          'Authorization': `Bearer ${req.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+      }
+    );
+
+    console.log(`✓ Message ${id} marqué comme lu`);
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error('❌ [Outlook] Erreur mark-read:', error.message);
+    res.status(error.response?.status || 500).json({ 
+      error: 'Erreur marquage',
       details: error.message 
     });
   }
