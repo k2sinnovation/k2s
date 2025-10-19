@@ -59,10 +59,10 @@ const autoReplySchema = new mongoose.Schema({
   }
 });
 
-// ✅ Index composites optimisés
-autoReplySchema.index({ userId: 1, status: 1 });
-autoReplySchema.index({ userId: 1, createdAt: -1 });
-autoReplySchema.index({ userId: 1, messageId: 1 }, { unique: true }); // ✅ Éviter les doublons (CRUCIAL)
-autoReplySchema.index({ userId: 1, threadId: 1 }); // ✅ Pour rechercher par conversation
+{ userId: 1, messageId: 1 } unique     // Anti-doublon
+{ userId: 1, status: 1 }                // Par status
+{ userId: 1, createdAt: -1 }            // Historique
+{ userId: 1, threadId: 1, status: 1 }   // Thread + status (couvre aussi juste threadId)
+{ userId: 1, threadId: 1, sentAt: -1 }  // Dernière réponse thread
 
 module.exports = mongoose.models.AutoReply || mongoose.model('AutoReply', autoReplySchema);
