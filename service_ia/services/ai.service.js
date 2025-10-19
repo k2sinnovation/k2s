@@ -1,71 +1,79 @@
 // service_ia/services/ai.service.js
-// ✅ VERSION UNIFIÉE - Une seule requête Mistral pour Analyse + Génération
-// 🔥 Ne répond PAS si le message est non pertinent
+// ✅ VERSION CHRONOLOGIQUE - Compréhension → Contexte → Décision → Réponse
 
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
 
 class AIService {
   /**
-   * 🎯 MÉTHODE PRINCIPALE - Analyse + génération en une seule requête
+   * 🎯 MÉTHODE PRINCIPALE - Analyse + génération (en une requête)
    */
   async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
     const userId = user._id.toString();
     const apiKey = process.env.K2S_IQ;
     if (!apiKey) throw new Error('Clé API Mistral manquante');
 
-    console.log(`[AI:${userId}] 🚀 Analyse + génération unifiée (1 requête)`);
+    console.log(`[AI:${userId}] 🚀 Analyse et génération chronologique (1 requête)`);
 
     // 🔹 Charger le contexte Drive
     const driveContext = driveData
       ? this._buildContextFromDriveData(driveData)
       : await this._loadDriveContext(user, true);
 
-    // 🧠 Prompt système
+    // 🧠 Prompt système — raisonnement en 3 étapes (lecture → contexte → décision)
     const systemPrompt = `
-${driveContext}
+Tu es un assistant virtuel professionnel chargé de traiter les emails clients pour une entreprise.
+
+Suis TOUJOURS cet ordre chronologique :
+
+1️⃣ **Analyser le message client et son historique**  
+   - Identifier l’intention réelle du client.  
+   - Comprendre le ton, la demande, et les détails pertinents.  
+
+2️⃣ **Consulter le contexte de l’entreprise**  
+   - Lis attentivement les informations fournies après le message (prestations, horaires, instructions IA, etc.).  
+   - Utilise ces données pour adapter ta compréhension.  
+
+3️⃣ **Décider et agir**  
+   - Si la demande est pertinente (prise de RDV, question, info, annulation, etc.), génère une réponse courte et claire.  
+   - Si ce n’est pas pertinent (spam, message vide, pub, etc.), mets "is_relevant": false et "response": null.
 
 ---
 
-TÂCHE:
-Tu es un assistant qui gère les emails entrants pour une entreprise.
-Tu dois :
-1️⃣ Analyser le message du client
-2️⃣ Décider s’il est pertinent (RDV, question, annulation, etc.)
-3️⃣ Si OUI → Génère une courte réponse professionnelle (3 à 5 phrases)
-4️⃣ Si NON → Met "response": null et "is_relevant": false
-
-⚠️ Réponds STRICTEMENT au format JSON suivant (pas de texte avant/après) :
+⚠️ Réponds STRICTEMENT au format JSON suivant (pas de texte avant ni après) :
 
 {
   "is_relevant": true/false,
   "confidence": 0.0 à 1.0,
   "intent": "prise_rdv"|"question_info"|"annulation"|"modification"|"reclamation"|"spam"|"autre",
-  "reason": "Explication courte",
+  "reason": "Courte explication du raisonnement",
   "response": "Texte de réponse si pertinent, sinon null"
 }
 
-RÈGLES :
-- Si non pertinent → response = null
-- Si pertinent → réponse naturelle en français, sans markdown, sans HTML
-- N'invente jamais d'informations (prix, horaires, etc.)
-- Reste professionnel et concis
+RÈGLES IMPORTANTES :
+- Si non pertinent → response = null  
+- Si pertinent → rédige une réponse polie, claire et naturelle en français  
+- Ne pas inventer d’informations (prix, horaires, disponibilités, etc.)  
+- Toujours rester professionnel, bienveillant et concis  
 `;
 
-    // 🧩 Prompt utilisateur
+    // 🧩 Prompt utilisateur — message client en premier, puis contexte après
     const userPrompt = `
-MESSAGE CLIENT:
+===== MESSAGE CLIENT =====
 De: ${message.from}
 Sujet: ${message.subject || '(sans objet)'}
 ${message.body}
 
 ${conversationHistory.length > 0
-  ? '\nHISTORIQUE:\n' +
+  ? '\n===== HISTORIQUE =====\n' +
     conversationHistory
       .slice(-3)
-      .map(m => `- ${m.from}: ${m.body.substring(0, 80)}...`)
+      .map(m => `- ${m.from}: ${m.body.substring(0, 120)}...`)
       .join('\n')
   : ''}
+
+===== INFORMATIONS ENTREPRISE =====
+${driveContext}
 `;
 
     try {
@@ -82,7 +90,7 @@ ${conversationHistory.length > 0
         },
         {
           headers: {
-            'Authorization': `Bearer ${apiKey}`,
+            Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json'
           },
           timeout: 30000
@@ -123,7 +131,9 @@ ${conversationHistory.length > 0
       }
 
       // ✅ Si pertinent → réponse prête
-      console.log(`[AI:${userId}] ✅ Pertinent: ${result.intent} (${(result.confidence * 100).toFixed(0)}%)`);
+      console.log(
+        `[AI:${userId}] ✅ Pertinent: ${result.intent} (${(result.confidence * 100).toFixed(0)}%)`
+      );
       console.log(`[AI:${userId}] ✅ Réponse générée (${result.response.length} chars)`);
 
       return {
@@ -173,7 +183,7 @@ ${conversationHistory.length > 0
       const business = driveData.businessInfo.business || {};
       const businessName = business.name || 'cette entreprise';
 
-      context += `Tu es l'assistant virtuel de ${businessName}. Tu aides les clients à prendre rendez-vous.\n\n`;
+      context += `Tu es l'assistant virtuel de ${businessName}. Tu aides les clients à prendre rendez-vous ou obtenir des informations.\n\n`;
 
       if (business.name || business.description) {
         context += `ENTREPRISE:\n`;
@@ -222,7 +232,7 @@ ${conversationHistory.length > 0
     }
 
     const today = new Date();
-    context += `Date: ${today.toLocaleDateString('fr-FR', {
+    context += `Date actuelle: ${today.toLocaleDateString('fr-FR', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
