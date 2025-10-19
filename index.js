@@ -283,8 +283,9 @@ app.use((err, req, res, next) => {
 
 // ===== DÉMARRAGE SERVEUR =====
 
-// ✅ Variable globale pour éviter double polling
+// ✅ Variables globales pour éviter double instance
 let cronJob = null;
+let isServerStarted = false;
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -292,6 +293,13 @@ mongoose.connect(process.env.MONGO_URI, {
 })
   .then(() => {
     console.log('✅ Connexion MongoDB réussie');
+    
+    // ✅ Vérifier qu'on démarre qu'une seule fois
+    if (isServerStarted) {
+      console.log('⚠️ Serveur déjà démarré, skip...');
+      return;
+    }
+    isServerStarted = true;
     
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`
@@ -306,17 +314,19 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
 ║  🔄 Auto-Reply: actif (5 minutes)      ║
 ║  ⚡ Optimisations: -60% requêtes       ║
+║  🆔 Instance: ${process.pid}           ║
 ╚════════════════════════════════════════╝
       `);
 
       // 🤖 DÉMARRER LE POLLING AUTOMATIQUE (1 SEULE FOIS)
       if (!cronJob) {
         console.log('🤖 Initialisation du système d\'auto-réponse optimisé...');
+        console.log(`🆔 Process ID: ${process.pid}`);
         
-        // ✅ Check initial après 10 secondes (laisser le temps au serveur de démarrer)
+        // ✅ Check initial après 10 secondes
         console.log('🤖 Premier check dans 10 secondes...');
         
-        setTimeout(() => {
+        const initialTimeout = setTimeout(() => {
           console.log('🔍 [Initial] Démarrage premier check...');
           mailPollingService.checkAllUsers().catch(err => {
             console.error('❌ [Initial] Erreur:', err.message);
@@ -331,7 +341,7 @@ mongoose.connect(process.env.MONGO_URI, {
           });
         }, {
           scheduled: true,
-          timezone: "Europe/Paris" // Ajustez selon votre timezone
+          timezone: "Europe/Paris"
         });
 
         console.log('✅ Auto-Reply optimisé activé');
@@ -339,9 +349,17 @@ mongoose.connect(process.env.MONGO_URI, {
         console.log('   • 1 appel OpenAI au lieu de 2 (-50% tokens)');
         console.log('   • Drive chargé 1 fois pour tous les messages');
         console.log('   • Cache thread anti-doublon (1h)');
+        console.log('   • Verrou global anti-double exécution');
         console.log('   • Vérification toutes les 5 minutes');
         console.log('💡 Forcer check: POST /api/admin/force-check');
         console.log('💡 Voir statut: GET /api/admin/polling-status');
+        
+        // Nettoyer le timeout si le serveur s'arrête
+        process.on('exit', () => {
+          clearTimeout(initialTimeout);
+        });
+      } else {
+        console.log('⚠️ CRON déjà configuré, skip');
       }
     });
   })
