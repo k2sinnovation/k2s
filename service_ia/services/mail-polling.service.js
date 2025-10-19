@@ -9,7 +9,7 @@ class MailPollingService {
   constructor() {
     this.processingMessages = new Map();
     this.processingUsers = new Map();
-    this.processedThreads = new Map(); 
+    this.processedThreads = new Map(); // ✅ NOUVEAU : Cache des threads traités
     this.lastPollingStart = 0;
     this.POLLING_COOLDOWN = 30000;
   }
@@ -91,7 +91,7 @@ class MailPollingService {
     this.processingUsers.set(userKey, now);
 
     try {
-      const newMessages = await this.fetchNewEmails(user.emailConfig);
+      const newMessages = await this.fetchNewEmails(user.emailConfig, user); // ✅ Passer user en paramètre
 
       if (newMessages.length === 0) {
         return { processed: 0, sent: 0 };
