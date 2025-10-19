@@ -283,9 +283,8 @@ app.use((err, req, res, next) => {
 
 // ===== DÉMARRAGE SERVEUR =====
 
-// ✅ Variables globales pour éviter double instance
+// ✅ Variable globale pour éviter double polling
 let cronJob = null;
-let isServerStarted = false;
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -293,13 +292,6 @@ mongoose.connect(process.env.MONGO_URI, {
 })
   .then(() => {
     console.log('✅ Connexion MongoDB réussie');
-    
-    // ✅ Vérifier qu'on démarre qu'une seule fois
-    if (isServerStarted) {
-      console.log('⚠️ Serveur déjà démarré, skip...');
-      return;
-    }
-    isServerStarted = true;
     
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`
@@ -312,52 +304,44 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  🤖 OpenAI: configuré                  ║
 ║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
-║  🔄 Auto-Reply: actif (TEST 10s)       ║
+║  🔄 Auto-Reply: actif (5 minutes)      ║
 ║  ⚡ Optimisations: -60% requêtes       ║
-║  🆔 Instance: ${process.pid}           ║
 ╚════════════════════════════════════════╝
       `);
 
       // 🤖 DÉMARRER LE POLLING AUTOMATIQUE (1 SEULE FOIS)
       if (!cronJob) {
         console.log('🤖 Initialisation du système d\'auto-réponse optimisé...');
-        console.log(`🆔 Process ID: ${process.pid}`);
         
-        // ✅ Check initial après 10 secondes
+        // ✅ Check initial après 10 secondes (laisser le temps au serveur de démarrer)
         console.log('🤖 Premier check dans 10 secondes...');
         
-        const initialTimeout = setTimeout(() => {
+        setTimeout(() => {
           console.log('🔍 [Initial] Démarrage premier check...');
           mailPollingService.checkAllUsers().catch(err => {
             console.error('❌ [Initial] Erreur:', err.message);
           });
         }, 10000);
 
-        // ⏱️ TEST : Toutes les 10 secondes (au lieu de CRON 5 minutes)
-        cronJob = setInterval(() => {
-          console.log('⏰ [TEST-10s] Démarrage vérification emails...');
+        // ⏱️ CRON UNIQUE : Toutes les 5 minutes
+        cronJob = cron.schedule('*/5 * * * *', () => {
+          console.log('⏰ [CRON] Démarrage vérification emails...');
           mailPollingService.checkAllUsers().catch(err => {
-            console.error('❌ [TEST] Erreur:', err.message);
+            console.error('❌ [CRON] Erreur:', err.message);
           });
-        }, 10000); // 10 secondes
+        }, {
+          scheduled: true,
+          timezone: "Europe/Paris" // Ajustez selon votre timezone
+        });
 
-        console.log('✅ Auto-Reply TEST : vérification toutes les 10 secondes');
+        console.log('✅ Auto-Reply optimisé activé');
         console.log('📊 Optimisations:');
         console.log('   • 1 appel OpenAI au lieu de 2 (-50% tokens)');
         console.log('   • Drive chargé 1 fois pour tous les messages');
         console.log('   • Cache thread anti-doublon (1h)');
-        console.log('   • Verrou global anti-double exécution');
-        console.log('   • ⚠️ MODE TEST : vérification toutes les 10 secondes');
+        console.log('   • Vérification toutes les 5 minutes');
         console.log('💡 Forcer check: POST /api/admin/force-check');
         console.log('💡 Voir statut: GET /api/admin/polling-status');
-        
-        // Nettoyer le timeout si le serveur s'arrête
-        process.on('exit', () => {
-          clearTimeout(initialTimeout);
-          if (cronJob) clearInterval(cronJob);
-        });
-      } else {
-        console.log('⚠️ Polling déjà configuré, skip');
       }
     });
   })
@@ -371,10 +355,10 @@ mongoose.connect(process.env.MONGO_URI, {
 process.on('SIGTERM', () => {
   console.log('⚠️ SIGTERM reçu, arrêt propre...');
   
-  // Arrêter le polling (setInterval)
+  // Arrêter le CRON
   if (cronJob) {
-    clearInterval(cronJob);
-    console.log('✅ Polling arrêté');
+    cronJob.stop();
+    console.log('✅ CRON arrêté');
   }
   
   server.close(() => {
@@ -388,10 +372,10 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('⚠️ SIGINT reçu, arrêt propre...');
   
-  // Arrêter le polling (setInterval)
+  // Arrêter le CRON
   if (cronJob) {
-    clearInterval(cronJob);
-    console.log('✅ Polling arrêté');
+    cronJob.stop();
+    console.log('✅ CRON arrêté');
   }
   
   server.close(() => {
