@@ -14,7 +14,7 @@ class MailPollingService {
     this.processingUsers = new Map();
     this.processedThreads = new Map();
     this.lastPollingStart = 0;
-    this.POLLING_COOLDOWN = 30000;
+    this.POLLING_COOLDOWN = 5000; // ⚡ 5 secondes pour TEST (30000 en production)
     
     // ✅ NOUVEAU : Lock global pour éviter double exécution
     this.isGlobalPollingActive = false;
@@ -280,6 +280,10 @@ class MailPollingService {
 
       if (alreadyProcessed) {
         console.log(`    ⏭️ Déjà traité (${alreadyProcessed.status}) - 0 token`);
+        
+        // ✅ IMPORTANT : Marquer comme lu dans Gmail si pas déjà fait
+        await this.markAsRead(message.id, user.emailConfig).catch(() => {});
+        
         return { sent: false, alreadyProcessed: true, requests: 0 };
       }
 
@@ -309,6 +313,10 @@ class MailPollingService {
         if (threadAlreadyReplied) {
           console.log(`    ⏭️ Thread déjà répondu - 0 token`);
           this.processedThreads.set(threadKey, threadAlreadyReplied.sentAt.getTime());
+          
+          // ✅ IMPORTANT : Marquer comme lu dans Gmail
+          await this.markAsRead(message.id, user.emailConfig).catch(() => {});
+          
           return { sent: false, alreadyProcessed: true, requests: 0 };
         }
       }
