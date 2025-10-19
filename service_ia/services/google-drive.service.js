@@ -193,7 +193,7 @@ class GoogleDriveService {
    * @returns {Promise<Object>}
    */
   async loadBusinessInfo(accessToken, userId) {
-    const data = await this.readJsonFromAppData(accessToken, 'business_info.json', userId);
+    const data = await this.readJsonFromAppData(accessToken, 'business.json', userId);
     
     // Toujours retourner un objet avec au moins updatedAt
     return data || { 
@@ -224,7 +224,7 @@ class GoogleDriveService {
     // Nettoyer les champs vides (optionnel)
     delete data._empty;
 
-    return await this.saveJsonToAppData(accessToken, 'business_info.json', data, userId);
+    return await this.saveJsonToAppData(accessToken, 'business.json', data, userId);
   }
 
   /**
@@ -234,7 +234,7 @@ class GoogleDriveService {
    * @returns {Promise<Object>}
    */
   async loadPlanningInfo(accessToken, userId) {
-    const data = await this.readJsonFromAppData(accessToken, 'planning_info.json', userId);
+    const data = await this.readJsonFromAppData(accessToken, 'planning.json', userId);
     
     return data || { 
       updatedAt: new Date().toISOString(),
@@ -262,7 +262,7 @@ class GoogleDriveService {
 
     delete data._empty;
 
-    return await this.saveJsonToAppData(accessToken, 'planning_info.json', data, userId);
+    return await this.saveJsonToAppData(accessToken, 'planning.json', data, userId);
   }
 
   /**
@@ -276,8 +276,8 @@ class GoogleDriveService {
       console.log(`[Drive:${userId}] 🔍 Vérification fichiers...`);
 
       const [businessFile, planningFile] = await Promise.all([
-        this._findFileInAppData(accessToken, 'business_info.json', userId).catch(() => null),
-        this._findFileInAppData(accessToken, 'planning_info.json', userId).catch(() => null)
+        this._findFileInAppData(accessToken, 'business.json', userId).catch(() => null),
+        this._findFileInAppData(accessToken, 'planning.json', userId).catch(() => null)
       ]);
 
       const status = {
