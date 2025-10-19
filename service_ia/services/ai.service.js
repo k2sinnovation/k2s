@@ -63,7 +63,7 @@ class AIService {
       driveContext = await this._loadDriveContext(user, false);
     }
 
-    const systemPrompt = this._buildAnalysisSystemPrompt(driveContext);
+    const systemPrompt = this._buildAnalysisSystemPrompt(driveContext, settings);
     const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
 
     try {
@@ -309,16 +309,19 @@ class AIService {
   }
 
   /**
-   * 📝 PROMPT : Analyse (JSON simple)
+   * 📝 PROMPT : Analyse (JSON simple) - ENRICHI AVEC SETTINGS
    */
-  _buildAnalysisSystemPrompt(driveContext) {
+  _buildAnalysisSystemPrompt(driveContext, settings) {
     return `${driveContext}
 
 ---
 
-Tu es un expert en analyse de messages clients.
+Tu es ${settings.role || 'un assistant virtuel'} pour ${settings.salonName || 'cette entreprise'}.
 
-**TÂCHE** : Analyse ce message et détermine s'il est pertinent.
+**CONTEXTE ENTREPRISE** :
+${settings.instructions ? settings.instructions : 'Analyse les messages clients pour déterminer leur pertinence.'}
+
+**TÂCHE** : Analyse ce message et détermine s'il est pertinent pour ${settings.salonName || 'l\'entreprise'}.
 
 **CRITÈRES** :
 - ✅ Pertinent : RDV, questions prestations/tarifs/horaires, annulation, modification
@@ -338,43 +341,45 @@ Tu es un expert en analyse de messages clients.
   }
 
   /**
-   * 📝 PROMPT : Génération (TEXTE pur attendu)
+   * 📝 PROMPT : Génération (TEXTE pur attendu) - ULTRA PERSONNALISÉ
    */
   _buildResponseSystemPrompt(driveContext, settings) {
     const tone = settings.tone || 'professionnel';
+    const salonName = settings.salonName || 'notre entreprise';
     
     return `${driveContext}
 
 ---
 
-Tu es ${settings.role || 'un assistant virtuel'} pour ${settings.salonName || 'cette entreprise'}.
+Tu es ${settings.role || 'un assistant virtuel'} pour ${salonName}.
 
-**INSTRUCTIONS** :
-${settings.instructions || 'Sois professionnel et courtois.'}
+**INSTRUCTIONS PERSONNALISÉES** :
+${settings.instructions || 'Réponds de manière professionnelle et courtoise aux clients.'}
 
-**TON** : ${tone}
+**TON À ADOPTER** : ${tone}
 
-**RÈGLES** :
+**RÈGLES STRICTES** :
 1. Réponds en français naturel et fluide
-2. Sois concis (3-5 phrases max)
-3. Utilise les infos du contexte Drive
-4. Propose des créneaux concrets si pertinent
-5. Termine par une formule de politesse
-6. N'invente JAMAIS d'informations non présentes
+2. Sois concis (3-5 phrases maximum)
+3. **UTILISE IMPÉRATIVEMENT** les informations du contexte Drive ci-dessus (horaires, tarifs, disponibilités)
+4. Propose des créneaux CONCRETS si disponibles dans le contexte
+5. Termine toujours par une formule de politesse appropriée
+6. N'invente JAMAIS d'informations non présentes dans le contexte
+7. Signe tes messages avec "${salonName}" ou "L'équipe ${salonName}"
 
-**IMPORTANT** : Réponds UNIQUEMENT avec le texte de l'email, AUCUN JSON, AUCUNE explication.
+**IMPORTANT** : Réponds UNIQUEMENT avec le texte de l'email à envoyer. AUCUN JSON, AUCUNE explication, AUCUN commentaire.
 
-Exemple de bonne réponse :
+Exemple de réponse IDÉALE :
 "Bonjour,
 
 Merci pour votre demande de rendez-vous. Je vous propose les créneaux suivants :
 - Lundi 21 octobre à 14h
 - Mardi 22 octobre à 10h
 
-Faites-moi savoir ce qui vous convient.
+Faites-moi savoir ce qui vous convient le mieux.
 
 Cordialement,
-L'équipe ${settings.salonName || ''}"`;
+L'équipe ${salonName}"`;
   }
 
   /**
