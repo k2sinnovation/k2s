@@ -1,5 +1,5 @@
 // service_ia/services/mail-polling.service.js
-// ✅ VERSION ULTRA-OPTIMISÉE - Maximum 2-3 requêtes par message
+// ✅ VERSION ULTRA-OPTIMISÉE - Filtrage backend + 1 requête GPT
 
 const User = require('../models/User');
 const AutoReply = require('../models/AutoReply');
@@ -14,7 +14,12 @@ class MailPollingService {
     this.processingUsers = new Map();
     this.processedThreads = new Map();
     this.lastPollingStart = 0;
-    this.POLLING_COOLDOWN = 5000; // ⚡ 5 secondes pour TEST (30000 en production)
+    this.POLLING_COOLDOWN = 5000; // 5 secondes pour TEST (30000 en production)
+    
+    // ✅ Paramètres de filtrage
+    this.MAX_EMAIL_SIZE = 50000; // 50KB max (caractères)
+    this.MIN_EMAIL_INTERVAL = 60000; // 1 minute entre 2 mails du même expéditeur
+    this.lastProcessedMail = new Map(); // userId -> { from, timestamp }
     
     // ✅ NOUVEAU : Lock global pour éviter double exécution
     this.isGlobalPollingActive = false;
@@ -31,6 +36,9 @@ class MailPollingService {
       for (const [key, timestamp] of this.processedThreads.entries()) {
         if (now - timestamp > 3600000) this.processedThreads.delete(key);
       }
+      for (const [key, data] of this.lastProcessedMail.entries()) {
+        if (now - data.timestamp > 300000) this.lastProcessedMail.delete(key);
+      }
       console.log('🧹 Cache nettoyé');
     }, 3600000);
   }
@@ -38,7 +46,7 @@ class MailPollingService {
   async checkAllUsers() {
     const now = Date.now();
     
-    // ✅ VERROU GLOBAL : Un seul polling à la fois (toutes instances confondues)
+    // ✅ VERROU GLOBAL : Un seul polling à la fois
     if (this.isGlobalPollingActive) {
       console.log(`⏭️ [${this.instanceId}] Polling déjà actif, skip`);
       return { checked: 0, processed: 0, sent: 0 };
@@ -67,7 +75,7 @@ class MailPollingService {
 
       if (users.length === 0) {
         console.log('ℹ️ [Polling] Aucun utilisateur actif');
-        return;
+        return { checked: 0, processed: 0, sent: 0 };
       }
 
       console.log(`👥 [Polling] ${users.length} utilisateur(s) actif(s)`);
@@ -75,7 +83,7 @@ class MailPollingService {
       const BATCH_SIZE = 20;
       let totalProcessed = 0;
       let totalSent = 0;
-      let totalRequests = 0;
+      let totalFiltered = 0;
 
       for (let i = 0; i < users.length; i += BATCH_SIZE) {
         const batch = users.slice(i, i + BATCH_SIZE);
@@ -88,7 +96,7 @@ class MailPollingService {
           if (result.status === 'fulfilled' && result.value) {
             totalProcessed += result.value.processed || 0;
             totalSent += result.value.sent || 0;
-            totalRequests += result.value.requests || 0;
+            totalFiltered += result.value.filtered || 0;
           }
         });
         
@@ -97,8 +105,11 @@ class MailPollingService {
         }
       }
 
+      const duration = Math.round((Date.now() - startTime) / 1000); // ✅ FIX: Variable définie
+
       console.log('\n📊 ===== RÉSUMÉ POLLING =====');
       console.log(`  ✅ Utilisateurs vérifiés: ${users.length}`);
+      console.log(`  🔍 Messages filtrés: ${totalFiltered}`);
       console.log(`  📧 Messages traités: ${totalProcessed}`);
       console.log(`  ✉️  Réponses envoyées: ${totalSent}`);
       console.log(`  ⏱️  Durée: ${duration}s`);
@@ -107,6 +118,7 @@ class MailPollingService {
 
       return { 
         checked: users.length, 
+        filtered: totalFiltered,
         processed: totalProcessed, 
         sent: totalSent 
       };
@@ -131,7 +143,7 @@ class MailPollingService {
       const elapsed = now - lockTime;
       
       if (elapsed < 300000) {
-        return { processed: 0, sent: 0, requests: 0 };
+        return { processed: 0, sent: 0, filtered: 0 };
       }
       this.processingUsers.delete(userKey);
     }
@@ -139,14 +151,11 @@ class MailPollingService {
     this.processingUsers.set(userKey, now);
 
     try {
-      let requestCount = 0;
-
       // 🎯 REQUÊTE 1 : Récupérer messages NON LUS
       const newMessages = await this.fetchNewEmails(user.emailConfig, user);
-      requestCount++;
 
       if (newMessages.length === 0) {
-        return { processed: 0, sent: 0, requests: requestCount };
+        return { processed: 0, sent: 0, filtered: 0 };
       }
 
       console.log(`  📨 [${user.email}] ${newMessages.length} nouveau(x) message(s) non lu(s)`);
@@ -156,10 +165,10 @@ class MailPollingService {
       try {
         const accessToken = user.emailConfig?.accessToken;
         if (accessToken) {
-          driveData = await driveCacheMiddleware.getCachedDriveData(user._id.toString());
+          driveData = await driveCacheMiddleware.getCachedDriveData(userKey);
           if (!driveData) {
-            driveData = await driveService.loadAllUserData(accessToken, user._id.toString());
-            driveCacheMiddleware.cacheUserDriveData(user._id.toString(), driveData).catch(() => {});
+            driveData = await driveService.loadAllUserData(accessToken, userKey);
+            driveCacheMiddleware.cacheUserDriveData(userKey, driveData).catch(() => {});
           }
         }
       } catch (driveError) {
@@ -167,28 +176,33 @@ class MailPollingService {
       }
 
       let sent = 0;
+      let filtered = 0;
       let skipped = 0;
 
       for (const message of newMessages) {
         const result = await this.processMessage(message, user, driveData);
-        requestCount += result.requests || 0;
         
         if (result?.sent) {
           sent++;
+        } else if (result?.filtered) {
+          filtered++;
         } else if (result?.alreadyProcessed) {
           skipped++;
         }
       }
 
+      if (filtered > 0) {
+        console.log(`  🔍 [${user.email}] ${filtered} filtré(s) (taille/intervalle)`);
+      }
       if (skipped > 0) {
-        console.log(`  ⏭️ [${user.email}] ${skipped} déjà traité(s) - 0 token`);
+        console.log(`  ⏭️ [${user.email}] ${skipped} déjà traité(s)`);
       }
 
-      return { processed: newMessages.length, sent, requests: requestCount };
+      return { processed: newMessages.length - filtered, sent, filtered };
 
     } catch (error) {
       console.error(`  ❌ [${user.email}] Erreur:`, error.message);
-      return { processed: 0, sent: 0, requests: 0 };
+      return { processed: 0, sent: 0, filtered: 0 };
     } finally {
       this.processingUsers.delete(userKey);
     }
@@ -205,7 +219,7 @@ class MailPollingService {
         try {
           response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
-            params: { q: 'is:unread in:inbox' },
+            params: { q: 'is:unread in:inbox' }, // ✅ Filtre Gmail
             timeout: 15000
           });
         } catch (error) {
@@ -240,12 +254,11 @@ class MailPollingService {
       } else if (emailConfig.provider === 'outlook') {
         response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
           headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          params: { filter: 'isRead eq false' }, // ✅ Filtre Outlook
           timeout: 15000
         });
         
-        if (response?.data?.messages) {
-          return response.data.messages.filter(msg => !msg.isRead);
-        }
+        return response?.data?.messages || [];
       }
 
       return [];
@@ -261,16 +274,42 @@ class MailPollingService {
   async processMessage(message, user, driveData) {
     const lockKey = `${user._id}-${message.id}`;
     const now = Date.now();
-    let requestCount = 0;
     
     // ✅ VERROU STRICT : Si déjà en traitement, SKIP immédiatement
     if (this.processingMessages.has(lockKey)) {
-      return { sent: false, alreadyProcessed: true, requests: 0 };
+      return { sent: false, alreadyProcessed: true, filtered: false };
     }
 
     this.processingMessages.set(lockKey, now);
 
     try {
+      // 🎯 REQUÊTE API : Récupérer message complet
+      const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
+      
+      if (!fullMessage) {
+        console.log(`    ❌ Impossible de récupérer le message`);
+        return { sent: false, alreadyProcessed: false, filtered: false };
+      }
+
+      // ✅ FILTRAGE 1 : Taille du mail
+      const bodySize = (fullMessage.body || '').length;
+      if (bodySize > this.MAX_EMAIL_SIZE) {
+        console.log(`    🔍 Trop volumineux (${Math.round(bodySize/1000)}KB > ${Math.round(this.MAX_EMAIL_SIZE/1000)}KB)`);
+        await this.markAsRead(message.id, user.emailConfig).catch(() => {});
+        return { sent: false, alreadyProcessed: false, filtered: true };
+      }
+
+      // ✅ FILTRAGE 2 : Intervalle entre mails du même expéditeur
+      const lastMailKey = `${user._id}-${fullMessage.from}`;
+      const lastMail = this.lastProcessedMail.get(lastMailKey);
+      
+      if (lastMail && (now - lastMail.timestamp) < this.MIN_EMAIL_INTERVAL) {
+        const elapsed = Math.round((now - lastMail.timestamp) / 1000);
+        console.log(`    🔍 Intervalle trop court (${elapsed}s < ${this.MIN_EMAIL_INTERVAL/1000}s)`);
+        await this.markAsRead(message.id, user.emailConfig).catch(() => {});
+        return { sent: false, alreadyProcessed: false, filtered: true };
+      }
+
       // ✅ VÉRIFICATION 1 : En base (0 requête API)
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
@@ -279,25 +318,23 @@ class MailPollingService {
       });
 
       if (alreadyProcessed) {
-        console.log(`    ⏭️ Déjà traité (${alreadyProcessed.status}) - 0 token`);
-        
-        // ✅ IMPORTANT : Marquer comme lu dans Gmail si pas déjà fait
+        console.log(`    ⏭️ Déjà traité (${alreadyProcessed.status})`);
         await this.markAsRead(message.id, user.emailConfig).catch(() => {});
-        
-        return { sent: false, alreadyProcessed: true, requests: 0 };
+        return { sent: false, alreadyProcessed: true, filtered: false };
       }
 
-      // ✅ VÉRIFICATION 2 : Thread déjà répondu ? (0 requête API)
-      if (message.threadId) {
-        const threadKey = `${user._id}-${message.threadId}`;
+      // ✅ VÉRIFICATION 2 : Thread déjà répondu ?
+      if (fullMessage.threadId) {
+        const threadKey = `${user._id}-${fullMessage.threadId}`;
         
         if (this.processedThreads.has(threadKey)) {
           const lastReply = this.processedThreads.get(threadKey);
           const elapsed = now - lastReply;
           
           if (elapsed < 3600000) {
-            console.log(`    ⏭️ Thread déjà répondu il y a ${Math.round(elapsed/60000)} min - 0 token`);
-            return { sent: false, alreadyProcessed: true, requests: 0 };
+            console.log(`    ⏭️ Thread déjà répondu il y a ${Math.round(elapsed/60000)} min`);
+            await this.markAsRead(message.id, user.emailConfig).catch(() => {});
+            return { sent: false, alreadyProcessed: true, filtered: false };
           } else {
             this.processedThreads.delete(threadKey);
           }
@@ -305,19 +342,16 @@ class MailPollingService {
         
         const threadAlreadyReplied = await AutoReply.findOne({
           userId: user._id,
-          threadId: message.threadId,
+          threadId: fullMessage.threadId,
           status: 'sent',
           sentAt: { $gte: new Date(Date.now() - 3600000) }
         }).sort({ sentAt: -1 });
 
         if (threadAlreadyReplied) {
-          console.log(`    ⏭️ Thread déjà répondu - 0 token`);
+          console.log(`    ⏭️ Thread déjà répondu`);
           this.processedThreads.set(threadKey, threadAlreadyReplied.sentAt.getTime());
-          
-          // ✅ IMPORTANT : Marquer comme lu dans Gmail
           await this.markAsRead(message.id, user.emailConfig).catch(() => {});
-          
-          return { sent: false, alreadyProcessed: true, requests: 0 };
+          return { sent: false, alreadyProcessed: true, filtered: false };
         }
       }
 
@@ -325,48 +359,34 @@ class MailPollingService {
       const processingRecord = await AutoReply.create({
         userId: user._id,
         messageId: message.id,
-        threadId: message.threadId,
-        from: message.from,
-        subject: message.subject || '(sans objet)',
-        body: message.body || message.snippet || '',
+        threadId: fullMessage.threadId,
+        from: fullMessage.from,
+        subject: fullMessage.subject || '(sans objet)',
+        body: fullMessage.body || fullMessage.snippet || '',
         status: 'processing',
         createdAt: new Date()
       });
 
-      console.log(`    📩 Nouveau: ${message.from} - "${message.subject}"`);
+      console.log(`    📩 Nouveau: ${fullMessage.from} - "${fullMessage.subject}"`);
 
-      // 🎯 REQUÊTE 2 : Récupérer message complet
-      const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
-      requestCount++;
-      
-      if (!fullMessage) {
-        console.log(`    ❌ Impossible de récupérer le message`);
-        await AutoReply.deleteOne({ _id: processingRecord._id });
-        return { sent: false, alreadyProcessed: false, requests: requestCount };
-      }
-
-      // ✅ Historique thread (0 requête supplémentaire si on optimise)
+      // ✅ Historique thread
       const conversationHistory = await this.getConversationHistory(
         fullMessage.threadId, 
         user.emailConfig
       );
-      // requestCount++; // Commenté car on peut l'éviter si pas critique
 
-      // 🤖 REQUÊTE 3 : Analyse + Génération IA (1 SEUL appel OpenAI)
+      // 🤖 REQUÊTE GPT : Analyse + Génération IA (1 SEUL appel OpenAI)
       console.log(`    🤖 Analyse + Génération IA...`);
       
-      // ✅ NOUVELLE MÉTHODE OPTIMISÉE : 1 appel au lieu de 2
       const aiResult = await aiService.analyzeAndGenerateResponse(
         fullMessage, 
         user, 
         conversationHistory,
-        driveData // Utiliser driveData déjà chargé (0 requête supplémentaire)
+        driveData
       );
-      requestCount++; // 1 seul appel OpenAI = -50% tokens
 
       if (!aiResult.analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${aiResult.analysis.reason}`);
-        processingRecord.body = fullMessage.body;
         processingRecord.analysis = {
           isRelevant: false,
           confidence: aiResult.analysis.confidence,
@@ -375,7 +395,8 @@ class MailPollingService {
         };
         processingRecord.status = 'ignored';
         await processingRecord.save();
-        return { sent: false, alreadyProcessed: false, requests: requestCount };
+        await this.markAsRead(message.id, user.emailConfig).catch(() => {});
+        return { sent: false, alreadyProcessed: false, filtered: false };
       }
 
       console.log(`    ✅ Pertinent: ${aiResult.analysis.intent} (${(aiResult.analysis.confidence * 100).toFixed(0)}%)`);
@@ -387,17 +408,15 @@ class MailPollingService {
       if (shouldAutoSend) {
         console.log(`    📤 Envoi réponse...`);
         
-        // 🎯 REQUÊTE 4 : Envoi réponse
+        // 🎯 REQUÊTE API : Envoi réponse (DANS LE MÊME FIL)
         const sendSuccess = await this.sendReply(fullMessage, aiResult.response, user);
-        requestCount++;
 
         if (!sendSuccess) {
           console.log(`    ❌ Échec envoi`);
           await AutoReply.deleteOne({ _id: processingRecord._id });
-          return { sent: false, alreadyProcessed: false, requests: requestCount };
+          return { sent: false, alreadyProcessed: false, filtered: false };
         }
 
-        processingRecord.body = fullMessage.body;
         processingRecord.analysis = {
           isRelevant: true,
           confidence: aiResult.analysis.confidence,
@@ -409,18 +428,24 @@ class MailPollingService {
         processingRecord.sentAt = new Date();
         await processingRecord.save();
 
-        // ✅ Cache thread
-        if (message.threadId) {
-          const threadKey = `${user._id}-${message.threadId}`;
+        // ✅ Marquer comme lu
+        await this.markAsRead(message.id, user.emailConfig).catch(() => {});
+
+        // ✅ Cache thread + lastProcessedMail
+        if (fullMessage.threadId) {
+          const threadKey = `${user._id}-${fullMessage.threadId}`;
           this.processedThreads.set(threadKey, Date.now());
         }
+        this.lastProcessedMail.set(`${user._id}-${fullMessage.from}`, {
+          from: fullMessage.from,
+          timestamp: now
+        });
 
-        console.log(`    ✅ Réponse envoyée (${requestCount} requêtes)`);
-        return { sent: true, alreadyProcessed: false, requests: requestCount };
+        console.log(`    ✅ Réponse envoyée`);
+        return { sent: true, alreadyProcessed: false, filtered: false };
 
       } else {
         console.log(`    ⏸️ En attente validation`);
-        processingRecord.body = fullMessage.body;
         processingRecord.analysis = {
           isRelevant: true,
           confidence: aiResult.analysis.confidence,
@@ -430,7 +455,7 @@ class MailPollingService {
         processingRecord.status = 'pending';
         await processingRecord.save();
 
-        return { sent: false, alreadyProcessed: false, requests: requestCount };
+        return { sent: false, alreadyProcessed: false, filtered: false };
       }
 
     } catch (error) {
@@ -444,7 +469,7 @@ class MailPollingService {
         });
       } catch {}
       
-      return { sent: false, alreadyProcessed: false, requests: requestCount };
+      return { sent: false, alreadyProcessed: false, filtered: false };
       
     } finally {
       this.processingMessages.delete(lockKey);
@@ -532,6 +557,7 @@ class MailPollingService {
 
     try {
       if (user.emailConfig.provider === 'gmail') {
+        // ✅ Répondre dans le même fil (threadId)
         const response = await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
           threadId: message.threadId,
           to: message.from,
@@ -545,6 +571,7 @@ class MailPollingService {
         return response.status === 200;
         
       } else if (user.emailConfig.provider === 'outlook') {
+        // ✅ Répondre avec messageId
         const response = await axios.post(`${BASE_URL}/api/mail/outlook/reply`, {
           messageId: message.id,
           to: message.from,
@@ -563,6 +590,35 @@ class MailPollingService {
     } catch (error) {
       console.error(`    ❌ Erreur envoi:`, error.message);
       return false;
+    }
+  }
+
+  async markAsRead(messageId, emailConfig) {
+    const BASE_URL = process.env.BASE_URL || 'https://k2s.onrender.com';
+
+    try {
+      if (emailConfig.provider === 'gmail') {
+        await axios.post(`${BASE_URL}/api/mail/gmail/mark-read`, {
+          messageId
+        }, {
+          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          timeout: 10000
+        });
+      } else if (emailConfig.provider === 'outlook') {
+        await axios.patch(
+          `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
+          { isRead: true },
+          {
+            headers: { 
+              'Authorization': `Bearer ${emailConfig.accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          }
+        );
+      }
+    } catch (error) {
+      console.error(`    ⚠️ Erreur mark-read:`, error.message);
     }
   }
 }
