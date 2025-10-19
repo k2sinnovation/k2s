@@ -3,59 +3,76 @@ const NodeCache = require('node-cache');
 
 /**
  * Service de gestion Google Drive (appDataFolder)
- * 
- * Bonnes pratiques appliquées:
- * - Cache en mémoire avec TTL (Time To Live)
- * - Gestion d'erreurs complète
- * - Logs structurés avec userId
- * - Retry automatique sur échec
- * - Rate limiting considéré
- * - Thread-safe (pas de variables globales mutables)
+ * ✅ AVEC REFRESH AUTOMATIQUE DU TOKEN
  */
 class GoogleDriveService {
   constructor() {
-    // Cache en mémoire : 5 minutes TTL, vérification toutes les 60s
     this.cache = new NodeCache({ 
       stdTTL: 300, 
       checkperiod: 60,
-      useClones: false // Performance: pas de deep clone
+      useClones: false
     });
     
-    // Configuration retry
     this.retryConfig = {
       maxRetries: 3,
-      retryDelay: 1000, // 1 seconde
+      retryDelay: 1000,
       retryableStatuses: [429, 500, 502, 503, 504]
     };
+
+    // ✅ NOUVEAU : Credentials Google OAuth
+    this.googleClientId = process.env.GOOGLE_CLIENT_ID || '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
+    this.googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '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';
   }
 
   /**
-   * Sauvegarder un fichier JSON dans appDataFolder
-   * @param {string} accessToken - Token OAuth Google
-   * @param {string} fileName - Nom du fichier
-   * @param {Object} jsonData - Données à sauvegarder
-   * @param {string} userId - ID utilisateur (pour logs/cache)
-   * @returns {Promise<string>} - ID du fichier Drive
+   * ✅ NOUVEAU : Rafraîchir le token Gmail si expiré
+   * @param {string} refreshToken 
+   * @param {string} userId 
+   * @returns {Promise<string>} Nouveau access token
    */
-  async saveJsonToAppData(accessToken, fileName, jsonData, userId = 'unknown') {
+  async refreshAccessToken(refreshToken, userId) {
+    try {
+      console.log(`[Drive:${userId}] 🔄 Rafraîchissement token...`);
+
+      const response = await axios.post(
+        'https://oauth2.googleapis.com/token',
+        new URLSearchParams({
+          refresh_token: refreshToken,
+          client_id: this.googleClientId,
+          client_secret: this.googleClientSecret,
+          grant_type: 'refresh_token',
+        }),
+        { 
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 10000,
+        }
+      );
+
+      const newAccessToken = response.data.access_token;
+      console.log(`[Drive:${userId}] ✅ Token rafraîchi avec succès`);
+
+      return newAccessToken;
+
+    } catch (error) {
+      console.error(`[Drive:${userId}] ❌ Erreur refresh token:`, error.response?.data || error.message);
+      throw new Error('Impossible de rafraîchir le token Gmail');
+    }
+  }
+
+  /**
+   * ✅ MODIFIÉ : Sauvegarder avec retry + refresh token automatique
+   */
+  async saveJsonToAppData(accessToken, fileName, jsonData, userId = 'unknown', refreshToken = null) {
     const startTime = Date.now();
     
     try {
       console.log(`[Drive:${userId}] 📤 Sauvegarde ${fileName}...`);
 
-      // Validation des paramètres
-      if (!accessToken) {
-        throw new Error('Access token manquant');
-      }
-      if (!fileName || typeof fileName !== 'string') {
-        throw new Error('Nom de fichier invalide');
-      }
-      if (!jsonData || typeof jsonData !== 'object') {
-        throw new Error('Données JSON invalides');
-      }
+      if (!accessToken) throw new Error('Access token manquant');
+      if (!fileName || typeof fileName !== 'string') throw new Error('Nom de fichier invalide');
+      if (!jsonData || typeof jsonData !== 'object') throw new Error('Données JSON invalides');
 
-      // Vérifier si le fichier existe déjà
-      const existingFile = await this._findFileInAppData(accessToken, fileName, userId);
+      const existingFile = await this._findFileInAppData(accessToken, fileName, userId, refreshToken);
 
       const boundary = '-------314159265358979323846';
       const delimiter = "\r\n--" + boundary + "\r\n";
@@ -67,7 +84,6 @@ class GoogleDriveService {
         ...(!existingFile && { parents: ['appDataFolder'] })
       };
 
-      // Préparer le body multipart
       const multipartRequestBody =
         delimiter +
         'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
@@ -87,28 +103,60 @@ class GoogleDriveService {
         method = 'post';
       }
 
-      // Effectuer la requête avec retry
-      const response = await this._executeWithRetry(
-        () => axios({
+      // ✅ MODIFIÉ : Appel avec gestion 401
+      let currentToken = accessToken;
+      
+      try {
+        const response = await axios({
           method,
           url,
           data: multipartRequestBody,
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
             'Content-Type': `multipart/related; boundary=${boundary}`
           },
           timeout: 30000
-        }),
-        userId
-      );
+        });
 
-      const duration = Date.now() - startTime;
-      console.log(`[Drive:${userId}] ✅ ${fileName} ${existingFile ? 'mis à jour' : 'créé'} en ${duration}ms`);
+        const duration = Date.now() - startTime;
+        console.log(`[Drive:${userId}] ✅ ${fileName} ${existingFile ? 'mis à jour' : 'créé'} en ${duration}ms`);
 
-      // Invalider le cache pour cet utilisateur
-      this._invalidateUserCache(userId, fileName);
+        this._invalidateUserCache(userId, fileName);
+        return response.data.id;
 
-      return response.data.id;
+      } catch (error) {
+        // ✅ Si erreur 401 ET on a un refresh token, on réessaye
+        if (error.response?.status === 401 && refreshToken) {
+          console.log(`[Drive:${userId}] ⚠️ Token expiré, tentative refresh...`);
+          
+          const newToken = await this.refreshAccessToken(refreshToken, userId);
+          
+          // Réessayer avec le nouveau token
+          const retryResponse = await axios({
+            method,
+            url,
+            data: multipartRequestBody,
+            headers: {
+              'Authorization': `Bearer ${newToken}`,
+              'Content-Type': `multipart/related; boundary=${boundary}`
+            },
+            timeout: 30000
+          });
+
+          const duration = Date.now() - startTime;
+          console.log(`[Drive:${userId}] ✅ ${fileName} sauvegardé après refresh (${duration}ms)`);
+
+          this._invalidateUserCache(userId, fileName);
+          
+          // ✅ IMPORTANT : Retourner le nouveau token pour mise à jour
+          return { 
+            fileId: retryResponse.data.id, 
+            newAccessToken: newToken 
+          };
+        }
+
+        throw error;
+      }
 
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -118,17 +166,12 @@ class GoogleDriveService {
   }
 
   /**
-   * Lire un fichier JSON depuis appDataFolder
-   * @param {string} accessToken - Token OAuth Google
-   * @param {string} fileName - Nom du fichier
-   * @param {string} userId - ID utilisateur
-   * @returns {Promise<Object|null>} - Contenu JSON ou null
+   * ✅ MODIFIÉ : Lecture avec refresh token
    */
-  async readJsonFromAppData(accessToken, fileName, userId = 'unknown') {
+  async readJsonFromAppData(accessToken, fileName, userId = 'unknown', refreshToken = null) {
     const startTime = Date.now();
     
     try {
-      // Vérifier le cache d'abord
       const cacheKey = `${userId}:${fileName}`;
       const cached = this.cache.get(cacheKey);
       
@@ -139,43 +182,59 @@ class GoogleDriveService {
 
       console.log(`[Drive:${userId}] 📥 Lecture ${fileName}...`);
 
-      // Validation
-      if (!accessToken) {
-        throw new Error('Access token manquant');
-      }
+      if (!accessToken) throw new Error('Access token manquant');
 
-      // Trouver le fichier
-      const file = await this._findFileInAppData(accessToken, fileName, userId);
+      const file = await this._findFileInAppData(accessToken, fileName, userId, refreshToken);
 
       if (!file) {
         console.log(`[Drive:${userId}] ℹ️ ${fileName} non trouvé (première utilisation)`);
         return null;
       }
 
-      // Télécharger le contenu avec retry
-      const response = await this._executeWithRetry(
-        () => axios.get(
+      let currentToken = accessToken;
+
+      try {
+        const response = await axios.get(
           `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
           {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
+            headers: { 'Authorization': `Bearer ${currentToken}` },
             timeout: 30000
           }
-        ),
-        userId
-      );
+        );
 
-      const duration = Date.now() - startTime;
-      console.log(`[Drive:${userId}] ✅ ${fileName} lu en ${duration}ms`);
+        const duration = Date.now() - startTime;
+        console.log(`[Drive:${userId}] ✅ ${fileName} lu en ${duration}ms`);
 
-      // Mettre en cache
-      this.cache.set(cacheKey, response.data);
+        this.cache.set(cacheKey, response.data);
+        return response.data;
 
-      return response.data;
+      } catch (error) {
+        if (error.response?.status === 401 && refreshToken) {
+          console.log(`[Drive:${userId}] ⚠️ Token expiré, refresh et retry...`);
+          
+          const newToken = await this.refreshAccessToken(refreshToken, userId);
+          
+          const retryResponse = await axios.get(
+            `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+            {
+              headers: { 'Authorization': `Bearer ${newToken}` },
+              timeout: 30000
+            }
+          );
+
+          const duration = Date.now() - startTime;
+          console.log(`[Drive:${userId}] ✅ ${fileName} lu après refresh (${duration}ms)`);
+
+          this.cache.set(cacheKey, retryResponse.data);
+          return retryResponse.data;
+        }
+
+        throw error;
+      }
 
     } catch (error) {
       const duration = Date.now() - startTime;
       
-      // Ne pas logger en erreur si fichier simplement absent
       if (error.response?.status === 404) {
         console.log(`[Drive:${userId}] ℹ️ ${fileName} introuvable (${duration}ms)`);
         return null;
@@ -187,72 +246,15 @@ class GoogleDriveService {
   }
 
   /**
-   * Charger les informations business
-   * @param {string} accessToken
-   * @param {string} userId
-   * @returns {Promise<Object>}
+   * ✅ MODIFIÉ : Ajouter refreshToken aux méthodes publiques
    */
-  async loadBusinessInfo(accessToken, userId) {
-    const data = await this.readJsonFromAppData(accessToken, 'business.json', userId);
-    
-    // Toujours retourner un objet avec au moins updatedAt
-    return data || { 
-      updatedAt: new Date().toISOString(),
-      _empty: true 
-    };
+  async loadBusinessInfo(accessToken, userId, refreshToken = null) {
+    const data = await this.readJsonFromAppData(accessToken, 'business.json', userId, refreshToken);
+    return data || { updatedAt: new Date().toISOString(), _empty: true };
   }
 
-  /**
-   * Sauvegarder les informations business
-   * @param {string} accessToken
-   * @param {Object} info
-   * @param {string} userId
-   * @returns {Promise<string>}
-   */
-  async saveBusinessInfo(accessToken, info, userId) {
-    // Validation des données critiques
-    if (info && typeof info !== 'object') {
-      throw new Error('Format business_info invalide');
-    }
-
-    const data = {
-      ...info,
-      updatedAt: new Date().toISOString(),
-      _version: '1.0'
-    };
-
-    // Nettoyer les champs vides (optionnel)
-    delete data._empty;
-
-    return await this.saveJsonToAppData(accessToken, 'business.json', data, userId);
-  }
-
-  /**
-   * Charger les informations planning
-   * @param {string} accessToken
-   * @param {string} userId
-   * @returns {Promise<Object>}
-   */
-  async loadPlanningInfo(accessToken, userId) {
-    const data = await this.readJsonFromAppData(accessToken, 'planning.json', userId);
-    
-    return data || { 
-      updatedAt: new Date().toISOString(),
-      _empty: true 
-    };
-  }
-
-  /**
-   * Sauvegarder les informations planning
-   * @param {string} accessToken
-   * @param {Object} info
-   * @param {string} userId
-   * @returns {Promise<string>}
-   */
-  async savePlanningInfo(accessToken, info, userId) {
-    if (info && typeof info !== 'object') {
-      throw new Error('Format planning_info invalide');
-    }
+  async saveBusinessInfo(accessToken, info, userId, refreshToken = null) {
+    if (info && typeof info !== 'object') throw new Error('Format business_info invalide');
 
     const data = {
       ...info,
@@ -261,23 +263,34 @@ class GoogleDriveService {
     };
 
     delete data._empty;
-
-    return await this.saveJsonToAppData(accessToken, 'planning.json', data, userId);
+    return await this.saveJsonToAppData(accessToken, 'business.json', data, userId, refreshToken);
   }
 
-  /**
-   * Vérifier l'existence des fichiers Drive
-   * @param {string} accessToken
-   * @param {string} userId
-   * @returns {Promise<Object>}
-   */
-  async checkDriveFiles(accessToken, userId = 'unknown') {
+  async loadPlanningInfo(accessToken, userId, refreshToken = null) {
+    const data = await this.readJsonFromAppData(accessToken, 'planning.json', userId, refreshToken);
+    return data || { updatedAt: new Date().toISOString(), _empty: true };
+  }
+
+  async savePlanningInfo(accessToken, info, userId, refreshToken = null) {
+    if (info && typeof info !== 'object') throw new Error('Format planning_info invalide');
+
+    const data = {
+      ...info,
+      updatedAt: new Date().toISOString(),
+      _version: '1.0'
+    };
+
+    delete data._empty;
+    return await this.saveJsonToAppData(accessToken, 'planning.json', data, userId, refreshToken);
+  }
+
+  async checkDriveFiles(accessToken, userId = 'unknown', refreshToken = null) {
     try {
       console.log(`[Drive:${userId}] 🔍 Vérification fichiers...`);
 
       const [businessFile, planningFile] = await Promise.all([
-        this._findFileInAppData(accessToken, 'business.json', userId).catch(() => null),
-        this._findFileInAppData(accessToken, 'planning.json', userId).catch(() => null)
+        this._findFileInAppData(accessToken, 'business.json', userId, refreshToken).catch(() => null),
+        this._findFileInAppData(accessToken, 'planning.json', userId, refreshToken).catch(() => null)
       ]);
 
       const status = {
@@ -288,12 +301,10 @@ class GoogleDriveService {
       };
 
       console.log(`[Drive:${userId}] ✅ Business: ${status.businessExists}, Planning: ${status.planningExists}`);
-
       return status;
 
     } catch (error) {
       console.error(`[Drive:${userId}] ❌ Erreur vérification:`, this._formatError(error));
-      
       return {
         businessExists: false,
         planningExists: false,
@@ -303,21 +314,15 @@ class GoogleDriveService {
     }
   }
 
-  /**
-   * Charger les deux fichiers en parallèle (optimisation)
-   * @param {string} accessToken
-   * @param {string} userId
-   * @returns {Promise<Object>}
-   */
-  async loadAllUserData(accessToken, userId) {
+  async loadAllUserData(accessToken, userId, refreshToken = null) {
     const startTime = Date.now();
     
     try {
       console.log(`[Drive:${userId}] 📥 Chargement complet...`);
 
       const [businessInfo, planningInfo] = await Promise.all([
-        this.loadBusinessInfo(accessToken, userId),
-        this.loadPlanningInfo(accessToken, userId)
+        this.loadBusinessInfo(accessToken, userId, refreshToken),
+        this.loadPlanningInfo(accessToken, userId, refreshToken)
       ]);
 
       const duration = Date.now() - startTime;
@@ -336,14 +341,9 @@ class GoogleDriveService {
   }
 
   /**
-   * MÉTHODES PRIVÉES
+   * ✅ MODIFIÉ : _findFileInAppData avec refresh
    */
-
-  /**
-   * Trouver un fichier dans appDataFolder
-   * @private
-   */
-  async _findFileInAppData(accessToken, fileName, userId) {
+  async _findFileInAppData(accessToken, fileName, userId, refreshToken = null) {
     try {
       const response = await axios.get(
         'https://www.googleapis.com/drive/v3/files',
@@ -362,22 +362,34 @@ class GoogleDriveService {
       return response.data.files.length > 0 ? response.data.files[0] : null;
 
     } catch (error) {
-      // Si erreur 404 sur appDataFolder, c'est normal (première utilisation)
-      if (error.response?.status === 404) {
-        return null;
+      if (error.response?.status === 401 && refreshToken) {
+        const newToken = await this.refreshAccessToken(refreshToken, userId);
+        
+        const retryResponse = await axios.get(
+          'https://www.googleapis.com/drive/v3/files',
+          {
+            headers: { 'Authorization': `Bearer ${newToken}` },
+            params: {
+              q: `name='${fileName}' and 'appDataFolder' in parents and trashed=false`,
+              spaces: 'appDataFolder',
+              fields: 'files(id, name, createdTime, modifiedTime, size)',
+              pageSize: 1
+            },
+            timeout: 15000
+          }
+        );
+
+        return retryResponse.data.files.length > 0 ? retryResponse.data.files[0] : null;
       }
+
+      if (error.response?.status === 404) return null;
       throw error;
     }
   }
 
-  /**
-   * Exécuter une requête avec retry automatique
-   * @private
-   */
   async _executeWithRetry(requestFn, userId, attempt = 1) {
     try {
       return await requestFn();
-      
     } catch (error) {
       const status = error.response?.status;
       const isRetryable = this.retryConfig.retryableStatuses.includes(status);
@@ -385,7 +397,6 @@ class GoogleDriveService {
       if (isRetryable && attempt < this.retryConfig.maxRetries) {
         const delay = this.retryConfig.retryDelay * attempt;
         console.log(`[Drive:${userId}] ⏳ Retry ${attempt}/${this.retryConfig.maxRetries} dans ${delay}ms...`);
-        
         await this._sleep(delay);
         return this._executeWithRetry(requestFn, userId, attempt + 1);
       }
@@ -394,17 +405,12 @@ class GoogleDriveService {
     }
   }
 
-  /**
-   * Invalider le cache d'un utilisateur
-   * @private
-   */
   _invalidateUserCache(userId, fileName = null) {
     if (fileName) {
       const cacheKey = `${userId}:${fileName}`;
       this.cache.del(cacheKey);
       console.log(`[Drive:${userId}] 🗑️ Cache invalidé: ${fileName}`);
     } else {
-      // Invalider tout le cache de l'utilisateur
       const keys = this.cache.keys();
       const userKeys = keys.filter(key => key.startsWith(`${userId}:`));
       this.cache.del(userKeys);
@@ -412,10 +418,6 @@ class GoogleDriveService {
     }
   }
 
-  /**
-   * Formater les erreurs pour les logs
-   * @private
-   */
   _formatError(error) {
     if (error.response) {
       return {
@@ -424,24 +426,13 @@ class GoogleDriveService {
         message: error.message
       };
     }
-    return {
-      message: error.message,
-      code: error.code
-    };
+    return { message: error.message, code: error.code };
   }
 
-  /**
-   * Sleep helper pour retry
-   * @private
-   */
   _sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  /**
-   * Obtenir les statistiques du cache
-   * @returns {Object}
-   */
   getCacheStats() {
     return {
       keys: this.cache.keys().length,
@@ -452,5 +443,4 @@ class GoogleDriveService {
   }
 }
 
-// Export singleton
 module.exports = new GoogleDriveService();
