@@ -1,5 +1,5 @@
 // service_ia/services/ai.service.js
-// ✅ VERSION CORRIGÉE - Modèle Mistral correct
+// ✅ VERSION SIMPLIFIÉE - 2 APPELS SÉPARÉS
 
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
@@ -7,65 +7,81 @@ const contextBuilder = require('./context-builder.service');
 class AIService {
   
   /**
-   * 🎯 MÉTHODE OPTIMISÉE
-   * Analyse + Génération en 1 SEUL appel Mistral
+   * 🎯 MÉTHODE PRINCIPALE SIMPLIFIÉE
+   * Analyse PUIS génère (si pertinent)
    */
   async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
+    const userId = user._id.toString();
+    
+    console.log(`[AI:${userId}] 🔍 Étape 1/2 : Analyse du message...`);
+    
+    // 1️⃣ ANALYSE SIMPLE (JSON minimal)
+    const analysis = await this.analyzeMessage(message, user, conversationHistory, driveData);
+    
+    console.log(`[AI:${userId}] ✅ Analyse: ${analysis.intent} - Pertinent: ${analysis.is_relevant} (${(analysis.confidence * 100).toFixed(0)}%)`);
+    
+    // 2️⃣ Si non pertinent, on s'arrête là
+    if (!analysis.is_relevant) {
+      console.log(`[AI:${userId}] ⏭️ Message non pertinent, pas de réponse`);
+      return {
+        analysis,
+        response: null
+      };
+    }
+    
+    // 3️⃣ GÉNÉRATION DE RÉPONSE (TEXTE PUR)
+    console.log(`[AI:${userId}] 💬 Étape 2/2 : Génération de la réponse...`);
+    
+    const response = await this.generateResponse(message, analysis, user, conversationHistory, driveData);
+    
+    console.log(`[AI:${userId}] ✅ Réponse générée (${response.length} chars)`);
+    
+    return {
+      analysis,
+      response
+    };
+  }
+
+  /**
+   * 🔍 ANALYSE - Retourne JSON simple
+   */
+  async analyzeMessage(message, user, conversationHistory = [], driveData = null) {
     const settings = user.aiSettings;
     const apiKey = process.env.K2S_IQ;
+    const userId = user._id.toString();
     
     if (!apiKey) {
       throw new Error('Clé API Mistral manquante (K2S_IQ)');
     }
 
-    console.log(`[AI:${user._id}] 🤖 Analyse + Génération en 1 appel...`);
-
-    // ✅ Charger contexte Drive
-    const accessToken = user.emailConfig?.accessToken;
+    // Charger contexte Drive
     let driveContext = '';
-    
     if (driveData) {
       driveContext = this._buildContextFromDriveData(driveData);
-      console.log(`[AI:${user._id}] ✅ Contexte Drive depuis cache (${driveContext.length} chars)`);
-    } else if (accessToken) {
-      try {
-        driveContext = await contextBuilder.buildContextFromDrive(
-          accessToken, 
-          user._id.toString(),
-          { includeAppointments: true }
-        );
-        console.log(`[AI:${user._id}] ✅ Contexte Drive chargé (${driveContext.length} chars)`);
-      } catch (driveError) {
-        console.warn(`[AI:${user._id}] ⚠️ Erreur Drive:`, driveError.message);
-        driveContext = contextBuilder._buildMinimalContext();
-      }
+      console.log(`[AI:${userId}] ✅ Contexte Drive depuis cache (${driveContext.length} chars)`);
     } else {
-      driveContext = contextBuilder._buildMinimalContext();
+      driveContext = await this._loadDriveContext(user, false);
     }
 
-    // Construire le prompt COMBINÉ
-    const systemPrompt = this._buildCombinedSystemPrompt(driveContext, settings);
-    const userPrompt = this._buildCombinedUserPrompt(message, conversationHistory);
+    const systemPrompt = this._buildAnalysisSystemPrompt(driveContext);
+    const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
 
     try {
-      // ✅ FIX: Utiliser le bon modèle Mistral depuis les settings OU par défaut
       const mistralModel = this._getMistralModel(settings.aiModel);
       
-      console.log(`[AI:${user._id}] 📡 Appel Mistral: ${mistralModel}`);
-
-      const requestBody = {
-        model: mistralModel, // ✅ Modèle Mistral valide
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.5,
-        max_tokens: 800
-      };
+      console.log(`[AI:${userId}] 📡 Appel Mistral Analyse: ${mistralModel}`);
 
       const response = await axios.post(
         'https://api.mistral.ai/v1/chat/completions',
-        requestBody,
+        {
+          model: mistralModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 300
+        },
         {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -75,209 +91,170 @@ class AIService {
         }
       );
 
-      const content = response.data.choices[0].message.content;
-
-      // Parser la réponse JSON
-      let result;
-      try {
-        let cleanContent = content.trim();
-        
-        // Retirer les balises markdown
-        if (cleanContent.startsWith('```json')) {
-          cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/```\s*$/, '');
-        } else if (cleanContent.startsWith('```')) {
-          cleanContent = cleanContent.replace(/^```\s*/, '').replace(/```\s*$/, '');
-        }
-        
-        // ✅ FIX CRITIQUE : Nettoyer les caractères de contrôle avant parsing
-        // Mistral génère parfois des \n non échappés dans les strings JSON
-        cleanContent = cleanContent
-          .replace(/\r\n/g, '\\n')  // Windows line endings
-          .replace(/\r/g, '\\n')    // Mac line endings
-          .replace(/\n/g, '\\n')    // Unix line endings
-          .replace(/\t/g, '\\t');   // Tabs
-        
-        result = JSON.parse(cleanContent);
-      } catch (parseError) {
-        console.error(`[AI:${user._id}] ❌ Erreur parsing JSON:`, parseError.message);
-        console.error('Contenu brut:', content.substring(0, 500));
-        
-        // ✅ Fallback : Extraire manuellement is_relevant et intent
-        try {
-          const isRelevantMatch = content.match(/"is_relevant"\s*:\s*(true|false)/i);
-          const intentMatch = content.match(/"intent"\s*:\s*"([^"]+)"/i);
-          const confidenceMatch = content.match(/"confidence"\s*:\s*([0-9.]+)/);
-          
-          if (isRelevantMatch) {
-            const fallbackResult = {
-              is_relevant: isRelevantMatch[1] === 'true',
-              confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
-              intent: intentMatch ? intentMatch[1] : 'unknown',
-              reason: 'Parsing partiel (erreur JSON)',
-              details: {}
-            };
-            
-            console.log(`[AI:${user._id}] ⚠️ Parsing partiel réussi: ${fallbackResult.intent}`);
-            
-            return {
-              analysis: fallbackResult,
-              response: null
-            };
-          }
-        } catch (fallbackError) {
-          console.error(`[AI:${user._id}] ❌ Fallback parsing échoué`);
-        }
-        
-        return {
-          analysis: {
-            is_relevant: false,
-            confidence: 0.1,
-            intent: 'error',
-            reason: 'Erreur parsing réponse IA'
-          },
-          response: null
-        };
-      }
-
-      // Normaliser la réponse
-      const normalizedResult = {
-        analysis: {
-          is_relevant: result.is_relevant ?? result.analysis?.is_relevant ?? false,
-          confidence: result.confidence ?? result.analysis?.confidence ?? 0.5,
-          intent: result.intent ?? result.analysis?.intent ?? 'unknown',
-          reason: result.reason ?? result.analysis?.reason ?? 'Non spécifié',
-          details: result.details ?? result.analysis?.details ?? {}
-        },
-        response: result.response ?? null
-      };
-
-      console.log(`[AI:${user._id}] ✅ Analyse: ${normalizedResult.analysis.intent} (${(normalizedResult.analysis.confidence * 100).toFixed(0)}%) - Pertinent: ${normalizedResult.analysis.is_relevant}`);
+      const content = response.data.choices[0].message.content.trim();
       
-      if (normalizedResult.response) {
-        console.log(`[AI:${user._id}] ✅ Réponse générée (${normalizedResult.response.length} chars)`);
-      }
-
-      return normalizedResult;
-
-    } catch (error) {
-      console.error(`[AI:${user._id}] ❌ Erreur IA combinée:`, error.message);
-      if (error.response) {
-        console.error('Détails API:', error.response.data);
-      }
+      // Parser le JSON d'analyse
+      let analysis = this._parseAnalysisJSON(content, userId);
       
       return {
-        analysis: {
-          is_relevant: false,
-          confidence: 0.0,
-          intent: 'error',
-          reason: `Erreur IA: ${error.message}`
-        },
-        response: null
+        is_relevant: analysis.is_relevant ?? false,
+        confidence: analysis.confidence ?? 0.5,
+        intent: analysis.intent ?? 'unknown',
+        reason: analysis.reason ?? 'Non spécifié',
+        details: analysis.details ?? {}
+      };
+
+    } catch (error) {
+      console.error(`[AI:${userId}] ❌ Erreur analyse:`, error.message);
+      return {
+        is_relevant: false,
+        confidence: 0.0,
+        intent: 'error',
+        reason: `Erreur IA: ${error.message}`,
+        details: {}
       };
     }
   }
 
   /**
-   * ✅ NOUVEAU : Mapper les modèles pour Mistral
+   * 💬 GÉNÉRATION - Retourne TEXTE pur (pas de JSON)
    */
-  _getMistralModel(userModel) {
-    // Mapping des anciens noms vers Mistral
-    const modelMapping = {
-      'gpt-4': 'mistral-large-latest',
-      'gpt-4o': 'mistral-large-latest',
-      'gpt-4o-mini': 'mistral-small-latest',
-      'gpt-3.5-turbo': 'mistral-small-latest',
-      'mistral-large-latest': 'mistral-large-latest',
-      'mistral-small-latest': 'mistral-small-latest',
-      'mistral-medium-latest': 'mistral-medium-latest'
-    };
-
-    // Si le modèle est déjà Mistral, le retourner tel quel
-    if (userModel && userModel.startsWith('mistral-')) {
-      return userModel;
-    }
-
-    // Sinon, mapper ou utiliser le défaut
-    return modelMapping[userModel] || 'mistral-small-latest';
-  }
-
-  /**
-   * 📝 Construire le prompt système COMBINÉ
-   */
-  _buildCombinedSystemPrompt(driveContext, settings) {
-    const tone = settings.tone || 'professionnel';
+  async generateResponse(message, analysis, user, conversationHistory = [], driveData = null) {
+    const settings = user.aiSettings;
+    const apiKey = process.env.K2S_IQ;
+    const userId = user._id.toString();
     
-    return `${driveContext}
-
----
-
-Tu es ${settings.role || 'un assistant virtuel'} pour ${settings.salonName || 'cette entreprise'}.
-
-**INSTRUCTIONS** :
-${settings.instructions || 'Sois professionnel et courtois.'}
-
-**TON** : ${tone}
-
-**TÂCHE EN 2 ÉTAPES** :
-
-1️⃣ **ANALYSE** : Détermine si le message est pertinent
-   - ✅ Pertinent : RDV, questions prestations/tarifs/horaires, annulation/modification
-   - ❌ Non pertinent : spam, pub, newsletter, notification auto (TikTok, LinkedIn, Patreon, etc.)
-
-2️⃣ **RÉPONSE** : Si pertinent, génère une réponse professionnelle
-   - Utilise les infos du contexte Drive
-   - Concis (3-5 phrases max)
-   - Propose des créneaux concrets si pertinent
-   - Termine par formule de politesse
-   - N'invente JAMAIS d'infos non présentes
-
-**FORMAT DE RÉPONSE STRICTEMENT JSON (aucun texte avant/après)** :
-{
-  "is_relevant": true/false,
-  "confidence": 0.0 à 1.0,
-  "intent": "prise_rdv"|"question_info"|"annulation"|"modification"|"reclamation"|"spam"|"autre",
-  "reason": "Explication courte",
-  "details": {
-    "date_souhaitee": "si mentionnée",
-    "prestation_souhaitee": "si mentionnée"
-  },
-  "response": "Ta réponse si is_relevant=true, sinon null"
-}
-
-IMPORTANT : Réponds UNIQUEMENT avec le JSON, rien d'autre.`;
-  }
-
-  /**
-   * 📝 Construire le prompt utilisateur COMBINÉ
-   */
-  _buildCombinedUserPrompt(message, conversationHistory) {
-    let prompt = '';
-
-    if (conversationHistory.length > 0) {
-      prompt += '**HISTORIQUE CONVERSATION** :\n';
-      conversationHistory.slice(-3).forEach(msg => {
-        prompt += `- ${msg.from}: ${msg.body.substring(0, 100)}...\n`;
-      });
-      prompt += '\n';
+    if (!apiKey) {
+      throw new Error('Clé API Mistral manquante (K2S_IQ)');
     }
 
-    prompt += `**MESSAGE À ANALYSER ET RÉPONDRE** :
-De: ${message.from}
-Sujet: ${message.subject || '(sans objet)'}
+    // Charger contexte Drive avec disponibilités
+    let driveContext = '';
+    if (driveData) {
+      driveContext = this._buildContextFromDriveData(driveData);
+    } else {
+      driveContext = await this._loadDriveContext(user, true);
+    }
 
-Corps:
-${message.body}
+    const systemPrompt = this._buildResponseSystemPrompt(driveContext, settings);
+    const userPrompt = this._buildResponseUserPrompt(message, analysis, conversationHistory);
 
----
+    try {
+      const mistralModel = this._getMistralModel(settings.aiModel);
+      
+      console.log(`[AI:${userId}] 📡 Appel Mistral Génération: ${mistralModel}`);
 
-Analyse ce message ET génère une réponse appropriée si pertinent.
-Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, details, response`;
+      const response = await axios.post(
+        'https://api.mistral.ai/v1/chat/completions',
+        {
+          model: mistralModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: settings.temperature || 0.7,
+          max_tokens: settings.maxTokens || 500
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
 
-    return prompt;
+      // ✅ SIMPLE : On retourne le texte brut, pas de JSON !
+      const generatedResponse = response.data.choices[0].message.content.trim();
+      
+      return generatedResponse;
+
+    } catch (error) {
+      console.error(`[AI:${userId}] ❌ Erreur génération:`, error.message);
+      
+      // Fallback générique
+      return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\n${settings.salonName || user.businessName}`;
+    }
   }
 
   /**
-   * 🔨 Construire contexte depuis driveData
+   * 🔨 HELPER : Parser JSON d'analyse
+   */
+  _parseAnalysisJSON(content, userId) {
+    try {
+      let cleanContent = content.trim();
+      
+      // Retirer markdown
+      if (cleanContent.startsWith('```json')) {
+        cleanContent = cleanContent.replace(/^```json\s*/s, '').replace(/```\s*$/s, '');
+      } else if (cleanContent.startsWith('```')) {
+        cleanContent = cleanContent.replace(/^```\s*/s, '').replace(/```\s*$/s, '');
+      }
+      
+      // Extraire l'objet JSON
+      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanContent = jsonMatch[0];
+      }
+      
+      return JSON.parse(cleanContent);
+      
+    } catch (error) {
+      console.warn(`[AI:${userId}] ⚠️ Parsing JSON échoué, extraction manuelle...`);
+      
+      // Fallback : extraction regex
+      const isRelevantMatch = content.match(/"is_relevant"\s*:\s*(true|false)/i);
+      const intentMatch = content.match(/"intent"\s*:\s*"([^"]+)"/i);
+      const confidenceMatch = content.match(/"confidence"\s*:\s*([0-9.]+)/);
+      const reasonMatch = content.match(/"reason"\s*:\s*"([^"]+)"/i);
+      
+      if (isRelevantMatch) {
+        return {
+          is_relevant: isRelevantMatch[1] === 'true',
+          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+          intent: intentMatch ? intentMatch[1] : 'unknown',
+          reason: reasonMatch ? reasonMatch[1] : 'Parsing partiel',
+          details: {}
+        };
+      }
+      
+      // Dernière chance
+      return {
+        is_relevant: false,
+        confidence: 0.1,
+        intent: 'error',
+        reason: 'Erreur parsing JSON',
+        details: {}
+      };
+    }
+  }
+
+  /**
+   * 🔨 HELPER : Charger contexte Drive
+   */
+  async _loadDriveContext(user, includeAppointments = false) {
+    const accessToken = user.emailConfig?.accessToken;
+    
+    if (!accessToken) {
+      return contextBuilder._buildMinimalContext();
+    }
+    
+    try {
+      const context = await contextBuilder.buildContextFromDrive(
+        accessToken,
+        user._id.toString(),
+        { includeAppointments }
+      );
+      console.log(`[AI:${user._id}] ✅ Contexte Drive chargé (${context.length} chars)`);
+      return context;
+    } catch (error) {
+      console.warn(`[AI:${user._id}] ⚠️ Drive non disponible:`, error.message);
+      return contextBuilder._buildMinimalContext();
+    }
+  }
+
+  /**
+   * 🔨 HELPER : Construire contexte depuis driveData
    */
   _buildContextFromDriveData(driveData) {
     if (!driveData) return '';
@@ -310,211 +287,59 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
     return context;
   }
 
-  // ========================================
-  // 🔄 MÉTHODES ANCIENNES (compatibilité)
-  // ========================================
+  /**
+   * 🔨 HELPER : Mapper modèles Mistral
+   */
+  _getMistralModel(userModel) {
+    const modelMapping = {
+      'gpt-4': 'mistral-large-latest',
+      'gpt-4o': 'mistral-large-latest',
+      'gpt-4o-mini': 'mistral-small-latest',
+      'gpt-3.5-turbo': 'mistral-small-latest',
+      'mistral-large-latest': 'mistral-large-latest',
+      'mistral-small-latest': 'mistral-small-latest',
+      'mistral-medium-latest': 'mistral-medium-latest'
+    };
 
-  async analyzeMessage(message, user, conversationHistory = []) {
-    const settings = user.aiSettings;
-    const apiKey = process.env.K2S_IQ;
-    
-    if (!apiKey) {
-      throw new Error('Clé API Mistral manquante (K2S_IQ)');
+    if (userModel && userModel.startsWith('mistral-')) {
+      return userModel;
     }
 
-    console.log(`[AI:${user._id}] 🤖 Analyse message de "${message.from}"...`);
-
-    const accessToken = user.emailConfig?.accessToken;
-    let driveContext = '';
-    
-    if (accessToken) {
-      try {
-        driveContext = await contextBuilder.buildContextFromDrive(
-          accessToken, 
-          user._id.toString(),
-          { includeAppointments: false }
-        );
-        console.log(`[AI:${user._id}] ✅ Contexte Drive chargé (${driveContext.length} caractères)`);
-      } catch (driveError) {
-        console.warn(`[AI:${user._id}] ⚠️ Impossible de charger Drive:`, driveError.message);
-        driveContext = contextBuilder._buildMinimalContext();
-      }
-    } else {
-      driveContext = contextBuilder._buildMinimalContext();
-    }
-
-    const analysisPrompt = this._buildAnalysisSystemPrompt(driveContext);
-    const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
-
-    try {
-      const mistralModel = this._getMistralModel(settings.aiModel);
-      
-      const requestBody = {
-        model: mistralModel,
-        messages: [
-          { role: 'system', content: analysisPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 200
-      };
-
-      const response = await axios.post(
-        'https://api.mistral.ai/v1/chat/completions',
-        requestBody,
-        {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000
-        }
-      );
-
-      const content = response.data.choices[0].message.content;
-      let analysis = JSON.parse(content);
-
-      const normalizedAnalysis = {
-        is_relevant: analysis.is_relevant ?? analysis.isRelevant ?? false,
-        confidence: analysis.confidence ?? 0.5,
-        intent: analysis.intent ?? 'unknown',
-        reason: analysis.reason ?? analysis.details ?? 'Non spécifié',
-        details: analysis.details ?? {}
-      };
-
-      console.log(`[AI:${user._id}] ✅ Analyse: ${normalizedAnalysis.intent} (${(normalizedAnalysis.confidence * 100).toFixed(0)}%)`);
-
-      return normalizedAnalysis;
-
-    } catch (error) {
-      console.error(`[AI:${user._id}] ❌ Erreur analyse:`, error.message);
-      return {
-        is_relevant: false,
-        confidence: 0.0,
-        intent: 'error',
-        reason: `Erreur IA: ${error.message}`
-      };
-    }
+    return modelMapping[userModel] || 'mistral-small-latest';
   }
 
-  async generateResponse(message, analysis, user, conversationHistory = []) {
-    const settings = user.aiSettings;
-    const apiKey = process.env.K2S_IQ;
-    
-    if (!apiKey) {
-      throw new Error('Clé API Mistral manquante (K2S_IQ)');
-    }
-
-    console.log(`[AI:${user._id}] 💬 Génération réponse pour intent="${analysis.intent}"...`);
-
-    if (!analysis.is_relevant) {
-      return this._generateOutOfScopeResponse(settings, user);
-    }
-
-    const accessToken = user.emailConfig?.accessToken;
-    let driveContext = '';
-    
-    if (accessToken) {
-      try {
-        driveContext = await contextBuilder.buildContextFromDrive(
-          accessToken, 
-          user._id.toString(),
-          { includeAppointments: true }
-        );
-        console.log(`[AI:${user._id}] ✅ Contexte Drive chargé (${driveContext.length} caractères)`);
-      } catch (driveError) {
-        driveContext = contextBuilder._buildMinimalContext();
-      }
-    } else {
-      driveContext = contextBuilder._buildMinimalContext();
-    }
-
-    const systemPrompt = this._buildResponseSystemPrompt(driveContext, settings);
-    const userPrompt = this._buildResponseUserPrompt(message, analysis, conversationHistory);
-
-    try {
-      const mistralModel = this._getMistralModel(settings.aiModel);
-      
-      const response = await axios.post(
-        'https://api.mistral.ai/v1/chat/completions',
-        {
-          model: mistralModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: settings.temperature || 0.7,
-          max_tokens: settings.maxTokens || 500
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000
-        }
-      );
-
-      const generatedResponse = response.data.choices[0].message.content.trim();
-      console.log(`[AI:${user._id}] ✅ Réponse générée (${generatedResponse.length} caractères)`);
-
-      return generatedResponse;
-
-    } catch (error) {
-      console.error(`[AI:${user._id}] ❌ Erreur génération:`, error.message);
-      return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\n${settings.salonName || user.businessName}`;
-    }
-  }
-
+  /**
+   * 📝 PROMPT : Analyse (JSON simple)
+   */
   _buildAnalysisSystemPrompt(driveContext) {
     return `${driveContext}
 
 ---
 
-Tu es un expert en analyse de messages clients pour un salon/commerce.
+Tu es un expert en analyse de messages clients.
 
-**TÂCHE** : Analyse le message suivant et détermine s'il est pertinent pour l'entreprise.
+**TÂCHE** : Analyse ce message et détermine s'il est pertinent.
 
-**CRITÈRES DE PERTINENCE** :
-- ✅ Pertinent : demande de rendez-vous, question sur prestations, horaires, tarifs, annulation/modification RDV
-- ❌ Non pertinent : spam, publicité, newsletter externe, notification automatique (TikTok, LinkedIn, Patreon, etc.)
+**CRITÈRES** :
+- ✅ Pertinent : RDV, questions prestations/tarifs/horaires, annulation, modification
+- ❌ Non pertinent : spam, pub, newsletter, notification auto (Instagram, TikTok, etc.)
 
-**RÉPONDS UNIQUEMENT EN JSON VALIDE** avec cette structure exacte :
+**RÉPONDS EN JSON UNIQUEMENT** (rien avant, rien après) :
 {
-  "is_relevant": true/false,
+  "is_relevant": true ou false,
   "confidence": 0.0 à 1.0,
-  "intent": "prise_rdv" | "question_info" | "annulation" | "modification" | "reclamation" | "spam" | "autre",
-  "reason": "Explication courte de ta décision",
+  "intent": "prise_rdv"|"question_info"|"annulation"|"modification"|"reclamation"|"spam"|"autre",
+  "reason": "Explication courte",
   "details": {
-    "date_souhaitee": "si mentionnée",
-    "prestation_souhaitee": "si mentionnée"
+    "date_souhaitee": "si mentionnée ou null",
+    "prestation_souhaitee": "si mentionnée ou null"
   }
 }`;
   }
 
-  _buildAnalysisUserPrompt(message, conversationHistory) {
-    let prompt = '';
-
-    if (conversationHistory.length > 0) {
-      prompt += '**HISTORIQUE CONVERSATION** :\n';
-      conversationHistory.slice(-3).forEach(msg => {
-        prompt += `- De: ${msg.from}\n  Message: ${msg.body.substring(0, 100)}...\n\n`;
-      });
-    }
-
-    prompt += `**MESSAGE À ANALYSER** :
-De: ${message.from}
-Sujet: ${message.subject || '(sans objet)'}
-
-Corps:
-${message.body}
-
----
-Analyse ce message et réponds en JSON.`;
-
-    return prompt;
-  }
-
+  /**
+   * 📝 PROMPT : Génération (TEXTE pur attendu)
+   */
   _buildResponseSystemPrompt(driveContext, settings) {
     const tone = settings.tone || 'professionnel';
     
@@ -531,20 +356,61 @@ ${settings.instructions || 'Sois professionnel et courtois.'}
 
 **RÈGLES** :
 1. Réponds en français naturel et fluide
-2. Sois concis (3-5 phrases maximum)
-3. Utilise les informations du contexte Drive pour personnaliser
+2. Sois concis (3-5 phrases max)
+3. Utilise les infos du contexte Drive
 4. Propose des créneaux concrets si pertinent
-5. Termine toujours par une formule de politesse
-6. N'invente JAMAIS d'informations non présentes dans le contexte
+5. Termine par une formule de politesse
+6. N'invente JAMAIS d'informations non présentes
 
-**FORMAT DE RÉPONSE** : Texte brut uniquement (pas de JSON, pas de markdown).`;
+**IMPORTANT** : Réponds UNIQUEMENT avec le texte de l'email, AUCUN JSON, AUCUNE explication.
+
+Exemple de bonne réponse :
+"Bonjour,
+
+Merci pour votre demande de rendez-vous. Je vous propose les créneaux suivants :
+- Lundi 21 octobre à 14h
+- Mardi 22 octobre à 10h
+
+Faites-moi savoir ce qui vous convient.
+
+Cordialement,
+L'équipe ${settings.salonName || ''}"`;
   }
 
+  /**
+   * 📝 User prompt pour analyse
+   */
+  _buildAnalysisUserPrompt(message, conversationHistory) {
+    let prompt = '';
+
+    if (conversationHistory.length > 0) {
+      prompt += '**HISTORIQUE** :\n';
+      conversationHistory.slice(-3).forEach(msg => {
+        prompt += `- ${msg.from}: ${msg.body.substring(0, 80)}...\n`;
+      });
+      prompt += '\n';
+    }
+
+    prompt += `**MESSAGE À ANALYSER** :
+De: ${message.from}
+Sujet: ${message.subject || '(sans objet)'}
+
+${message.body}
+
+---
+Analyse ce message et réponds en JSON.`;
+
+    return prompt;
+  }
+
+  /**
+   * 📝 User prompt pour génération
+   */
   _buildResponseUserPrompt(message, analysis, conversationHistory) {
     let prompt = '';
 
     if (conversationHistory.length > 0) {
-      prompt += '**HISTORIQUE CONVERSATION** :\n';
+      prompt += '**HISTORIQUE** :\n';
       conversationHistory.slice(-3).forEach(msg => {
         prompt += `- ${msg.from}: ${msg.body.substring(0, 80)}...\n`;
       });
@@ -559,30 +425,13 @@ ${message.body}
 
 ---
 
-**ANALYSE DÉTECTÉE** :
-- Intention: ${analysis.intent}
-- Confiance: ${(analysis.confidence * 100).toFixed(0)}%
-${analysis.details?.date_souhaitee ? `- Date souhaitée: ${analysis.details.date_souhaitee}` : ''}
-${analysis.details?.prestation_souhaitee ? `- Prestation: ${analysis.details.prestation_souhaitee}` : ''}
+**ANALYSE** : ${analysis.intent} (confiance ${(analysis.confidence * 100).toFixed(0)}%)
+${analysis.details?.date_souhaitee ? `Date souhaitée: ${analysis.details.date_souhaitee}` : ''}
+${analysis.details?.prestation_souhaitee ? `Prestation: ${analysis.details.prestation_souhaitee}` : ''}
 
-Génère une réponse professionnelle et personnalisée.`;
+Génère une réponse professionnelle (TEXTE SEUL, PAS DE JSON).`;
 
     return prompt;
-  }
-
-  _generateOutOfScopeResponse(settings, user) {
-    return `Bonjour,
-
-Merci pour votre message.
-
-Je suis un assistant automatique dédié uniquement aux demandes concernant ${settings.salonName || user.businessName} (rendez-vous, prestations, horaires).
-
-Pour toute autre demande, contactez :
-📧 ${settings.ownerEmail || user.email}
-📞 ${settings.ownerPhone || 'Nous contacter'}
-
-Cordialement,
-Assistant ${settings.salonName || user.businessName}`;
   }
 }
 
