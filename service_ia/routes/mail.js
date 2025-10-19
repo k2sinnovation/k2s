@@ -17,40 +17,85 @@ const authMiddleware = (req, res, next) => {
 // GMAIL API ROUTES - VERSION OPTIMISÉE
 // ========================================
 
-// ⚡ GET /api/mail/gmail/inbox - VERSION ULTRA-OPTIMISÉE (1 SEULE REQUÊTE)
+// ⚡ GET /api/mail/gmail/inbox - POUR FLUTTER (avec détails complets)
 router.get('/gmail/inbox', authMiddleware, async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, minimal } = req.query;
     const query = q || 'in:inbox';
     
-    console.log(`📥 [Gmail] Récupération avec filtre: "${query}"`);
+    console.log(`📥 [Gmail] Récupération avec filtre: "${query}" (minimal: ${minimal})`);
 
-    // ⚡ 1 SEULE REQUÊTE : Récupérer juste les IDs
-    const response = await axios.get(
+    // 1️⃣ Récupérer les IDs
+    const listResponse = await axios.get(
       'https://gmail.googleapis.com/gmail/v1/users/me/messages',
       {
         headers: { Authorization: `Bearer ${req.accessToken}` },
         params: { 
-          q: query, // ⭐ Filtre appliqué (ex: "is:unread in:inbox")
+          q: query,
           maxResults: 20 
         },
       }
     );
 
-    if (!response.data.messages) {
+    if (!listResponse.data.messages) {
       console.log('📭 [Gmail] Aucun message');
       return res.json({ messages: [] });
     }
 
-    // ⚡ Retourner juste les IDs + threadIds
-    const messages = response.data.messages.map(msg => ({
-      id: msg.id,
-      threadId: msg.threadId
-    }));
+    // ✅ Si minimal=true (pour polling), retourner juste les IDs
+    if (minimal === 'true') {
+      const messages = listResponse.data.messages.map(msg => ({
+        id: msg.id,
+        threadId: msg.threadId
+      }));
+      console.log(`✅ [Gmail] ${messages.length} message(s) (IDs uniquement)`);
+      return res.json({ messages });
+    }
 
-    console.log(`✅ [Gmail] ${messages.length} message(s)`);
+    // ✅ Sinon (pour Flutter), récupérer les détails complets
+    console.log(`📥 [Gmail] Récupération détails pour ${listResponse.data.messages.length} messages...`);
 
-    res.json({ messages });
+    const detailedMessages = await Promise.all(
+      listResponse.data.messages.map(async (msg) => {
+        try {
+          const detailResponse = await axios.get(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`,
+            {
+              headers: { Authorization: `Bearer ${req.accessToken}` },
+              params: { format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] },
+            }
+          );
+
+          const headers = detailResponse.data.payload.headers;
+          const from = headers.find(h => h.name === 'From')?.value || '';
+          const subject = headers.find(h => h.name === 'Subject')?.value || '(sans objet)';
+          const dateHeader = headers.find(h => h.name === 'Date')?.value;
+
+          return {
+            id: detailResponse.data.id,
+            threadId: detailResponse.data.threadId,
+            from,
+            subject,
+            date: dateHeader ? new Date(dateHeader).toISOString() : new Date(parseInt(detailResponse.data.internalDate)).toISOString(),
+            snippet: detailResponse.data.snippet || '',
+            labelIds: detailResponse.data.labelIds || [],
+            isRead: !detailResponse.data.labelIds?.includes('UNREAD')
+          };
+        } catch (error) {
+          console.error(`❌ Erreur détails message ${msg.id}:`, error.message);
+          return null;
+        }
+      })
+    );
+
+    const validMessages = detailedMessages.filter(Boolean);
+
+    // ✅ TRI CHRONOLOGIQUE : Plus récent en premier
+    validMessages.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    console.log(`✅ [Gmail] ${validMessages.length} message(s) avec détails`);
+
+    res.json({ messages: validMessages });
 
   } catch (error) {
     console.error('❌ [Gmail] Erreur inbox:', error.message);
@@ -142,7 +187,7 @@ router.get('/gmail/search', authMiddleware, async (req, res) => {
 
     console.log(`🔍 [Gmail] Recherche: ${q}`);
 
-    const response = await axios.get(
+    const listResponse = await axios.get(
       'https://gmail.googleapis.com/gmail/v1/users/me/messages',
       {
         headers: { Authorization: `Bearer ${req.accessToken}` },
@@ -150,18 +195,45 @@ router.get('/gmail/search', authMiddleware, async (req, res) => {
       }
     );
 
-    if (!response.data.messages) {
+    if (!listResponse.data.messages) {
       return res.json({ messages: [] });
     }
 
-    const messages = response.data.messages.map(msg => ({
-      id: msg.id,
-      threadId: msg.threadId
-    }));
+    // ✅ Récupérer les détails pour la recherche
+    const detailedMessages = await Promise.all(
+      listResponse.data.messages.map(async (msg) => {
+        try {
+          const detailResponse = await axios.get(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`,
+            {
+              headers: { Authorization: `Bearer ${req.accessToken}` },
+              params: { format: 'metadata', metadataHeaders: ['From', 'Subject', 'Date'] },
+            }
+          );
 
-    console.log(`✅ [Gmail] ${messages.length} résultat(s)`);
+          const headers = detailResponse.data.payload.headers;
+          
+          return {
+            id: detailResponse.data.id,
+            threadId: detailResponse.data.threadId,
+            from: headers.find(h => h.name === 'From')?.value || '',
+            subject: headers.find(h => h.name === 'Subject')?.value || '',
+            date: new Date(parseInt(detailResponse.data.internalDate)).toISOString(),
+            snippet: detailResponse.data.snippet || '',
+            isRead: !detailResponse.data.labelIds?.includes('UNREAD')
+          };
+        } catch (error) {
+          return null;
+        }
+      })
+    );
 
-    res.json({ messages });
+    const validMessages = detailedMessages.filter(Boolean);
+    validMessages.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    console.log(`✅ [Gmail] ${validMessages.length} résultat(s)`);
+
+    res.json({ messages: validMessages });
 
   } catch (error) {
     console.error('❌ [Gmail] Erreur recherche:', error.message);
@@ -281,11 +353,11 @@ router.get('/outlook/inbox', authMiddleware, async (req, res) => {
     const params = {
       $top: 20,
       $orderby: 'receivedDateTime desc',
-      $select: 'id,from,subject,receivedDateTime,bodyPreview,isRead',
+      $select: 'id,conversationId,from,subject,receivedDateTime,bodyPreview,isRead',
     };
     
     if (skip) params.$skip = parseInt(skip);
-    if (filter) params.$filter = filter; // ✅ Support du filtre (ex: "isRead eq false")
+    if (filter) params.$filter = filter;
 
     console.log(`📥 [Outlook] Récupération inbox${filter ? ` (filtre: ${filter})` : ''}...`);
 
@@ -296,10 +368,10 @@ router.get('/outlook/inbox', authMiddleware, async (req, res) => {
 
     const messages = response.data.value.map(msg => ({
       id: msg.id,
-      threadId: msg.conversationId || msg.id, // ✅ Outlook utilise conversationId
+      threadId: msg.conversationId || msg.id,
       from: msg.from?.emailAddress?.address || '',
       subject: msg.subject || '(sans objet)',
-      date: new Date(msg.receivedDateTime),
+      date: new Date(msg.receivedDateTime).toISOString(),
       snippet: msg.bodyPreview,
       isRead: msg.isRead,
     }));
@@ -341,11 +413,11 @@ router.get('/outlook/message/:id', authMiddleware, async (req, res) => {
 
     res.json({
       id: msg.id,
-      threadId: msg.conversationId || msg.id, // ✅ Outlook conversationId
+      threadId: msg.conversationId || msg.id,
       from: msg.from?.emailAddress?.address || '',
       to: msg.toRecipients?.map(r => r.emailAddress?.address).join(', ') || '',
       subject: msg.subject || '(sans objet)',
-      date: new Date(msg.receivedDateTime),
+      date: new Date(msg.receivedDateTime).toISOString(),
       body: msg.body?.content || '',
       isHtml: msg.body?.contentType === 'html',
       isRead: msg.isRead,
@@ -377,6 +449,7 @@ router.get('/outlook/search', authMiddleware, async (req, res) => {
         params: {
           $search: `"${q}"`,
           $top: 20,
+          $orderby: 'receivedDateTime desc',
           $select: 'id,conversationId,from,subject,receivedDateTime,bodyPreview,isRead',
         },
       }
@@ -387,7 +460,7 @@ router.get('/outlook/search', authMiddleware, async (req, res) => {
       threadId: msg.conversationId || msg.id,
       from: msg.from?.emailAddress?.address || '',
       subject: msg.subject || '',
-      date: new Date(msg.receivedDateTime),
+      date: new Date(msg.receivedDateTime).toISOString(),
       snippet: msg.bodyPreview,
       isRead: msg.isRead,
     }));
@@ -416,7 +489,6 @@ router.post('/outlook/reply', authMiddleware, async (req, res) => {
 
     console.log(`📤 [Outlook] Envoi réponse à ${to}...`);
 
-    // ✅ Utiliser l'API de réponse Outlook (répond automatiquement dans le fil)
     await axios.post(
       `https://graph.microsoft.com/v1.0/me/messages/${messageId}/reply`,
       { 
@@ -443,7 +515,7 @@ router.post('/outlook/reply', authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH /api/mail/outlook/mark-read - Marquer comme lu (Outlook)
+// PATCH /api/mail/outlook/mark-read/:id - Marquer comme lu (Outlook)
 router.patch('/outlook/mark-read/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
