@@ -3,7 +3,7 @@
 
 const User = require('../models/User');
 const AutoReply = require('../models/AutoReply');
-const aiService = require('../ai.service');
+const aiService = require('../services/ai.service');
 const quotaService = require('../quota.service'); // ✅ AJOUT
 const axios = require('axios');
 const driveService = require('./google-drive.service'); 
