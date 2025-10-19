@@ -1,5 +1,5 @@
 // service_ia/services/ai.service.js
-// ✅ VERSION OPTIMISÉE - 1 seul appel OpenAI au lieu de 2
+// ✅ VERSION OPTIMISÉE MISTRAL - 1 seul appel au lieu de 2
 
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
@@ -8,7 +8,7 @@ class AIService {
   
   /**
    * 🎯 NOUVELLE MÉTHODE OPTIMISÉE
-   * Analyse + Génération en 1 SEUL appel OpenAI
+   * Analyse + Génération en 1 SEUL appel Mistral
    * Économie : 50% de tokens et requêtes
    */
   async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
@@ -16,7 +16,7 @@ class AIService {
     const apiKey = process.env.K2S_IQ;
     
     if (!apiKey) {
-      throw new Error('Clé API OpenAI manquante');
+      throw new Error('Clé API Mistral manquante (K2S_IQ)');
     }
 
     console.log(`[AI:${user._id}] 🤖 Analyse + Génération en 1 appel...`);
@@ -50,7 +50,7 @@ class AIService {
     const userPrompt = this._buildCombinedUserPrompt(message, conversationHistory);
 
     try {
-      // ✅ Construction de la requête avec response_format conditionnel
+      // ✅ Construction de la requête Mistral
       const requestBody = {
         model: settings.aiModel || 'mistral-small-latest',
         messages: [
@@ -61,9 +61,9 @@ class AIService {
         max_tokens: 800
       };
 
- const response = await axios.post(
-  'https://api.mistral.ai/v1/chat/completions',
-  requestBody,
+      const response = await axios.post(
+        'https://api.mistral.ai/v1/chat/completions',
+        requestBody,
         {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -260,7 +260,7 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
    */
   async analyzeMessage(message, user, conversationHistory = []) {
     const settings = user.aiSettings;
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.K2S_IQ;
     
     if (!apiKey) {
       throw new Error('Clé API Mistral manquante (K2S_IQ)');
@@ -291,9 +291,8 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
     const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
 
     try {
-      // ✅ Construction de la requête avec response_format conditionnel
       const requestBody = {
-        model: 'gpt-4o-mini',
+        model: 'mistral-small-latest',
         messages: [
           { role: 'system', content: analysisPrompt },
           { role: 'user', content: userPrompt }
@@ -302,11 +301,8 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
         max_tokens: 200
       };
 
-      // Note: gpt-4o-mini ne supporte pas response_format
-      // Si besoin de JSON strict, utiliser gpt-4o ou gpt-4-turbo
-
       const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
+        'https://api.mistral.ai/v1/chat/completions',
         requestBody,
         {
           headers: {
@@ -348,10 +344,10 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
    */
   async generateResponse(message, analysis, user, conversationHistory = []) {
     const settings = user.aiSettings;
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.K2S_IQ;
     
     if (!apiKey) {
-      throw new Error('Clé API OpenAI manquante');
+      throw new Error('Clé API Mistral manquante (K2S_IQ)');
     }
 
     console.log(`[AI:${user._id}] 💬 Génération réponse pour intent="${analysis.intent}"...`);
@@ -383,9 +379,9 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
 
     try {
       const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
+        'https://api.mistral.ai/v1/chat/completions',
         {
-          model: settings.aiModel || 'gpt-4o-mini',
+          model: settings.aiModel || 'mistral-small-latest',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
