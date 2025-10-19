@@ -17,20 +17,26 @@ const authMiddleware = (req, res, next) => {
 // GMAIL API ROUTES
 // ========================================
 
-// GET /api/mail/gmail/inbox - Récupérer les 20 derniers emails Gmail
+// GET /api/mail/gmail/inbox - Récupérer les emails Gmail
 router.get('/gmail/inbox', authMiddleware, async (req, res) => {
   try {
-    const { pageToken } = req.query;
+    const { pageToken, q } = req.query; // ⭐ Récupérer le paramètre 'q'
     const url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages';
     
     const params = {
       maxResults: 20,
-      labelIds: 'INBOX',
     };
     
+    // ⭐ CRUCIAL : Utiliser le filtre 'q' si fourni, sinon INBOX par défaut
+    if (q) {
+      params.q = q; // ⭐ Appliquer le filtre (ex: "is:unread in:inbox")
+      console.log(`📥 [Gmail] Récupération inbox avec filtre: "${q}"`);
+    } else {
+      params.labelIds = 'INBOX';
+      console.log('📥 [Gmail] Récupération inbox...');
+    }
+    
     if (pageToken) params.pageToken = pageToken;
-
-    console.log('📥 [Gmail] Récupération inbox...');
 
     const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${req.accessToken}` },
@@ -38,8 +44,11 @@ router.get('/gmail/inbox', authMiddleware, async (req, res) => {
     });
 
     if (!response.data.messages) {
+      console.log('📭 [Gmail] Aucun message');
       return res.json({ messages: [], nextPageToken: null });
     }
+
+    console.log(`📨 [Gmail] ${response.data.messages.length} messages trouvés par l'API`);
 
     // Récupérer les détails de chaque message
     const messages = await Promise.all(
@@ -55,6 +64,7 @@ router.get('/gmail/inbox', authMiddleware, async (req, res) => {
           
           const message = detailResponse.data;
           const headers = message.payload.headers;
+          const isUnread = message.labelIds?.includes('UNREAD');
           
           return {
             id: message.id,
@@ -63,7 +73,8 @@ router.get('/gmail/inbox', authMiddleware, async (req, res) => {
             subject: headers.find(h => h.name === 'Subject')?.value || '(sans objet)',
             date: new Date(parseInt(message.internalDate)),
             snippet: message.snippet,
-            isRead: !message.labelIds?.includes('UNREAD'),
+            isRead: !isUnread,
+            labelIds: message.labelIds, // ⭐ Inclure pour debug
           };
         } catch (err) {
           console.error(`❌ Erreur détail message ${msg.id}:`, err.message);
@@ -73,10 +84,18 @@ router.get('/gmail/inbox', authMiddleware, async (req, res) => {
     );
 
     const validMessages = messages.filter(m => m !== null);
-    console.log(`✅ [Gmail] ${validMessages.length} emails récupérés`);
+    
+    // ⭐ FILTRAGE CÔTÉ SERVEUR en sécurité (au cas où l'API Gmail rate le filtre)
+    let finalMessages = validMessages;
+    if (q && q.includes('is:unread')) {
+      finalMessages = validMessages.filter(m => !m.isRead);
+      console.log(`📨 [Gmail] Filtre non-lu appliqué: ${finalMessages.length}/${validMessages.length}`);
+    }
+    
+    console.log(`✅ [Gmail] ${finalMessages.length} emails récupérés`);
 
     res.json({
-      messages: validMessages,
+      messages: finalMessages,
       nextPageToken: response.data.nextPageToken,
     });
 
