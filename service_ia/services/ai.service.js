@@ -63,8 +63,15 @@ class AIService {
       driveContext = await this._loadDriveContext(user, false);
     }
 
-    const systemPrompt = this._buildAnalysisSystemPrompt(driveContext, settings);
+    const systemPrompt = this._buildAnalysisSystemPrompt(driveContext);
     const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
+
+    // 🔍 DEBUG TEMPORAIRE
+    console.log(`[AI:${userId}] 📄 CONTEXTE ENVOYÉ À MISTRAL (${driveContext.length} chars):`);
+    console.log('='.repeat(80));
+    console.log(driveContext.substring(0, 1000)); // Premiers 1000 chars
+    console.log('...');
+    console.log('='.repeat(80));
 
     try {
       const mistralModel = this._getMistralModel(settings.aiModel);
@@ -136,8 +143,15 @@ class AIService {
       driveContext = await this._loadDriveContext(user, true);
     }
 
-    const systemPrompt = this._buildResponseSystemPrompt(driveContext, settings);
+    const systemPrompt = this._buildResponseSystemPrompt(driveContext);
     const userPrompt = this._buildResponseUserPrompt(message, analysis, conversationHistory);
+
+    // 🔍 DEBUG TEMPORAIRE
+    console.log(`[AI:${userId}] 📄 CONTEXTE POUR GÉNÉRATION (${driveContext.length} chars):`);
+    console.log('='.repeat(80));
+    console.log(driveContext.substring(0, 1000)); // Premiers 1000 chars
+    console.log('...');
+    console.log('='.repeat(80));
 
     try {
       const mistralModel = this._getMistralModel(settings.aiModel);
@@ -339,45 +353,36 @@ Analyse le message suivant et détermine s'il est pertinent pour ton entreprise.
   }
 
   /**
-   * 📝 PROMPT : Génération (TEXTE pur attendu) - ULTRA PERSONNALISÉ
+   * 📝 PROMPT : Génération (TEXTE pur) - BASÉ 100% SUR DRIVE
    */
-  _buildResponseSystemPrompt(driveContext, settings) {
-    const tone = settings.tone || 'professionnel';
-    const salonName = settings.salonName || 'notre entreprise';
-    
+  _buildResponseSystemPrompt(driveContext) {
+    // ✅ ON UTILISE UNIQUEMENT LE CONTEXTE DRIVE (qui contient déjà TOUT)
     return `${driveContext}
 
 ---
 
-Tu es ${settings.role || 'un assistant virtuel'} pour ${salonName}.
+## TÂCHE DE GÉNÉRATION DE RÉPONSE
 
-**INSTRUCTIONS PERSONNALISÉES** :
-${settings.instructions || 'Réponds de manière professionnelle et courtoise aux clients.'}
+Génère une réponse professionnelle au client en te basant STRICTEMENT sur les informations ci-dessus.
 
-**TON À ADOPTER** : ${tone}
-
-**RÈGLES STRICTES** :
+**RÈGLES ABSOLUES** :
 1. Réponds en français naturel et fluide
 2. Sois concis (3-5 phrases maximum)
-3. **UTILISE IMPÉRATIVEMENT** les informations du contexte Drive ci-dessus (horaires, tarifs, disponibilités)
-4. Propose des créneaux CONCRETS si disponibles dans le contexte
-5. Termine toujours par une formule de politesse appropriée
-6. N'invente JAMAIS d'informations non présentes dans le contexte
-7. Signe tes messages avec "${salonName}" ou "L'équipe ${salonName}"
+3. **UTILISE UNIQUEMENT** les informations présentes dans le contexte ci-dessus
+4. **POUR LES HORAIRES** : Utilise EXACTEMENT les horaires mentionnés dans "## HORAIRES D'OUVERTURE" ci-dessus. N'invente JAMAIS d'horaires.
+5. **POUR LES PRESTATIONS** : Mentionne UNIQUEMENT les prestations listées dans "## PRESTATIONS DISPONIBLES" ci-dessus avec leurs vrais prix.
+6. Si une information n'est PAS dans le contexte ci-dessus, dis "Je vais vérifier" plutôt que d'inventer
+7. Respecte les INSTRUCTIONS SPÉCIFIQUES mentionnées plus haut
+8. Signe avec le nom de l'entreprise mentionné dans le contexte
 
-**IMPORTANT** : Réponds UNIQUEMENT avec le texte de l'email à envoyer. AUCUN JSON, AUCUNE explication, AUCUN commentaire.
+**⚠️ INTERDICTIONS STRICTES** :
+❌ N'invente JAMAIS d'horaires si tu ne les vois pas dans "## HORAIRES D'OUVERTURE"
+❌ N'invente JAMAIS de prix si tu ne les vois pas dans "## PRESTATIONS"
+❌ N'invente JAMAIS d'adresse ou de téléphone
 
-Exemple de réponse IDÉALE :
-"Bonjour,
-
-Merci pour votre demande de rendez-vous. Je vous propose les créneaux suivants :
-- Lundi 21 octobre à 14h
-- Mardi 22 octobre à 10h
-
-Faites-moi savoir ce qui vous convient le mieux.
-
-Cordialement,
-L'équipe ${salonName}"`;
+**IMPORTANT** : Réponds UNIQUEMENT avec le texte de l'email à envoyer.
+AUCUN JSON, AUCUNE explication, AUCUN commentaire, AUCUN formatage markdown.
+Juste le texte brut de l'email.`;
   }
 
   /**
