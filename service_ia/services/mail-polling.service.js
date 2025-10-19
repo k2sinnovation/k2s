@@ -9,7 +9,7 @@ class MailPollingService {
   constructor() {
     this.processingMessages = new Map();
     this.processingUsers = new Map();
-    this.processedThreads = new Map(); // ✅ NOUVEAU : Cache des threads traités
+    this.processedThreads = new Map();
     this.lastPollingStart = 0;
     this.POLLING_COOLDOWN = 30000;
   }
@@ -91,18 +91,31 @@ class MailPollingService {
     this.processingUsers.set(userKey, now);
 
     try {
-      const newMessages = await this.fetchNewEmails(user.emailConfig, user); // ✅ Passer user en paramètre
+      // ✅ ÉTAPE 1 : Récupérer les 20 premiers messages de l'inbox
+      const messages = await this.fetchRecentInboxMessages(user.emailConfig, user);
 
-      if (newMessages.length === 0) {
+      if (messages.length === 0) {
+        console.log(`  ℹ️ [${user.email}] Aucun message dans les 20 premiers`);
         return { processed: 0, sent: 0 };
       }
 
-      console.log(`  📨 ${newMessages.length} nouveaux messages non lus`);
+      console.log(`  📬 [${user.email}] ${messages.length} messages récupérés`);
+
+      // ✅ ÉTAPE 2 : Filtrer uniquement les NON LUS
+      const unreadMessages = messages.filter(msg => msg.isUnread);
+
+      if (unreadMessages.length === 0) {
+        console.log(`  ✅ [${user.email}] Tous les messages sont lus (0 token consommé)`);
+        return { processed: 0, sent: 0 };
+      }
+
+      console.log(`  📨 [${user.email}] ${unreadMessages.length} messages NON LUS à traiter`);
 
       let sent = 0;
       let alreadyProcessedCount = 0;
 
-      for (const message of newMessages) {
+      // ✅ ÉTAPE 3 : Traiter uniquement les messages non lus
+      for (const message of unreadMessages) {
         const result = await this.processMessage(message, user);
         if (result?.sent) {
           sent++;
@@ -115,7 +128,7 @@ class MailPollingService {
         console.log(`  ⏭️ ${alreadyProcessedCount} messages déjà traités (0 token consommé)`);
       }
 
-      return { processed: newMessages.length, sent };
+      return { processed: unreadMessages.length, sent };
 
     } catch (error) {
       console.error(`  ❌ [${user.email}] Erreur:`, error.message);
@@ -125,7 +138,10 @@ class MailPollingService {
     }
   }
 
-  async fetchNewEmails(emailConfig, user) {
+  /**
+   * ✅ NOUVELLE MÉTHODE : Récupère les 20 premiers messages avec leur statut de lecture
+   */
+  async fetchRecentInboxMessages(emailConfig, user) {
     const BASE_URL = 'https://k2s.onrender.com';
 
     try {
@@ -134,15 +150,16 @@ class MailPollingService {
 
       if (emailConfig.provider === 'gmail') {
         try {
+          // ✅ Récupérer les 20 premiers messages (lus + non lus)
           response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
             params: {
-              q: 'is:unread in:inbox'
+              maxResults: 20 // Limiter à 20 messages
             },
             timeout: 15000
           });
         } catch (error) {
-          // ✅ Si erreur 401, tenter de rafraîchir le token
+          // ✅ Gestion du refresh token
           if (error.response?.status === 401 && emailConfig.refreshToken) {
             console.log(`  🔄 [${user.email}] Token expiré, rafraîchissement...`);
             
@@ -154,18 +171,15 @@ class MailPollingService {
               );
 
               accessToken = refreshResponse.data.access_token;
-              
-              // ✅ IMPORTANT : Mettre à jour le token en base
               user.emailConfig.accessToken = accessToken;
               await user.save();
               
               console.log(`  ✅ [${user.email}] Token rafraîchi avec succès`);
 
-              // Réessayer la requête avec le nouveau token
               response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
                 headers: { 'Authorization': `Bearer ${accessToken}` },
                 params: {
-                  q: 'is:unread in:inbox'
+                  maxResults: 20
                 },
                 timeout: 15000
               });
@@ -180,27 +194,57 @@ class MailPollingService {
         
         const messages = response?.data?.messages || [];
         
-        if (messages.length > 0) {
-          console.log(`  📨 ${messages.length} messages non lus trouvés`);
-        }
-        
-        return messages;
+        // ✅ Enrichir avec le statut de lecture
+        const enrichedMessages = await Promise.all(
+          messages.map(async (msg) => {
+            try {
+              const details = await axios.get(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`,
+                {
+                  headers: { 'Authorization': `Bearer ${accessToken}` },
+                  timeout: 10000
+                }
+              );
+
+              const labels = details.data.labelIds || [];
+              const headers = details.data.payload?.headers || [];
+              
+              return {
+                id: msg.id,
+                threadId: msg.threadId,
+                isUnread: labels.includes('UNREAD'), // ✅ Détection du statut
+                from: headers.find(h => h.name === 'From')?.value || '',
+                subject: headers.find(h => h.name === 'Subject')?.value || '',
+                snippet: details.data.snippet || ''
+              };
+            } catch (err) {
+              console.warn(`  ⚠️ Erreur enrichissement message ${msg.id}:`, err.message);
+              return null;
+            }
+          })
+        );
+
+        return enrichedMessages.filter(msg => msg !== null);
         
       } else if (emailConfig.provider === 'outlook') {
         response = await axios.get(`${BASE_URL}/api/mail/outlook/inbox`, {
           headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
+          params: {
+            $top: 20 // Limiter à 20 messages
+          },
           timeout: 15000
         });
         
-        if (response?.data?.messages) {
-          const unreadMessages = response.data.messages.filter(msg => !msg.isRead);
-          
-          if (unreadMessages.length > 0) {
-            console.log(`  📨 ${unreadMessages.length} messages non lus`);
-          }
-          
-          return unreadMessages;
-        }
+        const messages = response?.data?.messages || [];
+        
+        return messages.map(msg => ({
+          id: msg.id,
+          threadId: msg.conversationId,
+          isUnread: !msg.isRead, // ✅ Outlook fournit directement isRead
+          from: msg.from?.emailAddress?.address || '',
+          subject: msg.subject || '',
+          snippet: msg.bodyPreview || ''
+        }));
       }
 
       return [];
@@ -335,7 +379,7 @@ class MailPollingService {
     this.processingMessages.set(lockKey, now);
 
     try {
-      // ✅ VÉRIFICATION 1 : Message déjà traité ?
+      // ✅ VÉRIFICATION 1 : Message déjà traité en base ?
       const alreadyProcessed = await AutoReply.findOne({
         userId: user._id,
         messageId: message.id,
@@ -343,75 +387,68 @@ class MailPollingService {
       });
 
       if (alreadyProcessed) {
-        console.log(`    ⏭️ Déjà traité (${alreadyProcessed.status})`);
+        console.log(`    ⏭️ Déjà traité (${alreadyProcessed.status}) - 0 token consommé`);
         await this.markAsRead(message.id, user.emailConfig);
         return { sent: false, alreadyProcessed: true };
       }
 
-      // ✅ VÉRIFICATION 2 : Thread déjà répondu ? (éviter doublons)
+      // ✅ VÉRIFICATION 2 : Thread déjà répondu ?
       if (message.threadId) {
         const threadKey = `${user._id}-${message.threadId}`;
         
-        // Vérifier cache en mémoire (rapide)
         if (this.processedThreads.has(threadKey)) {
           const lastReply = this.processedThreads.get(threadKey);
           const elapsed = now - lastReply;
           
-          // Si on a répondu il y a moins de 1 heure, skip
           if (elapsed < 3600000) {
-            console.log(`    ⏭️ Thread déjà répondu récemment (il y a ${Math.round(elapsed/60000)} min)`);
+            console.log(`    ⏭️ Thread déjà répondu (${Math.round(elapsed/60000)} min) - 0 token consommé`);
             await this.markAsRead(message.id, user.emailConfig);
             return { sent: false, alreadyProcessed: true };
           } else {
-            // Nettoyer le cache si > 1h
             this.processedThreads.delete(threadKey);
           }
         }
         
-        // Vérifier en base (sécurité)
         const threadAlreadyReplied = await AutoReply.findOne({
           userId: user._id,
           threadId: message.threadId,
           status: 'sent',
-          sentAt: { $gte: new Date(Date.now() - 3600000) } // Dans la dernière heure
+          sentAt: { $gte: new Date(Date.now() - 3600000) }
         }).sort({ sentAt: -1 });
 
         if (threadAlreadyReplied) {
-          console.log(`    ⏭️ Thread déjà répondu en base (${threadAlreadyReplied.sentAt.toLocaleTimeString()})`);
+          console.log(`    ⏭️ Thread déjà répondu en base - 0 token consommé`);
           this.processedThreads.set(threadKey, threadAlreadyReplied.sentAt.getTime());
           await this.markAsRead(message.id, user.emailConfig);
           return { sent: false, alreadyProcessed: true };
         }
       }
 
-      // ✅ CRÉER UN ENREGISTREMENT "PROCESSING" IMMÉDIATEMENT
+      // ✅ À partir d'ici, on consomme des tokens GPT
+      console.log(`    📩 Nouveau message à analyser: ${message.from} - "${message.subject}"`);
+
+      // Créer un enregistrement "processing"
       const processingRecord = await AutoReply.create({
         userId: user._id,
         messageId: message.id,
         threadId: message.threadId,
         from: message.from,
         subject: message.subject || '(sans objet)',
-        body: message.body || message.snippet || '(en cours de récupération...)',
+        body: message.snippet || '(en cours de récupération...)',
         status: 'processing',
         createdAt: new Date()
       });
-
-      console.log(`    📩 Nouveau: ${message.from} - "${message.subject}"`);
 
       const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
       
       if (!fullMessage) {
         console.log(`    ❌ Impossible de récupérer le message`);
-        await AutoReply.deleteOne({
-          userId: user._id,
-          messageId: message.id,
-          status: 'processing'
-        });
+        await AutoReply.deleteOne({ _id: processingRecord._id });
         await this.markAsRead(message.id, user.emailConfig);
         return { sent: false, alreadyProcessed: false };
       }
 
-      // ✅ CHARGER DONNÉES DRIVE AVANT ANALYSE
+      // ✅ Charger données Drive
       try {
         const accessToken = user.emailConfig?.accessToken;
         
@@ -419,31 +456,27 @@ class MailPollingService {
           let driveData = await driveCacheMiddleware.getCachedDriveData(user._id.toString());
           
           if (!driveData) {
-            console.log(`  📂 [${user.email}] Chargement Drive...`);
+            console.log(`    📂 Chargement Drive...`);
             const driveStartTime = Date.now();
             driveData = await driveService.loadAllUserData(accessToken, user._id.toString());
             const driveDuration = Date.now() - driveStartTime;
-            console.log(`  ✅ [${user.email}] Drive chargé en ${driveDuration}ms`);
+            console.log(`    ✅ Drive chargé en ${driveDuration}ms`);
             driveCacheMiddleware.cacheUserDriveData(user._id.toString(), driveData).catch(() => {});
           } else {
-            console.log(`  📦 [${user.email}] Drive depuis cache`);
+            console.log(`    📦 Drive depuis cache`);
           }
-          
-          const hasBusinessInfo = !driveData.businessInfo._empty;
-          const hasPlanningInfo = !driveData.planningInfo._empty;
-          console.log(`  📊 [${user.email}] Drive: business=${hasBusinessInfo}, planning=${hasPlanningInfo}`);
         }
       } catch (driveError) {
-        console.warn(`  ⚠️ [${user.email}] Erreur Drive (non bloquant):`, driveError.message);
+        console.warn(`    ⚠️ Erreur Drive (non bloquant):`, driveError.message);
       }
 
-      // ✅ RÉCUPÉRER L'HISTORIQUE DU THREAD
       const conversationHistory = await this.getConversationHistory(
         fullMessage.threadId, 
         user.emailConfig
       );
 
-      // Analyser le message
+      // ✅ ANALYSE IA (consomme des tokens)
+      console.log(`    🤖 Analyse IA en cours...`);
       const analysis = await aiService.analyzeMessage(fullMessage, user, conversationHistory);
 
       if (!analysis.is_relevant) {
@@ -463,6 +496,8 @@ class MailPollingService {
 
       console.log(`    ✅ Pertinent: ${analysis.intent} (${(analysis.confidence * 100).toFixed(0)}%)`);
 
+      // ✅ GÉNÉRATION RÉPONSE (consomme des tokens)
+      console.log(`    ✍️ Génération de la réponse...`);
       const response = await aiService.generateResponse(
         fullMessage, 
         analysis, 
@@ -477,16 +512,11 @@ class MailPollingService {
       if (shouldAutoSend) {
         console.log(`    📤 Envoi réponse dans thread ${fullMessage.threadId}...`);
         
-        // ✅ ENVOI EN RÉPONSE (dans le thread)
         const sendSuccess = await this.sendReply(fullMessage, response, user);
 
         if (!sendSuccess) {
           console.log(`    ❌ Échec envoi`);
-          await AutoReply.deleteOne({
-            userId: user._id,
-            messageId: message.id,
-            status: 'processing'
-          });
+          await AutoReply.deleteOne({ _id: processingRecord._id });
           return { sent: false, alreadyProcessed: false };
         }
 
@@ -502,7 +532,6 @@ class MailPollingService {
         processingRecord.sentAt = new Date();
         await processingRecord.save();
 
-        // ✅ AJOUTER AU CACHE pour éviter doublons
         if (message.threadId) {
           const threadKey = `${user._id}-${message.threadId}`;
           this.processedThreads.set(threadKey, Date.now());
@@ -574,9 +603,8 @@ class MailPollingService {
 
     try {
       if (user.emailConfig.provider === 'gmail') {
-        // ✅ IMPORTANT : Répondre dans le THREAD existant
         const response = await axios.post(`${BASE_URL}/api/mail/gmail/reply`, {
-          threadId: message.threadId, // ✅ Ceci maintient la conversation
+          threadId: message.threadId,
           to: message.from,
           subject: message.subject || '(sans objet)',
           body: responseBody
