@@ -4,18 +4,18 @@ const axios = require('axios');
 const User = require('../models/User');
 const Session = require('../models/Session');
 
-// ✅ APRÈS - AJOUTER CETTE LIGNE
 const GOOGLE_CLIENT_ID = '461385830578-pbnq271ga15ggms5c4uckspo4480litm.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = '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';
 const REDIRECT_URI = 'https://k2s.onrender.com/oauth/google/callback';
 
-// ✅ NOUVEAU : Scopes Google avec Drive
+// ✅ FIX 1: Ordre des scopes corrigé (gmail.modify en premier)
 const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.modify',      // ✅ EN PREMIER pour mark-read
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/drive.appdata', // ✅ DOSSIER CACHÉ DRIVE
+  'https://www.googleapis.com/auth/drive.appdata',
+  'https://www.googleapis.com/auth/drive.file',        // ✅ AJOUTÉ pour Drive
   'openid',
   'profile',
 ].join(' ');
@@ -98,7 +98,7 @@ router.get('/oauth/google/callback', async (req, res) => {
           role: 'Assistant virtuel pour la gestion des rendez-vous',
           instructions: 'Sois professionnel et courtois.',
           tone: 'professionnel',
-          aiModel: 'gpt-4',
+          aiModel: 'mistral-small-latest',  // ✅ FIX 2: Mistral au lieu de gpt-4
           temperature: 0.7,
           maxTokens: 500
         }
@@ -132,41 +132,40 @@ router.get('/oauth/google/callback', async (req, res) => {
       { isActive: false }
     );
 
-// ✅ APRÈS
-const newSession = await Session.create({
-  userId: user._id,
-  deviceId: deviceId,
-  sessionToken: hashedToken,
-  emailProvider: 'gmail',
-  emailAccessToken: access_token,
-  emailRefreshToken: refresh_token || '',
-  ipAddress: req.ip || req.connection.remoteAddress,
-  deviceInfo: {
-    platform: 'mobile',
-    appVersion: '1.0.0'
-  }
-});
+    const newSession = await Session.create({
+      userId: user._id,
+      deviceId: deviceId,
+      sessionToken: hashedToken,
+      emailProvider: 'gmail',
+      emailAccessToken: access_token,
+      emailRefreshToken: refresh_token || '',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      deviceInfo: {
+        platform: 'mobile',
+        appVersion: '1.0.0'
+      }
+    });
 
-console.log(`✅ [OAuth] Session créée (ID: ${newSession._id})`);
+    console.log(`✅ [OAuth] Session créée (ID: ${newSession._id})`);
 
-// ✅ NOUVEAU : VÉRIFIER DRIVE (NON BLOQUANT)
-const driveService = require('../services/google-drive.service');
-try {
-  console.log(`📂 [OAuth] Vérification Drive pour ${user.email}...`);
-  
-  const driveStatus = await driveService.checkDriveFiles(access_token, user._id.toString());
-  
-  console.log(`📂 [OAuth] Drive: business=${driveStatus.businessExists}, planning=${driveStatus.planningExists}`);
-  
-  if (driveStatus.needsSetup) {
-    console.log(`📂 [OAuth] Première connexion Drive détectée pour ${user.email}`);
-  }
-} catch (driveError) {
-  console.warn(`⚠️ [OAuth] Impossible de vérifier Drive (non bloquant):`, driveError.message);
-}
+    // ✅ NOUVEAU : VÉRIFIER DRIVE (NON BLOQUANT)
+    const driveService = require('../services/google-drive.service');
+    try {
+      console.log(`📂 [OAuth] Vérification Drive pour ${user.email}...`);
+      
+      const driveStatus = await driveService.checkDriveFiles(access_token, user._id.toString());
+      
+      console.log(`📂 [OAuth] Drive: business=${driveStatus.businessExists}, planning=${driveStatus.planningExists}`);
+      
+      if (driveStatus.needsSetup) {
+        console.log(`📂 [OAuth] Première connexion Drive détectée pour ${user.email}`);
+      }
+    } catch (driveError) {
+      console.warn(`⚠️ [OAuth] Impossible de vérifier Drive (non bloquant):`, driveError.message);
+    }
 
-// Construction des params...
-const params = new URLSearchParams({
+    // Construction des params
+    const params = new URLSearchParams({
       access_token,
       email,
       success: 'true',
@@ -191,7 +190,6 @@ const params = new URLSearchParams({
   }
 });
 
-// ✅ CODE ORIGINAL MAIS AVEC 1 SEULE REDIRECTION
 function generateHtmlRedirect(deepLink, title, message) {
   const isSuccess = title.includes('✓');
   const bgColor = isSuccess ? '#667eea' : '#ff6b6b';
@@ -315,7 +313,6 @@ function generateHtmlRedirect(deepLink, title, message) {
         
         log('🔗 Link: ' + deepLink.substring(0, 50) + '...');
         
-        // ✅ UNE SEULE REDIRECTION (au lieu de 4)
         function redirect() {
           if (opened) {
             log('⚠️ Déjà redirigé, abandon');
@@ -324,15 +321,11 @@ function generateHtmlRedirect(deepLink, title, message) {
           opened = true;
           
           log('🔄 Redirection unique...');
-          
-          // Méthode principale: window.location
           window.location.href = deepLink;
         }
         
-        // ✅ DÉMARRER LA REDIRECTION (1 SEULE FOIS)
         redirect();
         
-        // ✅ Bouton manuel après 2s
         setTimeout(() => {
           const btn = document.getElementById('manualBtn');
           btn.style.display = 'inline-block';
@@ -345,7 +338,6 @@ function generateHtmlRedirect(deepLink, title, message) {
           log('🔘 Bouton manuel affiché');
         }, 2000);
         
-        // Événements de détection d'ouverture
         window.addEventListener('blur', () => { 
           log('📱 App ouverte (blur)');
           opened = true; 
@@ -356,7 +348,6 @@ function generateHtmlRedirect(deepLink, title, message) {
           opened = true; 
         });
         
-        // ✅ Fermeture auto après 10s (succès uniquement)
         ${isSuccess ? `
         setTimeout(() => {
           if (opened) {
@@ -382,10 +373,6 @@ function generateHtmlRedirect(deepLink, title, message) {
     </html>
   `;
 }
-
-// ========================================
-// ROUTE REFRESH TOKEN GOOGLE
-// ========================================
 
 router.post('/oauth/google/refresh', async (req, res) => {
   try {
