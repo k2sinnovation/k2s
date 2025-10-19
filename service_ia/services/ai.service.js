@@ -3,8 +3,8 @@ const contextBuilder = require('./context-builder.service');
 
 class AIService {
   constructor() {
-    // Stats globales par utilisateur
-    this.aiStats = {};
+    this.totalRequests = 0; // compteur total de requêtes IA
+    this.totalTokens = 0;   // compteur total de tokens utilisés
   }
 
   /**
@@ -13,52 +13,56 @@ class AIService {
    */
   async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
     const userId = user._id.toString();
-    
-    if (!this.aiStats[userId]) {
-      this.aiStats[userId] = { totalRequests: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalTokens: 0 };
-    }
 
     console.log(`[AI:${userId}] 🔍 Étape 1/2 : Analyse du message...`);
 
     // 1️⃣ ANALYSE
-    const { analysis, usage: analysisUsage } = await this.analyzeMessage(message, user, conversationHistory, driveData);
-    
-    this._updateStats(userId, analysisUsage);
+    const analysisResult = await this.analyzeMessage(message, user, conversationHistory, driveData);
 
-    console.log(`[AI:${userId}] ✅ Analyse: ${analysis.intent} - Pertinent: ${analysis.is_relevant} (${(analysis.confidence*100).toFixed(0)}%)`);
+    console.log(`[AI:${userId}] ✅ Analyse: ${analysisResult.intent} - Pertinent: ${analysisResult.is_relevant} (${(analysisResult.confidence * 100).toFixed(0)}%)`);
     
-    if (!analysis.is_relevant) {
+    // 2️⃣ Si non pertinent, on s'arrête là
+    if (!analysisResult.is_relevant) {
       console.log(`[AI:${userId}] ⏭️ Message non pertinent, pas de réponse`);
-      return { analysis, response: null };
+      return {
+        analysis: analysisResult,
+        response: null,
+        totalRequests: this.totalRequests,
+        totalTokens: this.totalTokens
+      };
     }
 
-    // 2️⃣ GÉNÉRATION DE RÉPONSE
+    // 3️⃣ GÉNÉRATION DE RÉPONSE (TEXTE PUR)
     console.log(`[AI:${userId}] 💬 Étape 2/2 : Génération de la réponse...`);
-
-    const { response, usage: generationUsage } = await this.generateResponse(message, analysis, user, conversationHistory, driveData);
-
-    this._updateStats(userId, generationUsage);
+    const response = await this.generateResponse(message, analysisResult, user, conversationHistory, driveData);
 
     console.log(`[AI:${userId}] ✅ Réponse générée (${response.length} chars)`);
-    console.log(`[AI:${userId}] 🔢 Stats cumulées: Requêtes=${this.aiStats[userId].totalRequests}, Tokens totaux=${this.aiStats[userId].totalTokens}`);
 
-    return { analysis, response };
+    return {
+      analysis: analysisResult,
+      response,
+      totalRequests: this.totalRequests,
+      totalTokens: this.totalTokens
+    };
   }
 
   /**
-   * 🔍 ANALYSE - Retourne JSON simple + usage
+   * 🔍 ANALYSE - Retourne JSON simple
    */
   async analyzeMessage(message, user, conversationHistory = [], driveData = null) {
     const apiKey = process.env.K2S_IQ;
     const userId = user._id.toString();
     if (!apiKey) throw new Error('Clé API Mistral manquante');
 
-    let driveContext = driveData ? this._buildContextFromDriveData(driveData) : await this._loadDriveContext(user, false);
+    let driveContext = driveData
+      ? this._buildContextFromDriveData(driveData)
+      : await this._loadDriveContext(user, false);
 
     const systemPrompt = this._buildAnalysisSystemPrompt(driveContext);
     const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
 
     try {
+      this.totalRequests += 1;
       const response = await axios.post(
         'https://api.mistral.ai/v1/chat/completions',
         {
@@ -71,41 +75,49 @@ class AIService {
           max_tokens: 300
         },
         {
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
           timeout: 30000
         }
       );
 
       const content = response.data.choices[0].message.content.trim();
       const usage = response.data.usage || {};
+      this.totalTokens += (usage.total_tokens || 0);
 
-      let analysis = this._parseAnalysisJSON(content, userId);
-
-      return { analysis, usage };
+      return this._parseAnalysisJSON(content, userId);
 
     } catch (error) {
       console.error(`[AI:${userId}] ❌ Erreur analyse:`, error.message);
       return {
-        analysis: { is_relevant: false, confidence: 0.0, intent: 'error', reason: error.message, details: {} },
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        is_relevant: false,
+        confidence: 0,
+        intent: 'error',
+        reason: `Erreur IA: ${error.message}`,
+        details: {}
       };
     }
   }
 
   /**
-   * 💬 GÉNÉRATION - Retourne TEXTE pur + usage
+   * 💬 GÉNÉRATION - Retourne TEXTE pur (pas de JSON)
    */
   async generateResponse(message, analysis, user, conversationHistory = [], driveData = null) {
     const apiKey = process.env.K2S_IQ;
     const userId = user._id.toString();
     if (!apiKey) throw new Error('Clé API Mistral manquante');
 
-    let driveContext = driveData ? this._buildContextFromDriveData(driveData) : await this._loadDriveContext(user, true);
+    let driveContext = driveData
+      ? this._buildContextFromDriveData(driveData)
+      : await this._loadDriveContext(user, true);
 
     const systemPrompt = this._buildResponseSystemPrompt(driveContext, user.aiSettings);
     const userPrompt = this._buildResponseUserPrompt(message, analysis, conversationHistory);
 
     try {
+      this.totalRequests += 1;
       const response = await axios.post(
         'https://api.mistral.ai/v1/chat/completions',
         {
@@ -118,51 +130,40 @@ class AIService {
           max_tokens: user.aiSettings.maxTokens || 500
         },
         {
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
           timeout: 30000
         }
       );
 
       const usage = response.data.usage || {};
-      const generatedResponse = response.data.choices[0].message.content.trim();
+      this.totalTokens += (usage.total_tokens || 0);
 
-      return { response: generatedResponse, usage };
-
+      return response.data.choices[0].message.content.trim();
     } catch (error) {
       console.error(`[AI:${userId}] ❌ Erreur génération:`, error.message);
-      return {
-        response: `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et reviendrons vers vous rapidement.\n\nCordialement,\n${user.aiSettings.salonName || user.businessName}`,
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
-      };
+      return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\n${user.aiSettings.salonName || user.businessName}`;
     }
   }
 
-  // ===============================================
+  // ==================================================================
   // 🔧 HELPERS
-  // ===============================================
-
-  _updateStats(userId, usage) {
-    const stats = this.aiStats[userId];
-    stats.totalRequests += 1;
-    stats.totalPromptTokens += usage.prompt_tokens || 0;
-    stats.totalCompletionTokens += usage.completion_tokens || 0;
-    stats.totalTokens += usage.total_tokens || 0;
-  }
-
+  // ==================================================================
   _parseAnalysisJSON(content, userId) {
     try {
-      let cleanContent = content.trim();
-      if (cleanContent.startsWith('```json')) cleanContent = cleanContent.replace(/^```json\s*/s, '').replace(/```\s*$/s, '');
-      else if (cleanContent.startsWith('```')) cleanContent = cleanContent.replace(/^```\s*/s, '').replace(/```\s*$/s, '');
+      let clean = content.trim();
+      if (clean.startsWith('```json')) clean = clean.replace(/^```json\s*/s, '').replace(/```\s*$/s, '');
+      if (clean.startsWith('```')) clean = clean.replace(/^```\s*/s, '').replace(/```\s*$/s, '');
 
-      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) cleanContent = jsonMatch[0];
+      const jsonMatch = clean.match(/\{[\s\S]*\}/);
+      if (jsonMatch) clean = jsonMatch[0];
 
-      return JSON.parse(cleanContent);
-
+      return JSON.parse(clean);
     } catch (err) {
-      console.warn(`[AI:${userId}] ⚠️ Parsing JSON échoué, fallback`);
-      return { is_relevant: false, confidence: 0.1, intent: 'error', reason: 'Erreur parsing JSON', details: {} };
+      console.warn(`[AI:${userId}] ⚠️ Parsing JSON échoué`);
+      return { is_relevant: false, confidence: 0, intent: 'error', reason: 'JSON invalide', details: {} };
     }
   }
 
@@ -170,9 +171,10 @@ class AIService {
     const accessToken = user.emailConfig?.accessToken;
     if (!accessToken) return contextBuilder._buildMinimalContext();
     try {
-      return await contextBuilder.buildContextFromDrive(accessToken, user._id.toString(), { includeAppointments });
-    } catch (error) {
-      console.warn(`[AI:${user._id}] ⚠️ Drive non disponible`, error.message);
+      const ctx = await contextBuilder.buildContextFromDrive(accessToken, user._id.toString(), { includeAppointments });
+      return ctx;
+    } catch (err) {
+      console.warn(`[AI:${user._id}] ⚠️ Drive non disponible:`, err.message);
       return contextBuilder._buildMinimalContext();
     }
   }
@@ -184,19 +186,112 @@ class AIService {
       const biz = driveData.businessInfo;
       context += `- Nom: ${biz.name || 'N/A'}\n`;
       context += `- Description: ${biz.description || 'N/A'}\n`;
-      if (biz.services?.length > 0) context += `- Services: ${biz.services.join(', ')}\n`;
+      if (biz.services?.length) context += `- Services: ${biz.services.join(', ')}\n`;
       if (biz.prices) context += `- Tarifs: ${JSON.stringify(biz.prices)}\n`;
       if (biz.hours) context += `- Horaires: ${JSON.stringify(biz.hours)}\n`;
     }
     if (driveData.planningInfo && !driveData.planningInfo._empty) {
       const planning = driveData.planningInfo;
-      context += `\n**DISPONIBILITÉS** :\n`;
-      if (planning.availableSlots?.length > 0) context += `- Créneaux dispos: ${planning.availableSlots.slice(0,5).join(', ')}\n`;
+      if (planning.availableSlots?.length) context += `- Créneaux dispo: ${planning.availableSlots.join(', ')}\n`;
     }
     return context;
   }
 
-  // Les méthodes _buildAnalysisSystemPrompt, _buildAnalysisUserPrompt, _buildResponseSystemPrompt, _buildResponseUserPrompt restent identiques à ton code précédent.
+  // ==================================================================
+  // 🔨 PROMPTS
+  // ==================================================================
+  _buildAnalysisSystemPrompt(driveContext) {
+    return `${driveContext}
+
+---
+
+Tu es un expert en analyse de messages clients.
+
+**TÂCHE** : Analyse ce message et détermine s'il est pertinent.
+
+**CRITÈRES** :
+- ✅ Pertinent : RDV, questions prestations/tarifs/horaires, annulation, modification
+- ❌ Non pertinent : spam, pub, newsletter, notification auto
+
+**RÉPONDS EN JSON UNIQUEMENT** :
+{
+  "is_relevant": true ou false,
+  "confidence": 0.0 à 1.0,
+  "intent": "prise_rdv"|"question_info"|"annulation"|"modification"|"reclamation"|"spam"|"autre",
+  "reason": "Explication courte",
+  "details": {
+    "date_souhaitee": null,
+    "prestation_souhaitee": null
+  }
+}`;
+  }
+
+  _buildAnalysisUserPrompt(message, conversationHistory) {
+    let prompt = '';
+    if (conversationHistory.length) {
+      prompt += '**HISTORIQUE** :\n';
+      conversationHistory.slice(-3).forEach(msg => {
+        prompt += `- ${msg.from}: ${msg.body.substring(0, 80)}...\n`;
+      });
+      prompt += '\n';
+    }
+    prompt += `**MESSAGE À ANALYSER** :
+De: ${message.from}
+Sujet: ${message.subject || '(sans objet)'}
+${message.body}
+---
+Analyse ce message et réponds en JSON.`;
+    return prompt;
+  }
+
+  _buildResponseSystemPrompt(driveContext, settings) {
+    const tone = settings.tone || 'professionnel';
+    return `${driveContext}
+
+---
+
+Tu es ${settings.role || 'un assistant virtuel'} pour ${settings.salonName || 'cette entreprise'}.
+
+**INSTRUCTIONS** :
+${settings.instructions || 'Sois professionnel et courtois.'}
+
+**TON** : ${tone}
+
+**RÈGLES** :
+1. Réponds en français naturel et fluide
+2. Sois concis (3-5 phrases max)
+3. Utilise les infos du contexte Drive
+4. Propose des créneaux concrets si pertinent
+5. Termine par une formule de politesse
+6. N'invente JAMAIS d'informations non présentes
+
+**IMPORTANT** : Réponds UNIQUEMENT avec le texte de l'email, AUCUN JSON, AUCUNE explication.`;
+  }
+
+  _buildResponseUserPrompt(message, analysis, conversationHistory) {
+    let prompt = '';
+    if (conversationHistory.length) {
+      prompt += '**HISTORIQUE** :\n';
+      conversationHistory.slice(-3).forEach(msg => {
+        prompt += `- ${msg.from}: ${msg.body.substring(0, 80)}...\n`;
+      });
+      prompt += '\n';
+    }
+
+    prompt += `**MESSAGE CLIENT** :
+De: ${message.from}
+Sujet: ${message.subject || '(sans objet)'}
+${message.body}
+
+---
+**ANALYSE** : ${analysis.intent} (confiance ${(analysis.confidence * 100).toFixed(0)}%)
+${analysis.details?.date_souhaitee ? `Date souhaitée: ${analysis.details.date_souhaitee}` : ''}
+${analysis.details?.prestation_souhaitee ? `Prestation: ${analysis.details.prestation_souhaitee}` : ''}
+
+Génère une réponse professionnelle (TEXTE SEUL, PAS DE JSON).`;
+
+    return prompt;
+  }
 }
 
 module.exports = new AIService();
