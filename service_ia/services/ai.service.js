@@ -50,18 +50,28 @@ class AIService {
     const userPrompt = this._buildCombinedUserPrompt(message, conversationHistory);
 
     try {
+      // ✅ Construction de la requête avec response_format conditionnel
+      const requestBody = {
+        model: settings.aiModel || 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 800
+      };
+
+      // ✅ Ajouter response_format seulement pour les modèles compatibles
+      const compatibleModels = ['gpt-4o', 'gpt-4-turbo', 'gpt-4-turbo-preview', 'gpt-3.5-turbo-1106', 'gpt-4-1106-preview'];
+      const modelName = settings.aiModel || 'gpt-4o-mini';
+      
+      if (compatibleModels.some(m => modelName.includes(m))) {
+        requestBody.response_format = { type: "json_object" };
+      }
+
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
-        {
-          model: settings.aiModel || 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.5, // Équilibre entre créativité et précision
-          max_tokens: 800, // Assez pour analyse + réponse
-          response_format: { type: "json_object" } // ✅ FORCER JSON
-        },
+        requestBody,
         {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -76,9 +86,20 @@ class AIService {
       // Parser la réponse JSON combinée
       let result;
       try {
-        result = JSON.parse(content);
+        // ✅ Nettoyer la réponse avant parsing (enlever markdown si présent)
+        let cleanContent = content.trim();
+        
+        // Retirer les balises markdown ```json et ```
+        if (cleanContent.startsWith('```json')) {
+          cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/```\s*$/, '');
+        } else if (cleanContent.startsWith('```')) {
+          cleanContent = cleanContent.replace(/^```\s*/, '').replace(/```\s*$/, '');
+        }
+        
+        result = JSON.parse(cleanContent);
       } catch (parseError) {
         console.error(`[AI:${user._id}] ❌ Erreur parsing JSON:`, parseError.message);
+        console.error('Contenu brut:', content.substring(0, 500));
         return {
           analysis: {
             is_relevant: false,
@@ -158,7 +179,7 @@ ${settings.instructions || 'Sois professionnel et courtois.'}
    - Termine par formule de politesse
    - N'invente JAMAIS d'infos non présentes
 
-**RÉPONDS UNIQUEMENT EN JSON VALIDE** :
+**FORMAT DE RÉPONSE STRICTEMENT JSON (aucun texte avant/après)** :
 {
   "is_relevant": true/false,
   "confidence": 0.0 à 1.0,
@@ -169,7 +190,9 @@ ${settings.instructions || 'Sois professionnel et courtois.'}
     "prestation_souhaitee": "si mentionnée"
   },
   "response": "Ta réponse si is_relevant=true, sinon null"
-}`;
+}
+
+IMPORTANT : Réponds UNIQUEMENT avec le JSON, rien d'autre.`;
   }
 
   /**
@@ -285,8 +308,8 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
             { role: 'user', content: userPrompt }
           ],
           temperature: 0.3,
-          max_tokens: 200,
-          response_format: { type: "json_object" }
+          max_tokens: 200
+          // ✅ Pas de response_format avec gpt-4o-mini
         },
         {
           headers: {
