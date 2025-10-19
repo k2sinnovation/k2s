@@ -8,22 +8,22 @@ class AIService {
   }
 
   /**
-   * 🎯 MÉTHODE PRINCIPALE SIMPLIFIÉE
-   * Analyse PUIS génère (si pertinent)
+   * 🎯 Analyse + génération avec logs détaillés
    */
   async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
     const userId = user._id.toString();
-
-    console.log(`[AI:${userId}] 🔍 Étape 1/2 : Analyse du message...`);
+    console.log(`\n[AI:${userId}] 🚀 Traitement message ID: ${message.id} - Sujet: "${message.subject}"`);
 
     // 1️⃣ ANALYSE
     const analysisResult = await this.analyzeMessage(message, user, conversationHistory, driveData);
 
     console.log(`[AI:${userId}] ✅ Analyse: ${analysisResult.intent} - Pertinent: ${analysisResult.is_relevant} (${(analysisResult.confidence * 100).toFixed(0)}%)`);
-    
-    // 2️⃣ Si non pertinent, on s'arrête là
+    console.log(`[AI:${userId}] 🔢 Tokens utilisés pour analyse: ${analysisResult.tokensUsed || 0}`);
+    console.log(`[AI:${userId}] 🔄 Requêtes totales après analyse: ${this.totalRequests}, Tokens totaux: ${this.totalTokens}`);
+
+    // Si message non pertinent, on s'arrête
     if (!analysisResult.is_relevant) {
-      console.log(`[AI:${userId}] ⏭️ Message non pertinent, pas de réponse`);
+      console.log(`[AI:${userId}] ⏭️ Message non pertinent, pas de génération`);
       return {
         analysis: analysisResult,
         response: null,
@@ -32,11 +32,12 @@ class AIService {
       };
     }
 
-    // 3️⃣ GÉNÉRATION DE RÉPONSE (TEXTE PUR)
-    console.log(`[AI:${userId}] 💬 Étape 2/2 : Génération de la réponse...`);
+    // 2️⃣ GÉNÉRATION DE RÉPONSE
     const response = await this.generateResponse(message, analysisResult, user, conversationHistory, driveData);
 
     console.log(`[AI:${userId}] ✅ Réponse générée (${response.length} chars)`);
+    console.log(`[AI:${userId}] 🔢 Tokens utilisés pour génération: ${analysisResult.genTokensUsed || 0}`);
+    console.log(`[AI:${userId}] 🔄 Requêtes totales après génération: ${this.totalRequests}, Tokens totaux: ${this.totalTokens}`);
 
     return {
       analysis: analysisResult,
@@ -47,7 +48,7 @@ class AIService {
   }
 
   /**
-   * 🔍 ANALYSE - Retourne JSON simple
+   * 🔍 Analyse
    */
   async analyzeMessage(message, user, conversationHistory = [], driveData = null) {
     const apiKey = process.env.K2S_IQ;
@@ -75,19 +76,20 @@ class AIService {
           max_tokens: 300
         },
         {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           timeout: 30000
         }
       );
 
       const content = response.data.choices[0].message.content.trim();
       const usage = response.data.usage || {};
-      this.totalTokens += (usage.total_tokens || 0);
+      const tokensUsed = usage.total_tokens || 0;
+      this.totalTokens += tokensUsed;
 
-      return this._parseAnalysisJSON(content, userId);
+      const analysis = this._parseAnalysisJSON(content, userId);
+      analysis.tokensUsed = tokensUsed; // token utilisé pour cette analyse
+
+      return analysis;
 
     } catch (error) {
       console.error(`[AI:${userId}] ❌ Erreur analyse:`, error.message);
@@ -96,13 +98,14 @@ class AIService {
         confidence: 0,
         intent: 'error',
         reason: `Erreur IA: ${error.message}`,
-        details: {}
+        details: {},
+        tokensUsed: 0
       };
     }
   }
 
   /**
-   * 💬 GÉNÉRATION - Retourne TEXTE pur (pas de JSON)
+   * 💬 Génération
    */
   async generateResponse(message, analysis, user, conversationHistory = [], driveData = null) {
     const apiKey = process.env.K2S_IQ;
@@ -130,20 +133,20 @@ class AIService {
           max_tokens: user.aiSettings.maxTokens || 500
         },
         {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           timeout: 30000
         }
       );
 
       const usage = response.data.usage || {};
-      this.totalTokens += (usage.total_tokens || 0);
+      const genTokensUsed = usage.total_tokens || 0;
+      this.totalTokens += genTokensUsed;
+      analysis.genTokensUsed = genTokensUsed; // token utilisé pour cette génération
 
       return response.data.choices[0].message.content.trim();
     } catch (error) {
       console.error(`[AI:${userId}] ❌ Erreur génération:`, error.message);
+      analysis.genTokensUsed = 0;
       return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\n${user.aiSettings.salonName || user.businessName}`;
     }
   }
@@ -171,8 +174,7 @@ class AIService {
     const accessToken = user.emailConfig?.accessToken;
     if (!accessToken) return contextBuilder._buildMinimalContext();
     try {
-      const ctx = await contextBuilder.buildContextFromDrive(accessToken, user._id.toString(), { includeAppointments });
-      return ctx;
+      return await contextBuilder.buildContextFromDrive(accessToken, user._id.toString(), { includeAppointments });
     } catch (err) {
       console.warn(`[AI:${user._id}] ⚠️ Drive non disponible:`, err.message);
       return contextBuilder._buildMinimalContext();
@@ -184,8 +186,7 @@ class AIService {
     let context = '**INFORMATIONS ENTREPRISE** :\n';
     if (driveData.businessInfo && !driveData.businessInfo._empty) {
       const biz = driveData.businessInfo;
-      context += `- Nom: ${biz.name || 'N/A'}\n`;
-      context += `- Description: ${biz.description || 'N/A'}\n`;
+      context += `- Nom: ${biz.name || 'N/A'}\n- Description: ${biz.description || 'N/A'}\n`;
       if (biz.services?.length) context += `- Services: ${biz.services.join(', ')}\n`;
       if (biz.prices) context += `- Tarifs: ${JSON.stringify(biz.prices)}\n`;
       if (biz.hours) context += `- Horaires: ${JSON.stringify(biz.hours)}\n`;
@@ -277,7 +278,6 @@ ${settings.instructions || 'Sois professionnel et courtois.'}
       });
       prompt += '\n';
     }
-
     prompt += `**MESSAGE CLIENT** :
 De: ${message.from}
 Sujet: ${message.subject || '(sans objet)'}
@@ -289,7 +289,6 @@ ${analysis.details?.date_souhaitee ? `Date souhaitée: ${analysis.details.date_s
 ${analysis.details?.prestation_souhaitee ? `Prestation: ${analysis.details.prestation_souhaitee}` : ''}
 
 Génère une réponse professionnelle (TEXTE SEUL, PAS DE JSON).`;
-
     return prompt;
   }
 }
