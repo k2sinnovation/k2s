@@ -13,7 +13,7 @@ class AIService {
    */
   async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
     const settings = user.aiSettings;
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.K2S_IQ;
     
     if (!apiKey) {
       throw new Error('Clé API OpenAI manquante');
@@ -52,7 +52,7 @@ class AIService {
     try {
       // ✅ Construction de la requête avec response_format conditionnel
       const requestBody = {
-        model: settings.aiModel || 'gpt-4o-mini',
+        model: settings.aiModel || 'mistral-small-latest',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -61,9 +61,9 @@ class AIService {
         max_tokens: 800
       };
 
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        requestBody,
+ const response = await axios.post(
+  'https://api.mistral.ai/v1/chat/completions',
+  requestBody,
         {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
@@ -263,7 +263,7 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
     const apiKey = process.env.OPENAI_API_KEY;
     
     if (!apiKey) {
-      throw new Error('Clé API OpenAI manquante');
+      throw new Error('Clé API Mistral manquante (K2S_IQ)');
     }
 
     console.log(`[AI:${user._id}] 🤖 Analyse message de "${message.from}"...`);
