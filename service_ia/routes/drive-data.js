@@ -3,21 +3,8 @@ const router = express.Router();
 const authenticateToken = require('../middleware/authenticate');
 const driveService = require('../services/google-drive.service');
 const { body, validationResult } = require('express-validator');
+const Session = require('../models/Session'); // ✅ NOUVEAU
 
-/**
- * Routes de gestion des données Drive
- * 
- * Bonnes pratiques:
- * - Validation des entrées avec express-validator
- * - Gestion d'erreurs centralisée
- * - Rate limiting intégré
- * - Logs structurés avec userId
- * - Réponses HTTP standardisées
- */
-
-/**
- * Middleware de validation des erreurs
- */
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -31,13 +18,9 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-/**
- * Middleware de gestion d'erreurs globale pour les routes Drive
- */
 const handleDriveError = (error, req, res) => {
   console.error(`[DriveAPI:${req.userId}] ❌ Erreur:`, error.message);
   
-  // Erreurs spécifiques Google Drive
   if (error.message.includes('invalid_grant')) {
     return res.status(401).json({
       success: false,
@@ -56,7 +39,6 @@ const handleDriveError = (error, req, res) => {
     });
   }
 
-  // Erreur générique
   res.status(500).json({
     success: false,
     error: 'Erreur serveur',
@@ -66,16 +48,11 @@ const handleDriveError = (error, req, res) => {
 };
 
 // ===== VÉRIFICATION STATUT DRIVE =====
-
-/**
- * GET /api/drive/check
- * Vérifier si les fichiers Drive existent pour l'utilisateur
- */
 router.get('/drive/check', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   
   try {
-    const { emailAccessToken, userId } = req;
+    const { emailAccessToken, emailRefreshToken, userId } = req; // ✅ AJOUT emailRefreshToken
 
     if (!emailAccessToken) {
       console.warn(`[DriveAPI:${userId}] ⚠️ Token Gmail manquant`);
@@ -87,7 +64,11 @@ router.get('/drive/check', authenticateToken, async (req, res) => {
       });
     }
 
-    const status = await driveService.checkDriveFiles(emailAccessToken, userId.toString());
+    const status = await driveService.checkDriveFiles(
+      emailAccessToken, 
+      userId.toString(), 
+      emailRefreshToken // ✅ AJOUT
+    );
     
     const duration = Date.now() - startTime;
     console.log(`[DriveAPI:${userId}] ✅ Check réussi en ${duration}ms`);
@@ -104,16 +85,11 @@ router.get('/drive/check', authenticateToken, async (req, res) => {
 });
 
 // ===== BUSINESS INFO =====
-
-/**
- * GET /api/drive/business
- * Charger les informations business depuis Drive
- */
 router.get('/drive/business', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   
   try {
-    const { emailAccessToken, userId } = req;
+    const { emailAccessToken, emailRefreshToken, userId } = req; // ✅ AJOUT
 
     if (!emailAccessToken) {
       return res.status(400).json({ 
@@ -123,7 +99,11 @@ router.get('/drive/business', authenticateToken, async (req, res) => {
       });
     }
 
-    const info = await driveService.loadBusinessInfo(emailAccessToken, userId.toString());
+    const info = await driveService.loadBusinessInfo(
+      emailAccessToken, 
+      userId.toString(), 
+      emailRefreshToken // ✅ AJOUT
+    );
     
     const duration = Date.now() - startTime;
     console.log(`[DriveAPI:${userId}] ✅ Business info chargée en ${duration}ms`);
@@ -141,10 +121,6 @@ router.get('/drive/business', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * POST /api/drive/business
- * Sauvegarder les informations business sur Drive
- */
 router.post(
   '/drive/business',
   authenticateToken,
@@ -159,7 +135,7 @@ router.post(
     const startTime = Date.now();
     
     try {
-      const { emailAccessToken, userId } = req;
+      const { emailAccessToken, emailRefreshToken, userId, session } = req; // ✅ AJOUT emailRefreshToken + session
       const { info } = req.body;
 
       if (!emailAccessToken) {
@@ -170,7 +146,6 @@ router.post(
         });
       }
 
-      // Validation supplémentaire des données
       if (info.prestations) {
         const invalidPrestations = info.prestations.filter(p => !p.name);
         if (invalidPrestations.length > 0) {
@@ -182,9 +157,30 @@ router.post(
         }
       }
 
-      const fileId = await driveService.saveBusinessInfo(emailAccessToken, info, userId.toString());
+      const result = await driveService.saveBusinessInfo(
+        emailAccessToken, 
+        info, 
+        userId.toString(), 
+        emailRefreshToken // ✅ AJOUT
+      );
+      
+      // ✅ NOUVEAU : Si token rafraîchi, mettre à jour session
+      if (result && result.newAccessToken) {
+        console.log(`[DriveAPI:${userId}] 🔄 Mise à jour token dans session...`);
+        
+        await Session.updateOne(
+          { _id: session._id },
+          { 
+            emailAccessToken: result.newAccessToken,
+            lastUsedAt: new Date()
+          }
+        );
+        
+        console.log(`[DriveAPI:${userId}] ✅ Token mis à jour`);
+      }
       
       const duration = Date.now() - startTime;
+      const fileId = result.fileId || result;
       console.log(`[DriveAPI:${userId}] ✅ Business info sauvegardée en ${duration}ms (fileId: ${fileId})`);
 
       res.json({ 
@@ -202,16 +198,11 @@ router.post(
 );
 
 // ===== PLANNING INFO =====
-
-/**
- * GET /api/drive/planning
- * Charger les informations planning depuis Drive
- */
 router.get('/drive/planning', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   
   try {
-    const { emailAccessToken, userId } = req;
+    const { emailAccessToken, emailRefreshToken, userId } = req; // ✅ AJOUT
 
     if (!emailAccessToken) {
       return res.status(400).json({ 
@@ -221,7 +212,11 @@ router.get('/drive/planning', authenticateToken, async (req, res) => {
       });
     }
 
-    const info = await driveService.loadPlanningInfo(emailAccessToken, userId.toString());
+    const info = await driveService.loadPlanningInfo(
+      emailAccessToken, 
+      userId.toString(), 
+      emailRefreshToken // ✅ AJOUT
+    );
     
     const duration = Date.now() - startTime;
     console.log(`[DriveAPI:${userId}] ✅ Planning info chargée en ${duration}ms`);
@@ -239,10 +234,6 @@ router.get('/drive/planning', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * POST /api/drive/planning
- * Sauvegarder les informations planning sur Drive
- */
 router.post(
   '/drive/planning',
   authenticateToken,
@@ -257,7 +248,7 @@ router.post(
     const startTime = Date.now();
     
     try {
-      const { emailAccessToken, userId } = req;
+      const { emailAccessToken, emailRefreshToken, userId, session } = req; // ✅ AJOUT
       const { info } = req.body;
 
       if (!emailAccessToken) {
@@ -268,7 +259,6 @@ router.post(
         });
       }
 
-      // Validation des rendez-vous
       if (info.appointments) {
         const invalidAppointments = info.appointments.filter(apt => !apt.date || !apt.time);
         if (invalidAppointments.length > 0) {
@@ -280,9 +270,27 @@ router.post(
         }
       }
 
-      const fileId = await driveService.savePlanningInfo(emailAccessToken, info, userId.toString());
+      const result = await driveService.savePlanningInfo(
+        emailAccessToken, 
+        info, 
+        userId.toString(), 
+        emailRefreshToken // ✅ AJOUT
+      );
+      
+      // ✅ NOUVEAU : Mise à jour token si rafraîchi
+      if (result && result.newAccessToken) {
+        await Session.updateOne(
+          { _id: session._id },
+          { 
+            emailAccessToken: result.newAccessToken,
+            lastUsedAt: new Date()
+          }
+        );
+        console.log(`[DriveAPI:${userId}] ✅ Token mis à jour`);
+      }
       
       const duration = Date.now() - startTime;
+      const fileId = result.fileId || result;
       console.log(`[DriveAPI:${userId}] ✅ Planning info sauvegardée en ${duration}ms (fileId: ${fileId})`);
 
       res.json({ 
@@ -299,17 +307,12 @@ router.post(
   }
 );
 
-// ===== CHARGEMENT COMPLET (OPTIMISÉ) =====
-
-/**
- * GET /api/drive/all
- * Charger business + planning en une seule requête (optimisation)
- */
+// ===== CHARGEMENT COMPLET =====
 router.get('/drive/all', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   
   try {
-    const { emailAccessToken, userId } = req;
+    const { emailAccessToken, emailRefreshToken, userId } = req; // ✅ AJOUT
 
     if (!emailAccessToken) {
       return res.status(400).json({ 
@@ -319,7 +322,11 @@ router.get('/drive/all', authenticateToken, async (req, res) => {
       });
     }
 
-    const data = await driveService.loadAllUserData(emailAccessToken, userId.toString());
+    const data = await driveService.loadAllUserData(
+      emailAccessToken, 
+      userId.toString(), 
+      emailRefreshToken // ✅ AJOUT
+    );
     
     const duration = Date.now() - startTime;
     console.log(`[DriveAPI:${userId}] ✅ Toutes les données chargées en ${duration}ms`);
@@ -335,21 +342,10 @@ router.get('/drive/all', authenticateToken, async (req, res) => {
   }
 });
 
-// ===== STATISTIQUES CACHE (DEBUG) =====
-
-/**
- * GET /api/drive/cache/stats
- * Obtenir les statistiques du cache (admin uniquement)
- */
+// ===== DEBUG =====
 router.get('/drive/cache/stats', authenticateToken, async (req, res) => {
   try {
-    // TODO: Ajouter vérification role admin
-    // if (req.user.role !== 'admin') {
-    //   return res.status(403).json({ success: false, error: 'Accès refusé' });
-    // }
-
     const stats = driveService.getCacheStats();
-    
     console.log(`[DriveAPI:${req.userId}] 📊 Stats cache consultées`);
 
     res.json({
@@ -366,19 +362,10 @@ router.get('/drive/cache/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// ===== INVALIDATION CACHE (FORCE REFRESH) =====
-
-/**
- * POST /api/drive/cache/invalidate
- * Forcer le rafraîchissement du cache pour l'utilisateur
- */
 router.post('/drive/cache/invalidate', authenticateToken, async (req, res) => {
   try {
     const { userId } = req;
-    
-    // Invalider le cache via la méthode privée (à exposer si besoin)
     driveService._invalidateUserCache(userId.toString());
-    
     console.log(`[DriveAPI:${userId}] 🗑️ Cache invalidé manuellement`);
 
     res.json({
@@ -391,12 +378,6 @@ router.post('/drive/cache/invalidate', authenticateToken, async (req, res) => {
   }
 });
 
-// ===== DEBUG : LISTER FICHIERS DRIVE =====
-
-/**
- * GET /api/drive/debug/list
- * Liste TOUS les fichiers dans appDataFolder (pour debug)
- */
 router.get('/drive/debug/list', authenticateToken, async (req, res) => {
   const startTime = Date.now();
   
@@ -412,18 +393,11 @@ router.get('/drive/debug/list', authenticateToken, async (req, res) => {
       });
     }
 
-    // ✅ Utiliser le service Drive existant pour lister les fichiers
     const google = require('googleapis').google;
-    
-    // Créer client OAuth avec le token
     const oauth2Client = new google.auth.OAuth2();
-    oauth2Client.setCredentials({
-      access_token: emailAccessToken
-    });
+    oauth2Client.setCredentials({ access_token: emailAccessToken });
 
     const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
-    // ✅ Lister TOUS les fichiers dans appDataFolder
     const response = await drive.files.list({
       spaces: 'appDataFolder',
       fields: 'files(id, name, size, modifiedTime, mimeType)',
@@ -432,11 +406,9 @@ router.get('/drive/debug/list', authenticateToken, async (req, res) => {
     });
 
     const files = response.data.files || [];
-
     const duration = Date.now() - startTime;
     console.log(`📂 [DriveDebug:${userId}] ${files.length} fichier(s) trouvé(s) en ${duration}ms`);
     
-    // ✅ Logger les détails dans la console
     if (files.length > 0) {
       console.log(`📂 [DriveDebug:${userId}] Fichiers trouvés:`);
       files.forEach((file, index) => {
@@ -468,13 +440,9 @@ router.get('/drive/debug/list', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * GET /api/drive/debug/business
- * Afficher le contenu de business.json dans la console (debug)
- */
 router.get('/drive/debug/business', authenticateToken, async (req, res) => {
   try {
-    const { emailAccessToken, userId } = req;
+    const { emailAccessToken, emailRefreshToken, userId } = req; // ✅ AJOUT
 
     if (!emailAccessToken) {
       return res.status(400).json({ 
@@ -484,10 +452,12 @@ router.get('/drive/debug/business', authenticateToken, async (req, res) => {
       });
     }
 
-    // Charger business info
-    const info = await driveService.loadBusinessInfo(emailAccessToken, userId.toString());
+    const info = await driveService.loadBusinessInfo(
+      emailAccessToken, 
+      userId.toString(), 
+      emailRefreshToken // ✅ AJOUT
+    );
     
-    // ✅ Logger le JSON complet dans la console
     console.log('📄 [DriveDebug] business.json:');
     console.log(JSON.stringify(info, null, 2));
 
@@ -508,13 +478,9 @@ router.get('/drive/debug/business', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * GET /api/drive/debug/planning
- * Afficher le contenu de planning.json dans la console (debug)
- */
 router.get('/drive/debug/planning', authenticateToken, async (req, res) => {
   try {
-    const { emailAccessToken, userId } = req;
+    const { emailAccessToken, emailRefreshToken, userId } = req; // ✅ AJOUT
 
     if (!emailAccessToken) {
       return res.status(400).json({ 
@@ -524,10 +490,12 @@ router.get('/drive/debug/planning', authenticateToken, async (req, res) => {
       });
     }
 
-    // Charger planning info
-    const info = await driveService.loadPlanningInfo(emailAccessToken, userId.toString());
+    const info = await driveService.loadPlanningInfo(
+      emailAccessToken, 
+      userId.toString(), 
+      emailRefreshToken // ✅ AJOUT
+    );
     
-    // ✅ Logger le JSON complet dans la console
     console.log('📅 [DriveDebug] planning.json:');
     console.log(JSON.stringify(info, null, 2));
 
