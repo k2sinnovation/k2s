@@ -1,5 +1,5 @@
 // service_ia/services/ai.service.js
-// ✅ VERSION SIMPLIFIÉE - Texte naturel sans markdown
+// ✅ VERSION SIMPLIFIÉE - Texte naturel sans markdown + Compteur tokens
 
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
@@ -23,16 +23,35 @@ class AIService {
     // 2️⃣ Si non pertinent, on s'arrête
     if (!analysis.is_relevant) {
       console.log(`[AI:${userId}] ⏭️ Message non pertinent, pas de réponse`);
-      return { analysis, response: null };
+      return { 
+        analysis, 
+        response: null,
+        totalUsage: analysis.usage // ✅ Stats même si non pertinent
+      };
     }
     
     // 3️⃣ GÉNÉRATION
     console.log(`[AI:${userId}] 💬 Étape 2/2 : Génération de la réponse...`);
-    const response = await this.generateResponse(message, analysis, user, conversationHistory, driveData);
+    const result = await this.generateResponse(message, analysis, user, conversationHistory, driveData);
     
-    console.log(`[AI:${userId}] ✅ Réponse générée (${response.length} chars)`);
+    console.log(`[AI:${userId}] ✅ Réponse générée (${result.response.length} chars)`);
     
-    return { analysis, response };
+    // 📊 CALCUL DES TOTAUX
+    const totalUsage = {
+      prompt_tokens: (analysis.usage?.prompt_tokens || 0) + (result.usage?.prompt_tokens || 0),
+      completion_tokens: (analysis.usage?.completion_tokens || 0) + (result.usage?.completion_tokens || 0),
+      total_tokens: (analysis.usage?.total_tokens || 0) + (result.usage?.total_tokens || 0)
+    };
+    
+    console.log(`[AI:${userId}] 📊 TOTAL TOKENS - Prompt: ${totalUsage.prompt_tokens} | Completion: ${totalUsage.completion_tokens} | Total: ${totalUsage.total_tokens}`);
+    
+    return { 
+      analysis, 
+      response: result.response,
+      totalUsage,
+      analysisUsage: analysis.usage,
+      generationUsage: result.usage
+    };
   }
 
   /**
@@ -77,6 +96,11 @@ class AIService {
       );
 
       const content = response.data.choices[0].message.content.trim();
+      const usage = response.data.usage || {};
+      
+      // 📊 Affichage des tokens utilisés
+      console.log(`[AI:${userId}] 📊 Tokens Analyse - Prompt: ${usage.prompt_tokens || 0} | Completion: ${usage.completion_tokens || 0} | Total: ${usage.total_tokens || 0}`);
+      
       let analysis = this._parseAnalysisJSON(content, userId);
       
       return {
@@ -84,7 +108,8 @@ class AIService {
         confidence: analysis.confidence ?? 0.5,
         intent: analysis.intent ?? 'unknown',
         reason: analysis.reason ?? 'Non spécifié',
-        details: analysis.details ?? {}
+        details: analysis.details ?? {},
+        usage: usage // ✅ Ajout des stats
       };
 
     } catch (error) {
@@ -94,7 +119,8 @@ class AIService {
         confidence: 0.0,
         intent: 'error',
         reason: `Erreur IA: ${error.message}`,
-        details: {}
+        details: {},
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
       };
     }
   }
@@ -140,7 +166,16 @@ class AIService {
         }
       );
 
-      return response.data.choices[0].message.content.trim();
+      const generatedResponse = response.data.choices[0].message.content.trim();
+      const usage = response.data.usage || {};
+      
+      // 📊 Affichage des tokens utilisés
+      console.log(`[AI:${userId}] 📊 Tokens Génération - Prompt: ${usage.prompt_tokens || 0} | Completion: ${usage.completion_tokens || 0} | Total: ${usage.total_tokens || 0}`);
+      
+      return {
+        response: generatedResponse,
+        usage: usage // ✅ Ajout des stats
+      };
 
     } catch (error) {
       console.error(`[AI:${userId}] ❌ Erreur génération:`, error.message);
@@ -149,7 +184,10 @@ class AIService {
         console.warn(`[AI:${userId}] ⚠️ Rate limit Mistral atteint`);
       }
       
-      return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\nL'équipe`;
+      return {
+        response: `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\nL'équipe`,
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+      };
     }
   }
 
