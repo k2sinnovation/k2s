@@ -125,20 +125,58 @@ class MailPollingService {
     }
   }
 
-  async fetchNewEmails(emailConfig) {
+  async fetchNewEmails(emailConfig, user) {
     const BASE_URL = 'https://k2s.onrender.com';
 
     try {
       let response;
+      let accessToken = emailConfig.accessToken;
 
       if (emailConfig.provider === 'gmail') {
-        response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
-          headers: { 'Authorization': `Bearer ${emailConfig.accessToken}` },
-          params: {
-            q: 'is:unread in:inbox'
-          },
-          timeout: 15000
-        });
+        try {
+          response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
+            headers: { 'Authorization': `Bearer ${accessToken}` },
+            params: {
+              q: 'is:unread in:inbox'
+            },
+            timeout: 15000
+          });
+        } catch (error) {
+          // ✅ Si erreur 401, tenter de rafraîchir le token
+          if (error.response?.status === 401 && emailConfig.refreshToken) {
+            console.log(`  🔄 [${user.email}] Token expiré, rafraîchissement...`);
+            
+            try {
+              const refreshResponse = await axios.post(
+                `${BASE_URL}/oauth/google/refresh`,
+                { refresh_token: emailConfig.refreshToken },
+                { timeout: 10000 }
+              );
+
+              accessToken = refreshResponse.data.access_token;
+              
+              // ✅ IMPORTANT : Mettre à jour le token en base
+              user.emailConfig.accessToken = accessToken;
+              await user.save();
+              
+              console.log(`  ✅ [${user.email}] Token rafraîchi avec succès`);
+
+              // Réessayer la requête avec le nouveau token
+              response = await axios.get(`${BASE_URL}/api/mail/gmail/inbox`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                params: {
+                  q: 'is:unread in:inbox'
+                },
+                timeout: 15000
+              });
+            } catch (refreshError) {
+              console.error(`  ❌ [${user.email}] Impossible de rafraîchir le token:`, refreshError.message);
+              return [];
+            }
+          } else {
+            throw error;
+          }
+        }
         
         const messages = response?.data?.messages || [];
         
@@ -463,6 +501,12 @@ class MailPollingService {
         processingRecord.status = 'sent';
         processingRecord.sentAt = new Date();
         await processingRecord.save();
+
+        // ✅ AJOUTER AU CACHE pour éviter doublons
+        if (message.threadId) {
+          const threadKey = `${user._id}-${message.threadId}`;
+          this.processedThreads.set(threadKey, Date.now());
+        }
 
         await this.markAsRead(message.id, user.emailConfig);
 
