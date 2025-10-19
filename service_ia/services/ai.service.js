@@ -1,5 +1,5 @@
 // service_ia/services/ai.service.js
-// ✅ VERSION OPTIMISÉE MISTRAL - 1 seul appel au lieu de 2
+// ✅ VERSION CORRIGÉE - Modèle Mistral correct
 
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
@@ -7,9 +7,8 @@ const contextBuilder = require('./context-builder.service');
 class AIService {
   
   /**
-   * 🎯 NOUVELLE MÉTHODE OPTIMISÉE
+   * 🎯 MÉTHODE OPTIMISÉE
    * Analyse + Génération en 1 SEUL appel Mistral
-   * Économie : 50% de tokens et requêtes
    */
   async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
     const settings = user.aiSettings;
@@ -21,12 +20,11 @@ class AIService {
 
     console.log(`[AI:${user._id}] 🤖 Analyse + Génération en 1 appel...`);
 
-    // ✅ Charger contexte Drive UNE SEULE FOIS (ou utiliser celui passé en param)
+    // ✅ Charger contexte Drive
     const accessToken = user.emailConfig?.accessToken;
     let driveContext = '';
     
     if (driveData) {
-      // Utiliser driveData déjà chargé (0 requête supplémentaire)
       driveContext = this._buildContextFromDriveData(driveData);
       console.log(`[AI:${user._id}] ✅ Contexte Drive depuis cache (${driveContext.length} chars)`);
     } else if (accessToken) {
@@ -50,9 +48,13 @@ class AIService {
     const userPrompt = this._buildCombinedUserPrompt(message, conversationHistory);
 
     try {
-      // ✅ Construction de la requête Mistral
+      // ✅ FIX: Utiliser le bon modèle Mistral depuis les settings OU par défaut
+      const mistralModel = this._getMistralModel(settings.aiModel);
+      
+      console.log(`[AI:${user._id}] 📡 Appel Mistral: ${mistralModel}`);
+
       const requestBody = {
-        model: settings.aiModel || 'mistral-small-latest',
+        model: mistralModel, // ✅ Modèle Mistral valide
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -75,13 +77,12 @@ class AIService {
 
       const content = response.data.choices[0].message.content;
 
-      // Parser la réponse JSON combinée
+      // Parser la réponse JSON
       let result;
       try {
-        // ✅ Nettoyer la réponse avant parsing (enlever markdown si présent)
         let cleanContent = content.trim();
         
-        // Retirer les balises markdown ```json et ```
+        // Retirer les balises markdown
         if (cleanContent.startsWith('```json')) {
           cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/```\s*$/, '');
         } else if (cleanContent.startsWith('```')) {
@@ -103,7 +104,7 @@ class AIService {
         };
       }
 
-      // ✅ Normaliser la réponse
+      // Normaliser la réponse
       const normalizedResult = {
         analysis: {
           is_relevant: result.is_relevant ?? result.analysis?.is_relevant ?? false,
@@ -142,7 +143,31 @@ class AIService {
   }
 
   /**
-   * 📝 Construire le prompt système COMBINÉ (analyse + génération)
+   * ✅ NOUVEAU : Mapper les modèles pour Mistral
+   */
+  _getMistralModel(userModel) {
+    // Mapping des anciens noms vers Mistral
+    const modelMapping = {
+      'gpt-4': 'mistral-large-latest',
+      'gpt-4o': 'mistral-large-latest',
+      'gpt-4o-mini': 'mistral-small-latest',
+      'gpt-3.5-turbo': 'mistral-small-latest',
+      'mistral-large-latest': 'mistral-large-latest',
+      'mistral-small-latest': 'mistral-small-latest',
+      'mistral-medium-latest': 'mistral-medium-latest'
+    };
+
+    // Si le modèle est déjà Mistral, le retourner tel quel
+    if (userModel && userModel.startsWith('mistral-')) {
+      return userModel;
+    }
+
+    // Sinon, mapper ou utiliser le défaut
+    return modelMapping[userModel] || 'mistral-small-latest';
+  }
+
+  /**
+   * 📝 Construire le prompt système COMBINÉ
    */
   _buildCombinedSystemPrompt(driveContext, settings) {
     const tone = settings.tone || 'professionnel';
@@ -162,7 +187,7 @@ ${settings.instructions || 'Sois professionnel et courtois.'}
 
 1️⃣ **ANALYSE** : Détermine si le message est pertinent
    - ✅ Pertinent : RDV, questions prestations/tarifs/horaires, annulation/modification
-   - ❌ Non pertinent : spam, pub, newsletter, notification auto (TikTok, LinkedIn, etc.)
+   - ❌ Non pertinent : spam, pub, newsletter, notification auto (TikTok, LinkedIn, Patreon, etc.)
 
 2️⃣ **RÉPONSE** : Si pertinent, génère une réponse professionnelle
    - Utilise les infos du contexte Drive
@@ -217,7 +242,7 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
   }
 
   /**
-   * 🔨 Construire contexte depuis driveData (évite rechargement)
+   * 🔨 Construire contexte depuis driveData
    */
   _buildContextFromDriveData(driveData) {
     if (!driveData) return '';
@@ -252,12 +277,8 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
 
   // ========================================
   // 🔄 MÉTHODES ANCIENNES (compatibilité)
-  // Garder pour ne pas casser le code existant
   // ========================================
 
-  /**
-   * 🔍 Analyser un message (ANCIENNE VERSION - conservée pour compatibilité)
-   */
   async analyzeMessage(message, user, conversationHistory = []) {
     const settings = user.aiSettings;
     const apiKey = process.env.K2S_IQ;
@@ -291,8 +312,10 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
     const userPrompt = this._buildAnalysisUserPrompt(message, conversationHistory);
 
     try {
+      const mistralModel = this._getMistralModel(settings.aiModel);
+      
       const requestBody = {
-        model: 'mistral-small-latest',
+        model: mistralModel,
         messages: [
           { role: 'system', content: analysisPrompt },
           { role: 'user', content: userPrompt }
@@ -339,9 +362,6 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
     }
   }
 
-  /**
-   * 🤖 Générer une réponse (ANCIENNE VERSION - conservée pour compatibilité)
-   */
   async generateResponse(message, analysis, user, conversationHistory = []) {
     const settings = user.aiSettings;
     const apiKey = process.env.K2S_IQ;
@@ -378,10 +398,12 @@ Réponds en JSON avec les champs: is_relevant, confidence, intent, reason, detai
     const userPrompt = this._buildResponseUserPrompt(message, analysis, conversationHistory);
 
     try {
+      const mistralModel = this._getMistralModel(settings.aiModel);
+      
       const response = await axios.post(
         'https://api.mistral.ai/v1/chat/completions',
         {
-          model: settings.aiModel || 'mistral-small-latest',
+          model: mistralModel,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
@@ -420,7 +442,7 @@ Tu es un expert en analyse de messages clients pour un salon/commerce.
 
 **CRITÈRES DE PERTINENCE** :
 - ✅ Pertinent : demande de rendez-vous, question sur prestations, horaires, tarifs, annulation/modification RDV
-- ❌ Non pertinent : spam, publicité, newsletter externe, notification automatique (TikTok, LinkedIn, etc.)
+- ❌ Non pertinent : spam, publicité, newsletter externe, notification automatique (TikTok, LinkedIn, Patreon, etc.)
 
 **RÉPONDS UNIQUEMENT EN JSON VALIDE** avec cette structure exacte :
 {
