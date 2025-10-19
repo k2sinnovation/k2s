@@ -28,11 +28,43 @@ const userSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+  
+  // ✅ MODIFIÉ : Structure enrichie avec customQuotas
   subscription: {
-    type: String,
-    enum: ['free', 'premium', 'enterprise'],
-    default: 'free',
+    plan: {
+      type: String,
+      enum: ['free', 'basic', 'premium', 'enterprise'],
+      default: 'free'
+    },
+    isActive: {
+      type: Boolean,
+      default: true
+    },
+    startDate: {
+      type: Date,
+      default: Date.now
+    },
+    endDate: {
+      type: Date
+    },
+    
+    // ✅ NOUVEAU : Quotas personnalisés (optionnel)
+    customQuotas: {
+      dailyTokens: {
+        type: Number,
+        default: null  // null = utilise les valeurs par défaut du plan
+      },
+      monthlyCalls: {
+        type: Number,
+        default: null
+      },
+      maxEmailsPerDay: {
+        type: Number,
+        default: null
+      }
+    }
   },
+  
   isActive: {
     type: Boolean,
     default: true,
@@ -100,7 +132,6 @@ const userSchema = new mongoose.Schema({
 
   fcmToken: String,
 }, {
-  // ✅ OPTIONS DU SCHÉMA POUR DÉSACTIVER LE CHAMP 'id' VIRTUEL
   id: false,
   toJSON: { virtuals: false },
   toObject: { virtuals: false }
