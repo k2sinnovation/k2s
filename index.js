@@ -144,7 +144,7 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.5.0',
+    version: '2.5.1',
     endpoints: {
       auth: '/api/auth/*',
       user: '/api/user/*',
@@ -169,6 +169,7 @@ app.get('/', (req, res) => {
         appointments: '/api/user/appointments',
       },
       admin: {
+        migrateSubscriptions: '/api/admin/migrate-subscriptions',
         checkMigrations: '/api/admin/check-migrations',
         forceCheck: '/api/admin/force-check',
         pollingStatus: '/api/admin/polling-status',
@@ -216,9 +217,114 @@ app.post('/api/ask', async (req, res) => {
   }
 });
 
-// ===== ROUTES DE DEBUG AUTO-REPLY =====
+// ===== ROUTES D'ADMINISTRATION =====
 
-// ✅ NOUVEAU : Vérifier l'état de la migration des subscriptions
+// 🔧 MIGRATION : Convertir les anciens formats de subscription
+app.post('/api/admin/migrate-subscriptions', async (req, res) => {
+  try {
+    console.log('🔧 [Migration] Démarrage de la migration des subscriptions...');
+    
+    // Trouver tous les users à migrer
+    const usersToMigrate = await User.find({
+      $or: [
+        { subscription: { $type: 'string' } },
+        { subscription: { $exists: false } },
+        { 'subscription.plan': { $exists: false } }
+      ]
+    });
+
+    console.log(`🔍 [Migration] ${usersToMigrate.length} utilisateur(s) à migrer`);
+
+    if (usersToMigrate.length === 0) {
+      return res.json({
+        success: true,
+        message: '✅ Aucune migration nécessaire, tous les users sont au bon format',
+        migrated: 0,
+        errors: 0
+      });
+    }
+
+    const results = {
+      migrated: 0,
+      errors: 0,
+      details: []
+    };
+
+    for (const user of usersToMigrate) {
+      try {
+        const oldSubscription = user.subscription;
+        
+        // Déterminer le plan
+        let plan = 'free';
+        if (typeof oldSubscription === 'string') {
+          plan = oldSubscription;
+        } else if (oldSubscription?.plan) {
+          plan = oldSubscription.plan;
+        }
+
+        // Créer la nouvelle structure
+        user.subscription = {
+          plan: plan,
+          isActive: true,
+          startDate: user.createdAt || new Date(),
+          endDate: null,
+          customQuotas: {
+            dailyTokens: null,
+            monthlyCalls: null,
+            maxEmailsPerDay: null
+          }
+        };
+
+        await user.save();
+        results.migrated++;
+        
+        const oldValue = typeof oldSubscription === 'string' 
+          ? `"${oldSubscription}"` 
+          : oldSubscription 
+            ? JSON.stringify(oldSubscription) 
+            : 'undefined';
+        
+        console.log(`✅ [Migration] ${user.email}: ${oldValue} → { plan: "${plan}" }`);
+        
+        results.details.push({
+          email: user.email,
+          status: 'success',
+          old: oldValue,
+          new: plan
+        });
+
+      } catch (error) {
+        results.errors++;
+        console.error(`❌ [Migration] Erreur pour ${user.email}:`, error.message);
+        
+        results.details.push({
+          email: user.email,
+          status: 'error',
+          error: error.message
+        });
+      }
+    }
+
+    console.log(`✅ [Migration] Terminée: ${results.migrated} migrés, ${results.errors} erreurs`);
+
+    res.json({
+      success: true,
+      message: `Migration terminée: ${results.migrated} utilisateur(s) migré(s)`,
+      migrated: results.migrated,
+      errors: results.errors,
+      details: results.details
+    });
+
+  } catch (error) {
+    console.error('❌ [Migration] Erreur critique:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// ✅ Vérifier l'état de la migration des subscriptions
 app.get('/api/admin/check-migrations', async (req, res) => {
   try {
     const stringFormat = await User.countDocuments({ subscription: { $type: 'string' } });
@@ -241,7 +347,7 @@ app.get('/api/admin/check-migrations', async (req, res) => {
       },
       status: migrationComplete 
         ? '✅ Migration complète - Tous les users sont au bon format'
-        : '⚠️ Migration incomplète - Lance "node migrate-subscriptions.js"',
+        : '⚠️ Migration incomplète - Lance POST /api/admin/migrate-subscriptions',
       samples: samples.map(u => ({
         email: u.email,
         subscription: u.subscription,
@@ -377,6 +483,7 @@ mongoose.connect(process.env.MONGO_URI, {
         console.log('   • Drive chargé 1 fois pour tous les messages');
         console.log('   • Cache thread anti-doublon (1h)');
         console.log('   • ⚡ MODE TEST: Vérification toutes les 20 secondes');
+        console.log('💡 Migrer DB: POST /api/admin/migrate-subscriptions');
         console.log('💡 Vérifier migration: GET /api/admin/check-migrations');
         console.log('💡 Forcer check: POST /api/admin/force-check');
         console.log('💡 Voir statut: GET /api/admin/polling-status');
