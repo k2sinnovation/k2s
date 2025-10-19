@@ -186,8 +186,13 @@ class AIService {
     } catch (error) {
       console.error(`[AI:${userId}] ❌ Erreur génération:`, error.message);
       
+      // Gestion spéciale du rate limit (429)
+      if (error.response?.status === 429) {
+        console.warn(`[AI:${userId}] ⚠️ Rate limit Mistral atteint, utilisation du fallback`);
+      }
+      
       // Fallback générique
-      return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\n${settings.salonName || user.businessName}`;
+      return `Bonjour,\n\nMerci pour votre message. Nous avons bien reçu votre demande et nous vous répondrons dans les plus brefs délais.\n\nCordialement,\nL'équipe`;
     }
   }
 
@@ -248,6 +253,7 @@ class AIService {
    */
   async _loadDriveContext(user, includeAppointments = false) {
     const accessToken = user.emailConfig?.accessToken;
+    const refreshToken = user.emailConfig?.refreshToken; // ✅ AJOUT
     
     if (!accessToken) {
       return contextBuilder._buildMinimalContext();
@@ -257,7 +263,10 @@ class AIService {
       const context = await contextBuilder.buildContextFromDrive(
         accessToken,
         user._id.toString(),
-        { includeAppointments }
+        { 
+          includeAppointments,
+          refreshToken  // ✅ AJOUT
+        }
       );
       console.log(`[AI:${user._id}] ✅ Contexte Drive chargé (${context.length} chars)`);
       return context;
@@ -273,29 +282,123 @@ class AIService {
   _buildContextFromDriveData(driveData) {
     if (!driveData) return '';
     
-    let context = '**INFORMATIONS ENTREPRISE** :\n';
+    let context = '';
     
+    // ✅ CORRECTION : Accéder correctement à la structure
     if (driveData.businessInfo && !driveData.businessInfo._empty) {
-      const biz = driveData.businessInfo;
-      context += `- Nom: ${biz.name || 'N/A'}\n`;
-      context += `- Description: ${biz.description || 'N/A'}\n`;
-      if (biz.services?.length > 0) {
-        context += `- Services: ${biz.services.join(', ')}\n`;
+      const businessInfo = driveData.businessInfo;
+      const business = businessInfo.business || {};
+      
+      // En-tête
+      const businessName = business.name || 'cette entreprise';
+      context += `# CONTEXTE ENTREPRISE\n\n`;
+      context += `Tu es un assistant virtuel intelligent pour ${businessName}.\n`;
+      context += `Ton rôle est d'aider les clients à prendre rendez-vous et répondre à leurs questions.\n\n`;
+      
+      // Informations business
+      if (business.name || business.activity || business.description) {
+        context += `## INFORMATIONS ENTREPRISE\n`;
+        if (business.name) context += `- Nom: ${business.name}\n`;
+        if (business.activity) context += `- Activité: ${business.activity}\n`;
+        if (business.description) context += `- Description: ${business.description}\n`;
+        if (business.address) context += `- Adresse: ${business.address}\n`;
+        if (business.phone) context += `- Téléphone: ${business.phone}\n`;
+        context += '\n';
       }
-      if (biz.prices) {
-        context += `- Tarifs: ${JSON.stringify(biz.prices)}\n`;
+      
+      // Prestations
+      if (businessInfo.prestations && businessInfo.prestations.length > 0) {
+        context += `## PRESTATIONS DISPONIBLES\n`;
+        businessInfo.prestations.forEach((p, index) => {
+          let line = `${index + 1}. **${p.name}**`;
+          if (p.duration) line += ` - ${p.duration} minutes`;
+          if (p.price) line += ` - ${p.price}€`;
+          if (p.description) line += `\n   ${p.description}`;
+          context += line + '\n';
+        });
+        context += '\n';
       }
-      if (biz.hours) {
-        context += `- Horaires: ${JSON.stringify(biz.hours)}\n`;
+      
+      // Équipe
+      if (businessInfo.team && businessInfo.team.length > 0) {
+        context += `## ÉQUIPE\n`;
+        businessInfo.team.forEach((member, index) => {
+          let line = `${index + 1}. **${member.name}**`;
+          if (member.role) line += ` - ${member.role}`;
+          if (member.specialties) line += ` (${member.specialties})`;
+          context += line + '\n';
+        });
+        context += '\n';
+      }
+      
+      // Instructions IA personnalisées
+      if (businessInfo.aiInstructions) {
+        context += `## INSTRUCTIONS SPÉCIFIQUES\n\n${businessInfo.aiInstructions}\n\n`;
       }
     }
     
+    // Planning
     if (driveData.planningInfo && !driveData.planningInfo._empty) {
       const planning = driveData.planningInfo;
-      context += `\n**DISPONIBILITÉS** :\n`;
-      if (planning.availableSlots?.length > 0) {
-        context += `- Créneaux dispos: ${planning.availableSlots.slice(0, 5).join(', ')}\n`;
+      
+      // Horaires d'ouverture
+      if (planning.openingHours && Object.keys(planning.openingHours).length > 0) {
+        context += `## HORAIRES D'OUVERTURE\n`;
+        const daysMap = {
+          'monday': 'Lundi', 'tuesday': 'Mardi', 'wednesday': 'Mercredi',
+          'thursday': 'Jeudi', 'friday': 'Vendredi', 'saturday': 'Samedi', 'sunday': 'Dimanche',
+          'lundi': 'Lundi', 'mardi': 'Mardi', 'mercredi': 'Mercredi',
+          'jeudi': 'Jeudi', 'vendredi': 'Vendredi', 'samedi': 'Samedi', 'dimanche': 'Dimanche'
+        };
+        
+        Object.entries(planning.openingHours).forEach(([day, hours]) => {
+          const frenchDay = daysMap[day.toLowerCase()] || day;
+          context += `- **${frenchDay}**: ${hours}\n`;
+        });
+        context += '\n';
       }
+      
+      // Jours fermés
+      if (planning.closedDates && planning.closedDates.length > 0) {
+        context += `## FERMETURES EXCEPTIONNELLES\n`;
+        planning.closedDates.forEach(date => {
+          context += `- ${date}\n`;
+        });
+        context += '\n';
+      }
+      
+      // Rendez-vous
+      if (planning.appointments && planning.appointments.length > 0) {
+        context += `## RENDEZ-VOUS À VENIR\n`;
+        const upcoming = planning.appointments
+          .filter(apt => new Date(apt.date) >= new Date())
+          .sort((a, b) => new Date(a.date) - new Date(b.date))
+          .slice(0, 5);
+        
+        upcoming.forEach(apt => {
+          context += `- ${apt.date} à ${apt.time}: ${apt.service} avec ${apt.client}\n`;
+        });
+        context += '\n';
+      }
+    }
+    
+    // Pied de page avec règles
+    if (context.length > 0) {
+      context += `## RÈGLES GÉNÉRALES\n\n`;
+      context += `1. **Sois professionnel et courtois** dans toutes tes réponses\n`;
+      context += `2. **Vérifie les disponibilités** avant de proposer un créneau\n`;
+      context += `3. **Pose des questions** si tu as besoin de plus d'informations\n`;
+      context += `4. **Confirme toujours** les détails du rendez-vous (date, heure, prestation)\n`;
+      context += `5. **Propose des alternatives** si le créneau demandé n'est pas disponible\n`;
+      context += `6. **Reste dans ton rôle** : tu ne peux que gérer les rendez-vous et répondre aux questions sur l'entreprise\n\n`;
+      
+      const today = new Date();
+      context += `Date actuelle: ${today.toLocaleDateString('fr-FR', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      })}`;
     }
     
     return context;
