@@ -1,9 +1,10 @@
 // service_ia/services/mail-polling.service.js
-// ✅ VERSION AVEC LOGIQUE INTELLIGENTE DE THREAD + FIX RÉPONSES GMAIL
+// ✅ VERSION AVEC LOGIQUE INTELLIGENTE DE THREAD + FIX RÉPONSES GMAIL + GESTION QUOTAS
 
 const User = require('../models/User');
 const AutoReply = require('../models/AutoReply');
 const aiService = require('./ai.service');
+const quotaService = require('./quota.service'); // ✅ AJOUT
 const axios = require('axios');
 const driveService = require('./google-drive.service'); 
 const driveCacheMiddleware = require('../middleware/drive-cache.middleware'); 
@@ -78,6 +79,7 @@ class MailPollingService {
       let totalProcessed = 0;
       let totalSent = 0;
       let totalFiltered = 0;
+      let totalQuotaBlocked = 0; // ✅ AJOUT
 
       for (let i = 0; i < users.length; i += BATCH_SIZE) {
         const batch = users.slice(i, i + BATCH_SIZE);
@@ -91,6 +93,7 @@ class MailPollingService {
             totalProcessed += result.value.processed || 0;
             totalSent += result.value.sent || 0;
             totalFiltered += result.value.filtered || 0;
+            totalQuotaBlocked += result.value.quotaBlocked || 0; // ✅ AJOUT
           }
         });
         
@@ -106,6 +109,7 @@ class MailPollingService {
       console.log(`  🔍 Messages filtrés: ${totalFiltered}`);
       console.log(`  📧 Messages traités: ${totalProcessed}`);
       console.log(`  ✉️  Réponses envoyées: ${totalSent}`);
+      console.log(`  🚫 Bloqués (quota): ${totalQuotaBlocked}`); // ✅ AJOUT
       console.log(`  ⏱️  Durée: ${duration}s`);
       console.log(`  🆔 Instance: ${this.instanceId}`);
       console.log('🔄 ===== FIN POLLING =====\n');
@@ -114,13 +118,14 @@ class MailPollingService {
         checked: users.length, 
         filtered: totalFiltered,
         processed: totalProcessed, 
-        sent: totalSent 
+        sent: totalSent,
+        quotaBlocked: totalQuotaBlocked // ✅ AJOUT
       };
 
     } catch (error) {
       console.error(`❌ [${this.instanceId}] Erreur critique:`, error.message);
       console.error(error.stack);
-      return { checked: 0, processed: 0, sent: 0 };
+      return { checked: 0, processed: 0, sent: 0, quotaBlocked: 0 };
     } finally {
       this.isGlobalPollingActive = false;
     }
@@ -135,7 +140,7 @@ class MailPollingService {
       const elapsed = now - lockTime;
       
       if (elapsed < 300000) {
-        return { processed: 0, sent: 0, filtered: 0 };
+        return { processed: 0, sent: 0, filtered: 0, quotaBlocked: 0 };
       }
       this.processingUsers.delete(userKey);
     }
@@ -146,7 +151,7 @@ class MailPollingService {
       const newMessages = await this.fetchNewEmails(user.emailConfig, user);
 
       if (newMessages.length === 0) {
-        return { processed: 0, sent: 0, filtered: 0 };
+        return { processed: 0, sent: 0, filtered: 0, quotaBlocked: 0 };
       }
 
       console.log(`  📨 [${user.email}] ${newMessages.length} nouveau(x) message(s) non lu(s)`);
@@ -162,7 +167,7 @@ class MailPollingService {
 
       if (messagesToProcess.length === 0) {
         console.log(`  ⏭️ [${user.email}] Tous déjà traités`);
-        return { processed: 0, sent: 0, filtered: 0 };
+        return { processed: 0, sent: 0, filtered: 0, quotaBlocked: 0 };
       }
 
       console.log(`  🆕 [${user.email}] ${messagesToProcess.length} nouveau(x) à analyser`);
@@ -183,6 +188,7 @@ class MailPollingService {
 
       let sent = 0;
       let filtered = 0;
+      let quotaBlocked = 0; // ✅ AJOUT
 
       for (const message of messagesToProcess) {
         const result = await this.processMessage(message, user, driveData);
@@ -191,18 +197,24 @@ class MailPollingService {
           sent++;
         } else if (result?.filtered) {
           filtered++;
+        } else if (result?.quotaExceeded) { // ✅ AJOUT
+          quotaBlocked++;
         }
       }
 
       if (filtered > 0) {
         console.log(`  🔍 [${user.email}] ${filtered} filtré(s)`);
       }
+      
+      if (quotaBlocked > 0) { // ✅ AJOUT
+        console.log(`  🚫 [${user.email}] ${quotaBlocked} bloqué(s) (quota)`);
+      }
 
-      return { processed: messagesToProcess.length, sent, filtered };
+      return { processed: messagesToProcess.length, sent, filtered, quotaBlocked };
 
     } catch (error) {
       console.error(`  ❌ [${user.email}] Erreur:`, error.message);
-      return { processed: 0, sent: 0, filtered: 0 };
+      return { processed: 0, sent: 0, filtered: 0, quotaBlocked: 0 };
     } finally {
       this.processingUsers.delete(userKey);
     }
@@ -218,11 +230,11 @@ class MailPollingService {
     });
 
     if (existsInDb) {
-      return { sent: false, alreadyProcessed: true, filtered: false };
+      return { sent: false, alreadyProcessed: true, filtered: false, quotaExceeded: false };
     }
 
     if (this.processingMessages.has(lockKey)) {
-      return { sent: false, alreadyProcessed: true, filtered: false };
+      return { sent: false, alreadyProcessed: true, filtered: false, quotaExceeded: false };
     }
 
     this.processingMessages.set(lockKey, now);
@@ -232,7 +244,7 @@ class MailPollingService {
       
       if (!fullMessage) {
         console.log(`    ❌ Impossible de récupérer le message`);
-        return { sent: false, alreadyProcessed: false, filtered: false };
+        return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: false };
       }
 
       const bodySize = (fullMessage.body || '').length;
@@ -255,7 +267,7 @@ class MailPollingService {
           }
         });
         
-        return { sent: false, alreadyProcessed: false, filtered: true };
+        return { sent: false, alreadyProcessed: false, filtered: true, quotaExceeded: false };
       }
 
       const lastMailKey = `${user._id}-${fullMessage.from}`;
@@ -281,7 +293,7 @@ class MailPollingService {
           }
         });
         
-        return { sent: false, alreadyProcessed: false, filtered: true };
+        return { sent: false, alreadyProcessed: false, filtered: true, quotaExceeded: false };
       }
 
       if (fullMessage.threadId) {
@@ -310,7 +322,7 @@ class MailPollingService {
             }
           });
           
-          return { sent: false, alreadyProcessed: true, filtered: false };
+          return { sent: false, alreadyProcessed: true, filtered: false, quotaExceeded: false };
         }
       }
 
@@ -344,6 +356,22 @@ class MailPollingService {
         driveData
       );
 
+      // ✅ GESTION QUOTA DÉPASSÉ (analyse)
+      if (aiResult.analysis.quotaExceeded) {
+        console.log(`    🚫 Quota dépassé lors de l'analyse`);
+        
+        processingRecord.analysis = {
+          isRelevant: false,
+          confidence: 0.0,
+          intent: 'quota_exceeded',
+          reason: aiResult.analysis.reason || 'Quota quotidien dépassé'
+        };
+        processingRecord.status = 'ignored';
+        await processingRecord.save();
+        
+        return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: true };
+      }
+
       if (!aiResult.analysis.is_relevant) {
         console.log(`    ⏭️ Non pertinent: ${aiResult.analysis.reason}`);
         
@@ -358,10 +386,27 @@ class MailPollingService {
         
         this.markAsRead(message.id, user.emailConfig).catch(() => {});
         
-        return { sent: false, alreadyProcessed: false, filtered: false };
+        return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: false };
       }
 
       console.log(`    ✅ Pertinent: ${aiResult.analysis.intent} (${(aiResult.analysis.confidence * 100).toFixed(0)}%)`);
+
+      // ✅ GESTION QUOTA DÉPASSÉ (génération)
+      if (aiResult.quotaExceeded) {
+        console.log(`    🚫 Quota dépassé lors de la génération`);
+        
+        processingRecord.analysis = {
+          isRelevant: true,
+          confidence: aiResult.analysis.confidence,
+          intent: aiResult.analysis.intent,
+          reason: 'Quota dépassé - réponse non générée'
+        };
+        processingRecord.status = 'pending';
+        processingRecord.generatedResponse = null;
+        await processingRecord.save();
+        
+        return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: true };
+      }
 
       if (!aiResult.response || aiResult.response.trim() === '') {
         console.log(`    ⚠️ Pas de réponse générée, en attente validation`);
@@ -376,7 +421,7 @@ class MailPollingService {
         processingRecord.generatedResponse = null;
         await processingRecord.save();
         
-        return { sent: false, alreadyProcessed: false, filtered: false };
+        return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: false };
       }
 
       console.log(`    ✅ Réponse générée (${aiResult.response.length} chars)`);
@@ -386,6 +431,25 @@ class MailPollingService {
                            aiResult.analysis.confidence >= 0.8;
 
       if (shouldAutoSend) {
+        // ✅ VÉRIFIER QUOTA EMAILS AVANT ENVOI
+        const emailQuota = await quotaService.canSendEmail(user._id);
+        
+        if (!emailQuota.allowed) {
+          console.log(`    🚫 Quota emails atteint (${emailQuota.remaining}), passage en pending`);
+          
+          processingRecord.analysis = {
+            isRelevant: true,
+            confidence: aiResult.analysis.confidence,
+            intent: aiResult.analysis.intent,
+            reason: 'Quota emails dépassé'
+          };
+          processingRecord.generatedResponse = aiResult.response;
+          processingRecord.status = 'pending';
+          await processingRecord.save();
+          
+          return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: true };
+        }
+        
         console.log(`    📤 Envoi automatique...`);
         
         const sendSuccess = await this.sendReply(fullMessage, aiResult.response, user);
@@ -404,8 +468,12 @@ class MailPollingService {
           processingRecord.lastError = 'Échec envoi automatique';
           await processingRecord.save();
           
-          return { sent: false, alreadyProcessed: false, filtered: false };
+          return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: false };
         }
+
+        // ✅ INCRÉMENTER COMPTEUR EMAILS APRÈS ENVOI RÉUSSI
+        await quotaService.incrementEmailsSent(user._id);
+        console.log(`    📧 Compteur emails incrémenté`);
 
         processingRecord.analysis = {
           isRelevant: true,
@@ -432,7 +500,7 @@ class MailPollingService {
         });
 
         console.log(`    ✅ Réponse envoyée avec succès`);
-        return { sent: true, alreadyProcessed: false, filtered: false };
+        return { sent: true, alreadyProcessed: false, filtered: false, quotaExceeded: false };
 
       } else {
         console.log(`    ⏸️ En attente validation (confiance: ${(aiResult.analysis.confidence * 100).toFixed(0)}%)`);
@@ -447,7 +515,7 @@ class MailPollingService {
         processingRecord.status = 'pending';
         await processingRecord.save();
 
-        return { sent: false, alreadyProcessed: false, filtered: false };
+        return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: false };
       }
 
     } catch (error) {
@@ -462,7 +530,7 @@ class MailPollingService {
         });
       } catch {}
       
-      return { sent: false, alreadyProcessed: false, filtered: false };
+      return { sent: false, alreadyProcessed: false, filtered: false, quotaExceeded: false };
       
     } finally {
       this.processingMessages.delete(lockKey);
@@ -660,11 +728,9 @@ class MailPollingService {
     }
   }
 
-  // ✅ CORRECTION : Fonction sendReply avec support correct des réponses Gmail
   async sendReply(message, responseBody, user) {
     try {
       if (user.emailConfig.provider === 'gmail') {
-        // 🔍 Récupérer le Message-ID original du thread
         let originalMessageId = '';
         let references = '';
         
@@ -692,7 +758,6 @@ class MailPollingService {
           }
         }
 
-        // ✅ Construction du message avec les BONS headers pour une réponse
         const messageParts = [
           'Content-Type: text/plain; charset=utf-8',
           'MIME-Version: 1.0',
@@ -700,11 +765,9 @@ class MailPollingService {
           `Subject: Re: ${(message.subject || '(sans objet)').replace(/^Re:\s*/i, '')}`,
         ];
 
-        // 🔑 CRITICAL : Headers pour lier la réponse au message original
         if (originalMessageId) {
           messageParts.push(`In-Reply-To: ${originalMessageId}`);
           
-          // Construire la chaîne References (historique du thread)
           if (references) {
             messageParts.push(`References: ${references} ${originalMessageId}`);
           } else {
@@ -712,7 +775,7 @@ class MailPollingService {
           }
         }
 
-        messageParts.push(''); // Ligne vide avant le body
+        messageParts.push('');
         messageParts.push(responseBody);
 
         const email = messageParts.join('\r\n');
@@ -722,12 +785,11 @@ class MailPollingService {
           .replace(/\//g, '_')
           .replace(/=+$/, '');
 
-        // 🚀 Envoi via Gmail API avec threadId
         const response = await axios.post(
           'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-          {
+          {  // ✅ CORRECTION : Alignement correct
             raw: encodedMessage,
-            threadId: message.threadId // ✅ Forcer le thread
+            threadId: message.threadId
           },
           {
             headers: {
@@ -799,3 +861,10 @@ class MailPollingService {
 }
 
 module.exports = new MailPollingService();
+
+
+
+
+
+
+          
