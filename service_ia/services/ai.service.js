@@ -1,8 +1,9 @@
 // service_ia/services/ai.service.js
-// ✅ VERSION SIMPLIFIÉE - Texte naturel sans markdown + Compteur tokens
+// ✅ VERSION SIMPLIFIÉE - Texte naturel sans markdown + Compteur tokens + GESTION QUOTAS
 
 const axios = require('axios');
 const contextBuilder = require('./context-builder.service');
+const quotaService = require('./quota.service'); // ✅ AJOUT
 
 class AIService {
   
@@ -20,19 +21,45 @@ class AIService {
     
     console.log(`[AI:${userId}] ✅ Analyse: ${analysis.intent} - Pertinent: ${analysis.is_relevant} (${(analysis.confidence * 100).toFixed(0)}%)`);
     
+    // ✅ Vérifier si quota dépassé lors de l'analyse
+    if (analysis.quotaExceeded) {
+      console.log(`[AI:${userId}] 🚫 Quota dépassé lors de l'analyse`);
+      return {
+        analysis,
+        response: null,
+        quotaExceeded: true,
+        totalUsage: analysis.usage
+      };
+    }
+    
     // 2️⃣ Si non pertinent, on s'arrête
     if (!analysis.is_relevant) {
       console.log(`[AI:${userId}] ⏭️ Message non pertinent, pas de réponse`);
       return { 
         analysis, 
         response: null,
-        totalUsage: analysis.usage // ✅ Stats même si non pertinent
+        totalUsage: analysis.usage
       };
     }
     
     // 3️⃣ GÉNÉRATION
     console.log(`[AI:${userId}] 💬 Étape 2/2 : Génération de la réponse...`);
     const result = await this.generateResponse(message, analysis, user, conversationHistory, driveData);
+    
+    // ✅ Vérifier si quota dépassé lors de la génération
+    if (result.quotaExceeded) {
+      console.log(`[AI:${userId}] 🚫 Quota dépassé lors de la génération`);
+      return {
+        analysis,
+        response: null,
+        quotaExceeded: true,
+        totalUsage: {
+          prompt_tokens: (analysis.usage?.prompt_tokens || 0) + (result.usage?.prompt_tokens || 0),
+          completion_tokens: (analysis.usage?.completion_tokens || 0) + (result.usage?.completion_tokens || 0),
+          total_tokens: (analysis.usage?.total_tokens || 0) + (result.usage?.total_tokens || 0)
+        }
+      };
+    }
     
     console.log(`[AI:${userId}] ✅ Réponse générée (${result.response.length} chars)`);
     
@@ -50,7 +77,8 @@ class AIService {
       response: result.response,
       totalUsage,
       analysisUsage: analysis.usage,
-      generationUsage: result.usage
+      generationUsage: result.usage,
+      quotaRemaining: result.quotaRemaining // ✅ Ajout
     };
   }
 
@@ -63,6 +91,24 @@ class AIService {
     const userId = user._id.toString();
     
     if (!apiKey) throw new Error('Clé API Mistral manquante');
+
+    // ✅ VÉRIFICATION QUOTA AVANT APPEL API
+    const estimatedTokens = 300; // Estimation pour l'analyse
+    const quotaCheck = await quotaService.canUseTokens(userId, estimatedTokens);
+    
+    if (!quotaCheck.allowed) {
+      console.warn(`[AI:${userId}] 🚫 Quota insuffisant pour analyse: ${quotaCheck.message}`);
+      return {
+        is_relevant: false,
+        confidence: 0.0,
+        intent: 'quota_exceeded',
+        reason: quotaCheck.message || 'Quota quotidien dépassé',
+        details: {},
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        quotaExceeded: true, // ✅ Flag important
+        remaining: quotaCheck.remaining
+      };
+    }
 
     const driveContext = driveData 
       ? this._buildContextFromDriveData(driveData)
@@ -101,6 +147,10 @@ class AIService {
       // 📊 Affichage des tokens utilisés
       console.log(`[AI:${userId}] 📊 Tokens Analyse - Prompt: ${usage.prompt_tokens || 0} | Completion: ${usage.completion_tokens || 0} | Total: ${usage.total_tokens || 0}`);
       
+      // ✅ DÉCRÉMENTER LE QUOTA APRÈS SUCCÈS
+      const quotaResult = await quotaService.useTokens(userId, usage.total_tokens || 0);
+      console.log(`[AI:${userId}] 📊 Quota après analyse: ${quotaResult.remaining} tokens restants (plan: ${quotaResult.plan})`);
+      
       let analysis = this._parseAnalysisJSON(content, userId);
       
       return {
@@ -109,7 +159,8 @@ class AIService {
         intent: analysis.intent ?? 'unknown',
         reason: analysis.reason ?? 'Non spécifié',
         details: analysis.details ?? {},
-        usage: usage // ✅ Ajout des stats
+        usage: usage,
+        quotaRemaining: quotaResult.remaining // ✅ Ajout
       };
 
     } catch (error) {
@@ -134,6 +185,20 @@ class AIService {
     const userId = user._id.toString();
     
     if (!apiKey) throw new Error('Clé API Mistral manquante');
+
+    // ✅ VÉRIFICATION QUOTA AVANT APPEL API
+    const estimatedTokens = 500; // Estimation pour la génération
+    const quotaCheck = await quotaService.canUseTokens(userId, estimatedTokens);
+    
+    if (!quotaCheck.allowed) {
+      console.warn(`[AI:${userId}] 🚫 Quota insuffisant pour génération: ${quotaCheck.message}`);
+      return {
+        response: `Désolé, votre quota quotidien de tokens est épuisé. ${quotaCheck.message}`,
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        quotaExceeded: true, // ✅ Flag important
+        remaining: quotaCheck.remaining
+      };
+    }
 
     const driveContext = driveData
       ? this._buildContextFromDriveData(driveData)
@@ -172,9 +237,14 @@ class AIService {
       // 📊 Affichage des tokens utilisés
       console.log(`[AI:${userId}] 📊 Tokens Génération - Prompt: ${usage.prompt_tokens || 0} | Completion: ${usage.completion_tokens || 0} | Total: ${usage.total_tokens || 0}`);
       
+      // ✅ DÉCRÉMENTER LE QUOTA APRÈS SUCCÈS
+      const quotaResult = await quotaService.useTokens(userId, usage.total_tokens || 0);
+      console.log(`[AI:${userId}] 📊 Quota après génération: ${quotaResult.remaining} tokens restants (plan: ${quotaResult.plan})`);
+      
       return {
         response: generatedResponse,
-        usage: usage // ✅ Ajout des stats
+        usage: usage,
+        quotaRemaining: quotaResult.remaining // ✅ Ajout
       };
 
     } catch (error) {
