@@ -314,16 +314,33 @@ class MailPollingService {
       if (message.threadId) {
         const threadKey = `${user._id}-${message.threadId}`;
         
-        // Vérifier si on a déjà répondu dans ce thread
+        // Vérifier cache en mémoire (rapide)
+        if (this.processedThreads.has(threadKey)) {
+          const lastReply = this.processedThreads.get(threadKey);
+          const elapsed = now - lastReply;
+          
+          // Si on a répondu il y a moins de 1 heure, skip
+          if (elapsed < 3600000) {
+            console.log(`    ⏭️ Thread déjà répondu récemment (il y a ${Math.round(elapsed/60000)} min)`);
+            await this.markAsRead(message.id, user.emailConfig);
+            return { sent: false, alreadyProcessed: true };
+          } else {
+            // Nettoyer le cache si > 1h
+            this.processedThreads.delete(threadKey);
+          }
+        }
+        
+        // Vérifier en base (sécurité)
         const threadAlreadyReplied = await AutoReply.findOne({
           userId: user._id,
           threadId: message.threadId,
           status: 'sent',
           sentAt: { $gte: new Date(Date.now() - 3600000) } // Dans la dernière heure
-        });
+        }).sort({ sentAt: -1 });
 
         if (threadAlreadyReplied) {
-          console.log(`    ⏭️ Thread déjà répondu récemment (${threadAlreadyReplied.sentAt.toLocaleTimeString()})`);
+          console.log(`    ⏭️ Thread déjà répondu en base (${threadAlreadyReplied.sentAt.toLocaleTimeString()})`);
+          this.processedThreads.set(threadKey, threadAlreadyReplied.sentAt.getTime());
           await this.markAsRead(message.id, user.emailConfig);
           return { sent: false, alreadyProcessed: true };
         }
