@@ -105,14 +105,27 @@ class MailPollingService {
       const duration = Math.round((Date.now() - startTime) / 1000);
 
       console.log('\n📊 ===== RÉSUMÉ POLLING =====');
-      console.log(`  ✅ Utilisateurs vérifiés: ${users.length}`);
-      console.log(`  🔍 Messages filtrés: ${totalFiltered}`);
-      console.log(`  📧 Messages traités: ${totalProcessed}`);
-      console.log(`  ✉️  Réponses envoyées: ${totalSent}`);
-      console.log(`  🚫 Bloqués (quota): ${totalQuotaBlocked}`); // ✅ AJOUT
-      console.log(`  ⏱️  Durée: ${duration}s`);
-      console.log(`  🆔 Instance: ${this.instanceId}`);
-      console.log('🔄 ===== FIN POLLING =====\n');
+console.log(`  ✅ Utilisateurs vérifiés: ${users.length}`);
+console.log(`  🔍 Messages filtrés: ${totalFiltered}`);
+console.log(`  📧 Messages traités: ${totalProcessed}`);
+console.log(`  ✉️  Réponses envoyées: ${totalSent}`);
+console.log(`  🚫 Bloqués (quota): ${totalQuotaBlocked}`);
+
+// 🔹 Affichage quotas pour chaque utilisateur
+for (const user of users) {
+  try {
+    const quota = await quotaService.getQuotaStats(user._id);
+    console.log(`  🔹 Quota tokens restants: ${quota.tokens.remaining}/${quota.tokens.dailyLimit}`);
+    console.log(`  🔹 Quota emails restants: ${quota.emails.remaining}/${quota.emails.dailyLimit}`);
+  } catch (e) {
+    console.warn(`  ⚠️ Impossible de récupérer le quota pour ${user.email}`);
+  }
+}
+
+console.log(`  ⏱️  Durée: ${duration}s`);
+console.log(`  🆔 Instance: ${this.instanceId}`);
+console.log('🔄 ===== FIN POLLING =====\n');
+
 
       return { 
         checked: users.length, 
