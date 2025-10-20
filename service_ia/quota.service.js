@@ -7,14 +7,23 @@ class QuotaService {
   async getOrCreateQuota(userId) {
     let quota = await UserQuota.findOne({ userId });
 
-    if (!quota) {
-      console.log(`🆕 [Quota] Création du quota pour user ${userId}`);
-      quota = await UserQuota.create({
-        userId,
-        currentPlan: 'free',
-        tokensUsedToday: 0
-      });
-    }
+if (!quota) {
+  console.log(`🆕 [Quota] Création du quota pour user ${userId}`);
+  
+  // ✅ CORRECTION : Spécifier TOUTES les limites explicitement
+  quota = await UserQuota.create({
+    userId,
+    currentPlan: 'free',
+    dailyTokenLimit: 10000,        // ✅ AJOUT
+    tokensUsedToday: 0,
+    monthlyCallsLimit: 100,        // ✅ AJOUT
+    callsUsedThisMonth: 0,
+    maxEmailsPerDay: 20,           // ✅ AJOUT
+    emailsSentToday: 0
+  });
+  
+  console.log(`✅ [Quota] Limites free appliquées: 10k tokens/jour, 100 appels/mois, 20 emails/jour`);
+}
 
     // Synchroniser avec le plan de l'utilisateur
     await quota.syncWithUserPlan();
