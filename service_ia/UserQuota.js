@@ -22,8 +22,8 @@ const QUOTA_PLANS = {
   },
   enterprise: {
     dailyTokens: 1000000,
-    monthlyCalls: -1, // Illimité
-    maxEmailsPerDay: -1, // Illimité
+    monthlyCalls: -1,
+    maxEmailsPerDay: -1,
     name: 'Enterprise'
   }
 };
@@ -37,19 +37,15 @@ const userQuotaSchema = new mongoose.Schema({
     index: true
   },
   
-  // ✅ Plan d'abonnement actuel (synchronisé avec User.subscription.plan)
   currentPlan: {
     type: String,
     enum: ['free', 'basic', 'premium', 'enterprise'],
     default: 'free'
   },
   
-  // ✅ Limite quotidienne (calculée selon le plan ou custom)
   dailyTokenLimit: {
     type: Number,
-    default: function() {
-      return QUOTA_PLANS[this.currentPlan]?.dailyTokens || 10000;
-    }
+    default: 10000
   },
   
   tokensUsedToday: {
@@ -57,12 +53,9 @@ const userQuotaSchema = new mongoose.Schema({
     default: 0
   },
   
-  // ✅ Compteurs mensuels
   monthlyCallsLimit: {
     type: Number,
-    default: function() {
-      return QUOTA_PLANS[this.currentPlan]?.monthlyCalls || 100;
-    }
+    default: 100
   },
   
   callsUsedThisMonth: {
@@ -77,12 +70,9 @@ const userQuotaSchema = new mongoose.Schema({
   
   maxEmailsPerDay: {
     type: Number,
-    default: function() {
-      return QUOTA_PLANS[this.currentPlan]?.maxEmailsPerDay || 20;
-    }
+    default: 20
   },
   
-  // Dates de réinitialisation
   lastResetDate: {
     type: Date,
     default: () => {
@@ -100,7 +90,6 @@ const userQuotaSchema = new mongoose.Schema({
     }
   },
   
-  // Historique (30 derniers jours)
   history: [{
     date: Date,
     tokensUsed: Number,
@@ -108,7 +97,6 @@ const userQuotaSchema = new mongoose.Schema({
     emailsSent: Number
   }],
   
-  // Blocage
   isBlocked: {
     type: Boolean,
     default: false
@@ -118,7 +106,7 @@ const userQuotaSchema = new mongoose.Schema({
   
   blockedReason: {
     type: String,
-    enum: ['tokens', 'calls', 'emails', 'expired_subscription']
+    enum: ['tokens', 'calls', 'emails', 'expired_subscription', null]
   },
   
   updatedAt: {
@@ -127,60 +115,91 @@ const userQuotaSchema = new mongoose.Schema({
   }
 });
 
-// ✅ MÉTHODE : Synchroniser avec le plan de l'utilisateur
+// ✅ MÉTHODE ULTRA-ROBUSTE : Synchroniser avec le plan
 userQuotaSchema.methods.syncWithUserPlan = async function() {
   try {
     const User = mongoose.model('User');
-    const user = await User.findById(this.userId).select('subscription');
+    
+    // ✅ Utiliser lean() pour éviter les problèmes Mongoose
+    const user = await User.findById(this.userId)
+      .select('subscription createdAt')
+      .lean()
+      .exec();
     
     if (!user) {
-      console.warn(`⚠️ [Quota] User ${this.userId} non trouvé`);
+      console.warn(`⚠️ [Quota] User ${this.userId} non trouvé, défaut à free`);
+      this.currentPlan = 'free';
+      this._applyPlanLimits('free', null);
       return this;
     }
     
-    const userPlan = user.subscription?.plan || 'free';
-    const isActive = user.subscription?.isActive !== false;
+    // ✅ GESTION ROBUSTE DES 3 CAS
+    let userPlan = 'free';
+    let isActive = true;
+    let endDate = null;
+    let customQuotas = null;
     
-    // Vérifier si abonnement expiré
-    if (!isActive || (user.subscription?.endDate && user.subscription.endDate < new Date())) {
-      console.warn(`⚠️ [Quota] Abonnement expiré pour user ${this.userId}, passage en free`);
+    // CAS 1 : Pas de subscription
+    if (!user.subscription) {
+      console.warn(`⚠️ [Quota] User ${this.userId} sans subscription`);
+      userPlan = 'free';
+    }
+    // CAS 2 : Ancien format string
+    else if (typeof user.subscription === 'string') {
+      console.warn(`⚠️ [Quota] User ${this.userId} a subscription string: "${user.subscription}"`);
+      userPlan = ['free', 'basic', 'premium', 'enterprise'].includes(user.subscription) 
+        ? user.subscription 
+        : 'free';
+    }
+    // CAS 3 : Nouveau format objet
+    else if (typeof user.subscription === 'object') {
+      userPlan = user.subscription.plan || 'free';
+      isActive = user.subscription.isActive !== false;
+      endDate = user.subscription.endDate;
+      customQuotas = user.subscription.customQuotas;
+    }
+    
+    // Validation du plan
+    if (!['free', 'basic', 'premium', 'enterprise'].includes(userPlan)) {
+      console.warn(`⚠️ [Quota] Plan invalide "${userPlan}", défaut à free`);
+      userPlan = 'free';
+    }
+    
+    // Vérifier expiration
+    if (!isActive || (endDate && new Date(endDate) < new Date())) {
+      console.warn(`⚠️ [Quota] Abonnement expiré pour user ${this.userId}`);
       this.currentPlan = 'free';
       this.isBlocked = true;
       this.blockedReason = 'expired_subscription';
-    } else if (this.currentPlan !== userPlan) {
-      console.log(`🔄 [Quota] Mise à jour plan: ${this.currentPlan} → ${userPlan}`);
+      this._applyPlanLimits('free', null);
+      return this;
+    }
+    
+    // Mise à jour du plan si changement
+    if (this.currentPlan !== userPlan) {
+      console.log(`🔄 [Quota] ${this.userId}: ${this.currentPlan} → ${userPlan}`);
       this.currentPlan = userPlan;
-      
-      // Mettre à jour les limites
-      const planConfig = QUOTA_PLANS[userPlan];
-      
-      // ✅ Vérifier si quotas custom définis
-      if (user.subscription?.customQuotas?.dailyTokens) {
-        this.dailyTokenLimit = user.subscription.customQuotas.dailyTokens;
-      } else {
-        this.dailyTokenLimit = planConfig.dailyTokens;
-      }
-      
-      if (user.subscription?.customQuotas?.monthlyCalls) {
-        this.monthlyCallsLimit = user.subscription.customQuotas.monthlyCalls;
-      } else {
-        this.monthlyCallsLimit = planConfig.monthlyCalls;
-      }
-      
-      if (user.subscription?.customQuotas?.maxEmailsPerDay) {
-        this.maxEmailsPerDay = user.subscription.customQuotas.maxEmailsPerDay;
-      } else {
-        this.maxEmailsPerDay = planConfig.maxEmailsPerDay;
-      }
-      
-      console.log(`✅ [Quota] Nouvelles limites: ${this.dailyTokenLimit} tokens/jour, ${this.monthlyCallsLimit} calls/mois`);
+      this._applyPlanLimits(userPlan, customQuotas);
     }
     
     return this;
+    
   } catch (error) {
     console.error(`❌ [Quota] Erreur syncWithUserPlan:`, error);
+    // En cas d'erreur, on garde le plan actuel
     return this;
   }
+};
+
+// ✅ MÉTHODE PRIVÉE : Appliquer les limites d'un plan
+userQuotaSchema.methods._applyPlanLimits = function(plan, customQuotas) {
+  const planConfig = QUOTA_PLANS[plan] || QUOTA_PLANS.free;
+  
+  this.dailyTokenLimit = customQuotas?.dailyTokens || planConfig.dailyTokens;
+  this.monthlyCallsLimit = customQuotas?.monthlyCalls || planConfig.monthlyCalls;
+  this.maxEmailsPerDay = customQuotas?.maxEmailsPerDay || planConfig.maxEmailsPerDay;
+  
+  console.log(`✅ [Quota] Limites appliquées: ${this.dailyTokenLimit} tokens/jour, ${this.maxEmailsPerDay} emails/jour`);
 };
 
 // ✅ MÉTHODE : Vérifier et réinitialiser les quotas quotidiens
@@ -235,7 +254,7 @@ userQuotaSchema.methods.useTokens = function(amount) {
     this.updatedAt = new Date();
     return {
       success: true,
-      remaining: -1, // Illimité
+      remaining: -1,
       blocked: false,
       plan: this.currentPlan,
       message: `${amount} tokens utilisés (plan Enterprise - illimité)`
@@ -270,8 +289,6 @@ userQuotaSchema.methods.useTokens = function(amount) {
   
   const newRemaining = this.dailyTokenLimit - this.tokensUsedToday;
   
-  console.log(`✅ [Quota] User ${this.userId} (${this.currentPlan}): ${amount} tokens utilisés (reste: ${newRemaining}/${this.dailyTokenLimit})`);
-  
   return {
     success: true,
     remaining: newRemaining,
@@ -285,7 +302,6 @@ userQuotaSchema.methods.useTokens = function(amount) {
 userQuotaSchema.methods.incrementEmailsSent = function() {
   this.checkAndReset();
   
-  // Enterprise = illimité
   if (this.currentPlan === 'enterprise' || this.maxEmailsPerDay === -1) {
     this.emailsSentToday++;
     return { success: true, remaining: -1 };
@@ -317,7 +333,6 @@ userQuotaSchema.methods.incrementEmailsSent = function() {
 
 // ✅ MÉTHODE : Incrémenter compteur d'appels API
 userQuotaSchema.methods.incrementAPICalls = function() {
-  // Enterprise = illimité
   if (this.currentPlan === 'enterprise' || this.monthlyCallsLimit === -1) {
     this.callsUsedThisMonth++;
     return { success: true, remaining: -1 };
@@ -327,7 +342,6 @@ userQuotaSchema.methods.incrementAPICalls = function() {
     this.isBlocked = true;
     this.blockedReason = 'calls';
     
-    // Bloquer jusqu'au début du mois prochain
     const nextMonth = new Date();
     nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1, 1);
     nextMonth.setUTCHours(0, 0, 0, 0);
@@ -348,7 +362,6 @@ userQuotaSchema.methods.incrementAPICalls = function() {
   };
 };
 
-// ✅ Export des plans pour utilisation externe
 userQuotaSchema.statics.QUOTA_PLANS = QUOTA_PLANS;
 
 module.exports = mongoose.model('UserQuota', userQuotaSchema);
