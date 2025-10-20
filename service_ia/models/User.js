@@ -29,38 +29,18 @@ const userSchema = new mongoose.Schema({
     index: true,
   },
   
-  // ✅ MODIFIÉ : Structure enrichie avec customQuotas
+  // ✅ Structure avec protection contre les anciennes données
   subscription: {
-    plan: {
-      type: String,
-      enum: ['free', 'basic', 'premium', 'enterprise'],
-      default: 'free'
-    },
-    isActive: {
-      type: Boolean,
-      default: true
-    },
-    startDate: {
-      type: Date,
-      default: Date.now
-    },
-    endDate: {
-      type: Date
-    },
-    
-    // ✅ NOUVEAU : Quotas personnalisés (optionnel)
-    customQuotas: {
-      dailyTokens: {
-        type: Number,
-        default: null  // null = utilise les valeurs par défaut du plan
-      },
-      monthlyCalls: {
-        type: Number,
-        default: null
-      },
-      maxEmailsPerDay: {
-        type: Number,
-        default: null
+    type: mongoose.Schema.Types.Mixed, // Permet string temporairement
+    default: {
+      plan: 'free',
+      isActive: true,
+      startDate: Date.now,
+      endDate: null,
+      customQuotas: {
+        dailyTokens: null,
+        monthlyCalls: null,
+        maxEmailsPerDay: null
       }
     }
   },
@@ -137,16 +117,71 @@ const userSchema = new mongoose.Schema({
   toObject: { virtuals: false }
 });
 
+// ✅ MIDDLEWARE DE PROTECTION : Normaliser subscription avant sauvegarde
 userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  
   try {
-    this.password = await bcrypt.hash(this.password, 12);
+    // Normaliser subscription si nécessaire
+    if (typeof this.subscription === 'string') {
+      console.log(`⚠️ [User] Normalisation subscription pour ${this.email}: "${this.subscription}" → objet`);
+      
+      const plan = ['free', 'basic', 'premium', 'enterprise'].includes(this.subscription.toLowerCase())
+        ? this.subscription.toLowerCase()
+        : 'free';
+      
+      this.subscription = {
+        plan: plan,
+        isActive: true,
+        startDate: this.createdAt || new Date(),
+        endDate: null,
+        customQuotas: {
+          dailyTokens: null,
+          monthlyCalls: null,
+          maxEmailsPerDay: null
+        }
+      };
+    }
+    
+    // Hash password si modifié
+    if (this.isModified('password')) {
+      this.password = await bcrypt.hash(this.password, 12);
+    }
+    
     next();
   } catch (error) {
     next(error);
   }
 });
+
+// ✅ MÉTHODE HELPER : Obtenir subscription de façon sécurisée
+userSchema.methods.getSubscription = function() {
+  // Gérer les anciens formats
+  if (typeof this.subscription === 'string') {
+    return {
+      plan: this.subscription.toLowerCase(),
+      isActive: true,
+      startDate: this.createdAt || new Date(),
+      endDate: null,
+      customQuotas: {
+        dailyTokens: null,
+        monthlyCalls: null,
+        maxEmailsPerDay: null
+      }
+    };
+  }
+  
+  // Format moderne
+  return this.subscription || {
+    plan: 'free',
+    isActive: true,
+    startDate: this.createdAt || new Date(),
+    endDate: null,
+    customQuotas: {
+      dailyTokens: null,
+      monthlyCalls: null,
+      maxEmailsPerDay: null
+    }
+  };
+};
 
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
@@ -227,6 +262,5 @@ userSchema.methods.getAISettings = function() {
   return this.aiSettings;
 };
 
-// ✅ EXPORTER SANS CACHE
 const User = mongoose.model('User', userSchema);
 module.exports = User;
