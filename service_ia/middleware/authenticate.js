@@ -2,7 +2,7 @@ const Session = require('../models/Session');
 const User = require('../models/User');
 const driveCacheMiddleware = require('./drive-cache.middleware');
 const driveService = require('../services/google-drive.service');
-const quotaService = require('../services/quota.service'); // ✅ ajout
+const quotaService = require('../quota.service'); // ✅ ajout
 
 module.exports = async (req, res, next) => {
   const startTime = Date.now();
