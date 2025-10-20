@@ -134,7 +134,7 @@ userSchema.pre('save', async function (next) {
         startDate: this.createdAt || new Date(),
         endDate: null,
         customQuotas: {
-          dailyTokens: null,
+          dailyTokens: 10000,
           monthlyCalls: null,
           maxEmailsPerDay: null
         }
