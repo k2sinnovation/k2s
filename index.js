@@ -108,17 +108,17 @@ setInterval(() => {
 // ===== FONCTION DE MIGRATION =====
 
 /**
- * 🔧 MIGRATION AUTOMATIQUE DES SUBSCRIPTIONS
- * Convertit tous les anciens formats (string) vers le nouveau format (objet)
+ * 🔧 MIGRATION ROBUSTE DES SUBSCRIPTIONS
+ * Gère TOUS les cas : string, undefined, null, objet incomplet
  */
 async function migrateAllSubscriptions() {
   try {
-    console.log('\n🔧 [Migration] Vérification des subscriptions...');
+    console.log('\n🔧 [Migration] Démarrage migration subscriptions...');
     
-    // Trouver TOUS les users avec ancien format
+    // ✅ Trouver TOUS les users (sans filtrer)
     const allUsers = await User.find({}).lean();
     
-    console.log(`📊 [Migration] ${allUsers.length} utilisateur(s) à vérifier`);
+    console.log(`📊 [Migration] ${allUsers.length} utilisateur(s) à traiter`);
     
     let migrated = 0;
     let skipped = 0;
@@ -126,61 +126,73 @@ async function migrateAllSubscriptions() {
     
     for (const user of allUsers) {
       try {
+        // 🔍 Déterminer si migration nécessaire
         const needsMigration = 
-          typeof user.subscription === 'string' ||
-          !user.subscription ||
-          !user.subscription.plan;
+          typeof user.subscription === 'string' ||      // "free"
+          user.subscription === null ||                  // null
+          user.subscription === undefined ||             // undefined
+          !user.subscription?.plan ||                    // { } ou { isActive: true }
+          typeof user.subscription.plan !== 'string';   // { plan: null }
         
-        if (!needsMigration) {
+        if (!needsMigration && user.subscription?.startDate) {
+          // Déjà migré ET a startDate
           skipped++;
           continue;
         }
         
-        // Déterminer le plan
+        // 📌 Déterminer le plan
         let plan = 'free';
+        
         if (typeof user.subscription === 'string') {
-          plan = user.subscription;
+          plan = user.subscription.toLowerCase();
         } else if (user.subscription?.plan) {
-          plan = user.subscription.plan;
+          plan = user.subscription.plan.toLowerCase();
         }
         
         // Valider le plan
-        if (!['free', 'basic', 'premium', 'enterprise'].includes(plan)) {
+        const validPlans = ['free', 'basic', 'premium', 'enterprise'];
+        if (!validPlans.includes(plan)) {
           console.warn(`⚠️ [Migration] Plan invalide "${plan}" pour ${user.email}, défaut à free`);
           plan = 'free';
         }
         
-        // ✅ MISE À JOUR DIRECTE EN BASE (bypass Mongoose defaults)
-        await User.updateOne(
+        // ✅ Mise à jour directe en base
+        const result = await User.updateOne(
           { _id: user._id },
           {
             $set: {
-              'subscription.plan': plan,
-              'subscription.isActive': true,
-              'subscription.startDate': user.createdAt || new Date(),
-              'subscription.endDate': null,
-              'subscription.customQuotas': {
-                dailyTokens: null,
-                monthlyCalls: null,
-                maxEmailsPerDay: null
+              subscription: {
+                plan: plan,
+                isActive: true,
+                startDate: user.createdAt || new Date(),
+                endDate: null,
+                customQuotas: {
+                  dailyTokens: null,
+                  monthlyCalls: null,
+                  maxEmailsPerDay: null
+                }
               }
             }
           }
         );
         
-        migrated++;
-        
-        const oldValue = typeof user.subscription === 'string' 
-          ? `"${user.subscription}"` 
-          : user.subscription 
-            ? 'objet incomplet' 
-            : 'undefined';
-        
-        console.log(`✅ [Migration] ${user.email}: ${oldValue} → { plan: "${plan}" }`);
+        if (result.modifiedCount > 0) {
+          migrated++;
+          
+          const oldValue = typeof user.subscription === 'string' 
+            ? `"${user.subscription}"` 
+            : user.subscription 
+              ? JSON.stringify(user.subscription)
+              : 'undefined';
+          
+          console.log(`✅ [Migration] ${user.email}: ${oldValue} → { plan: "${plan}" }`);
+        } else {
+          skipped++;
+        }
         
       } catch (error) {
         errors++;
-        console.error(`❌ [Migration] Erreur pour ${user.email}:`, error.message);
+        console.error(`❌ [Migration] Erreur pour ${user.email || user._id}:`, error.message);
       }
     }
     
@@ -188,9 +200,9 @@ async function migrateAllSubscriptions() {
 ╔════════════════════════════════════════╗
 ║  📊 MIGRATION TERMINÉE                 ║
 ╠════════════════════════════════════════╣
-║  ✅ Migrés: ${migrated.toString().padEnd(27)}║
-║  ⏭️  Déjà OK: ${skipped.toString().padEnd(25)}║
-║  ❌ Erreurs: ${errors.toString().padEnd(25)}║
+║  ✅ Migrés: ${String(migrated).padEnd(27)}║
+║  ⏭️  Ignorés: ${String(skipped).padEnd(25)}║
+║  ❌ Erreurs: ${String(errors).padEnd(25)}║
 ╚════════════════════════════════════════╝
     `);
     
@@ -559,3 +571,4 @@ process.on('SIGINT', () => {
     });
   });
 });
+module.exports = { migrateAllSubscriptions };
