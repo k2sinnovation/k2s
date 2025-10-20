@@ -44,6 +44,21 @@ const userSchema = new mongoose.Schema({
       }
     }
   },
+
+  // ✅ AJOUT : Créer le quota immédiatement
+const UserQuota = require('../models/UserQuota');
+await UserQuota.create({
+  userId: user._id,
+  currentPlan: 'free',
+  dailyTokenLimit: 10000,
+  tokensUsedToday: 0,
+  monthlyCallsLimit: 100,
+  callsUsedThisMonth: 0,
+  maxEmailsPerDay: 20,
+  emailsSentToday: 0
+});
+
+console.log(`✅ [Auth] Quota free initialisé pour ${email}`);
   
   isActive: {
     type: Boolean,
