@@ -264,48 +264,56 @@ class AIService {
   /**
    * 🔨 Parser JSON d'analyse
    */
-  _parseAnalysisJSON(content, userId) {
-    try {
-      let cleanContent = content.trim();
-      
-      if (cleanContent.startsWith('```json')) {
-        cleanContent = cleanContent.replace(/^```json\s*/s, '').replace(/```\s*$/s, '');
-      } else if (cleanContent.startsWith('```')) {
-        cleanContent = cleanContent.replace(/^```\s*/s, '').replace(/```\s*$/s, '');
-      }
-      
-      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) cleanContent = jsonMatch[0];
-      
-      return JSON.parse(cleanContent);
-      
-    } catch (error) {
-      console.warn(`[AI:${userId}] ⚠️ Parsing JSON échoué, extraction manuelle...`);
-      
-      const isRelevantMatch = content.match(/"is_relevant"\s*:\s*(true|false)/i);
-      const intentMatch = content.match(/"intent"\s*:\s*"([^"]+)"/i);
-      const confidenceMatch = content.match(/"confidence"\s*:\s*([0-9.]+)/);
-      const reasonMatch = content.match(/"reason"\s*:\s*"([^"]+)"/i);
-      
-      if (isRelevantMatch) {
-        return {
-          is_relevant: isRelevantMatch[1] === 'true',
-          confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
-          intent: intentMatch ? intentMatch[1] : 'unknown',
-          reason: reasonMatch ? reasonMatch[1] : 'Parsing partiel',
-          details: {}
-        };
-      }
-      
+ _parseAnalysisJSON(content, userId) {
+  try {
+    let cleanContent = content.trim();
+
+    if (cleanContent.startsWith('```json')) {
+      cleanContent = cleanContent.replace(/^```json\s*/s, '').replace(/```\s*$/s, '');
+    } else if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/^```\s*/s, '').replace(/```\s*$/s, '');
+    }
+
+    // extraire tout ce qui ressemble à un objet JSON
+    const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+    if (jsonMatch) cleanContent = jsonMatch[0];
+
+    // ✅ Transformation pour JSON moins strict
+    cleanContent = cleanContent
+      .replace(/'/g, '"')      // guillemets simples -> doubles
+      .replace(/None/g, 'null') // None -> null
+      .replace(/,\s*}/g, '}')  // virgule finale
+      .replace(/,\s*]/g, ']'); // idem tableaux
+
+    return JSON.parse(cleanContent);
+
+  } catch (error) {
+    console.warn(`[AI:${userId}] ⚠️ Parsing JSON échoué, extraction manuelle...`);
+
+    const isRelevantMatch = content.match(/"is_relevant"\s*:\s*(true|false)/i);
+    const intentMatch = content.match(/"intent"\s*:\s*"([^"]+)"/i);
+    const confidenceMatch = content.match(/"confidence"\s*:\s*([0-9.]+)/);
+    const reasonMatch = content.match(/"reason"\s*:\s*"([^"]+)"/i);
+
+    if (isRelevantMatch) {
       return {
-        is_relevant: false,
-        confidence: 0.1,
-        intent: 'error',
-        reason: 'Erreur parsing JSON',
+        is_relevant: isRelevantMatch[1] === 'true',
+        confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+        intent: intentMatch ? intentMatch[1] : 'unknown',
+        reason: reasonMatch ? reasonMatch[1] : 'Parsing partiel',
         details: {}
       };
     }
+
+    return {
+      is_relevant: false,
+      confidence: 0.1,
+      intent: 'error',
+      reason: 'Erreur parsing JSON',
+      details: {}
+    };
   }
+}
 
   /**
    * 🔨 Charger contexte Drive
