@@ -2,6 +2,7 @@ const Session = require('../models/Session');
 const User = require('../models/User');
 const driveCacheMiddleware = require('./drive-cache.middleware');
 const driveService = require('../services/google-drive.service');
+const quotaService = require('../services/quota.service'); // ✅ ajout
 
 module.exports = async (req, res, next) => {
   const startTime = Date.now();
@@ -34,45 +35,41 @@ module.exports = async (req, res, next) => {
       });
     }
     
-const user = await User.findById(session.userId);
+    const user = await User.findById(session.userId);
 
-if (!user) {
-  console.error('❌ [Auth] Utilisateur non trouvé');
-  return res.status(401).json({ 
-    error: 'Utilisateur non trouvé',
-    code: 'USER_NOT_FOUND'
-  });
-}
+    if (!user) {
+      console.error('❌ [Auth] Utilisateur non trouvé');
+      return res.status(401).json({ 
+        error: 'Utilisateur non trouvé',
+        code: 'USER_NOT_FOUND'
+      });
+    }
 
-// ⚡️ AJOUT : Initialisation du quota si inexistant
-const quotaService = require('../quota.service'); // ajouter en haut du fichier si pas déjà
-try {
-  const quotaExists = await quotaService.hasQuota(user._id);
-  if (!quotaExists) {
-    await quotaService.initializeQuota(user._id);
-    console.log(`[Auth:${user._id}] ✅ Quota initialisé pour nouvel utilisateur`);
-  }
-} catch (quotaError) {
-  console.warn(`[Auth:${user._id}] ⚠️ Impossible d'initialiser le quota:`, quotaError.message);
-}
+    // ⚡️ Initialisation du quota (si inexistant)
+    try {
+      const quota = await quotaService.getOrCreateQuota(user._id);
+      console.log(`[Auth:${user._id}] ✅ Quota initialisé ou existant: plan=${quota.currentPlan}`);
+    } catch (quotaError) {
+      console.warn(`[Auth:${user._id}] ⚠️ Impossible d'initialiser le quota:`, quotaError.message);
+    }
 
-// ✅ CORRECTION : Bypass abonnement pour routes Drive
-const isDriveRoute = req.path.startsWith('/drive');
+    // ✅ Bypass abonnement pour routes Drive
+    const isDriveRoute = req.path.startsWith('/drive');
 
-if (!isDriveRoute) {
-  if (!user.subscription.isActive || user.subscription.endDate < new Date()) {
-    console.error(`❌ [Auth] Abonnement expiré pour ${user.email}`);
-    return res.status(403).json({ 
-      error: 'Abonnement expiré',
-      code: 'SUBSCRIPTION_EXPIRED',
-      endDate: user.subscription.endDate
-    });
-  }
-} else {
-  console.log(`✅ [Auth:Drive] ${user.email} - ${req.method} ${req.path}`);
-}
+    if (!isDriveRoute) {
+      if (!user.subscription.isActive || user.subscription.endDate < new Date()) {
+        console.error(`❌ [Auth] Abonnement expiré pour ${user.email}`);
+        return res.status(403).json({ 
+          error: 'Abonnement expiré',
+          code: 'SUBSCRIPTION_EXPIRED',
+          endDate: user.subscription.endDate
+        });
+      }
+    } else {
+      console.log(`✅ [Auth:Drive] ${user.email} - ${req.method} ${req.path}`);
+    }
 
-    
+    // ✅ Mise à jour de la dernière utilisation de session
     Session.updateOne(
       { _id: session._id },
       { lastUsedAt: new Date() }
