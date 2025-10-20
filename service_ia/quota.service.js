@@ -361,7 +361,56 @@ userQuotaSchema.methods.incrementAPICalls = function() {
   };
 };
 
+// ✅ MÉTHODE STATIQUE : Vérifier si l'utilisateur peut consommer des tokens
+userQuotaSchema.statics.canUseTokens = async function(userId, amount = 1) {
+  try {
+    let quota = await this.findOne({ userId });
+    if (!quota) {
+      console.warn(`⚠️ [Quota] Aucun quota trouvé pour user ${userId}, création auto.`);
+      quota = new this({ userId });
+      await quota.save();
+      return true; // Autorise par défaut à la première utilisation
+    }
+
+    // Vérifie et remet à zéro si nécessaire
+    quota.checkAndReset();
+
+    // Enterprise = illimité
+    if (quota.currentPlan === 'enterprise') return true;
+
+    // Si bloqué (ex: dépassement ou abonnement expiré)
+    if (quota.isBlocked) {
+      console.warn(`🚫 [Quota] User ${userId} est bloqué (${quota.blockedReason})`);
+      return false;
+    }
+
+    // Vérifie le nombre de tokens restants
+    const remaining = quota.dailyTokenLimit - quota.tokensUsedToday;
+    if (remaining < amount) {
+      console.warn(`⚠️ [Quota] User ${userId} dépasse son quota (${remaining} restants)`);
+
+      quota.isBlocked = true;
+      quota.blockedReason = 'tokens';
+
+      const tomorrow = new Date();
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      tomorrow.setUTCHours(0, 0, 0, 0);
+      quota.blockedUntil = tomorrow;
+
+      await quota.save();
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error(`❌ [Quota] Erreur canUseTokens():`, err);
+    // En cas d’erreur, ne pas bloquer le service
+    return true;
+  }
+};
+
 // ✅ Export des plans pour utilisation externe
 userQuotaSchema.statics.QUOTA_PLANS = QUOTA_PLANS;
 
 module.exports = mongoose.model('UserQuota', userQuotaSchema);
+
