@@ -44,7 +44,7 @@ const userRoute = require('./service_ia/routes/user');
 // 🆕 Import route auto-reply
 const autoReplyRoute = require('./service_ia/routes/autoReply');
 
-// ✅ NOUVEAU : Import route Drive
+// ✅ Import route Drive
 const driveDataRoute = require('./service_ia/routes/drive-data');
 
 // 🤖 Import du service de polling
@@ -105,6 +105,103 @@ setInterval(() => {
   });
 }, 15000);
 
+// ===== FONCTION DE MIGRATION =====
+
+/**
+ * 🔧 MIGRATION AUTOMATIQUE DES SUBSCRIPTIONS
+ * Convertit tous les anciens formats (string) vers le nouveau format (objet)
+ */
+async function migrateAllSubscriptions() {
+  try {
+    console.log('\n🔧 [Migration] Vérification des subscriptions...');
+    
+    // Trouver TOUS les users avec ancien format
+    const allUsers = await User.find({}).lean();
+    
+    console.log(`📊 [Migration] ${allUsers.length} utilisateur(s) à vérifier`);
+    
+    let migrated = 0;
+    let skipped = 0;
+    let errors = 0;
+    
+    for (const user of allUsers) {
+      try {
+        const needsMigration = 
+          typeof user.subscription === 'string' ||
+          !user.subscription ||
+          !user.subscription.plan;
+        
+        if (!needsMigration) {
+          skipped++;
+          continue;
+        }
+        
+        // Déterminer le plan
+        let plan = 'free';
+        if (typeof user.subscription === 'string') {
+          plan = user.subscription;
+        } else if (user.subscription?.plan) {
+          plan = user.subscription.plan;
+        }
+        
+        // Valider le plan
+        if (!['free', 'basic', 'premium', 'enterprise'].includes(plan)) {
+          console.warn(`⚠️ [Migration] Plan invalide "${plan}" pour ${user.email}, défaut à free`);
+          plan = 'free';
+        }
+        
+        // ✅ MISE À JOUR DIRECTE EN BASE (bypass Mongoose defaults)
+        await User.updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              'subscription.plan': plan,
+              'subscription.isActive': true,
+              'subscription.startDate': user.createdAt || new Date(),
+              'subscription.endDate': null,
+              'subscription.customQuotas': {
+                dailyTokens: null,
+                monthlyCalls: null,
+                maxEmailsPerDay: null
+              }
+            }
+          }
+        );
+        
+        migrated++;
+        
+        const oldValue = typeof user.subscription === 'string' 
+          ? `"${user.subscription}"` 
+          : user.subscription 
+            ? 'objet incomplet' 
+            : 'undefined';
+        
+        console.log(`✅ [Migration] ${user.email}: ${oldValue} → { plan: "${plan}" }`);
+        
+      } catch (error) {
+        errors++;
+        console.error(`❌ [Migration] Erreur pour ${user.email}:`, error.message);
+      }
+    }
+    
+    console.log(`
+╔════════════════════════════════════════╗
+║  📊 MIGRATION TERMINÉE                 ║
+╠════════════════════════════════════════╣
+║  ✅ Migrés: ${migrated.toString().padEnd(27)}║
+║  ⏭️  Déjà OK: ${skipped.toString().padEnd(25)}║
+║  ❌ Erreurs: ${errors.toString().padEnd(25)}║
+╚════════════════════════════════════════╝
+    `);
+    
+    return { migrated, skipped, errors };
+    
+  } catch (error) {
+    console.error('❌ [Migration] Erreur critique:', error);
+    throw error;
+  }
+}
+
 // ===== ROUTES (ORDRE CRITIQUE!) =====
 
 // ✅ OAuth EN PREMIER (important pour les callbacks)
@@ -117,13 +214,12 @@ app.use('/api/user', userRoute);
 app.use('/api', authRoute);
 app.use('/api', emailAccountsRoute);
 
-// 🆕 NOUVELLES ROUTES MESSAGERIE
+// 🆕 Routes messagerie
 app.use('/api/mail', mailRoutes);
 app.use('/api/whatsapp', whatsappMessagingRoutes);
-// 🆕 Route auto-reply (vérification messages IA)
-app.use('/api/auto-reply', autoReplyRoute);  
+app.use('/api/auto-reply', autoReplyRoute);
 
-// ✅ NOUVEAU : Route Drive
+// ✅ Route Drive
 app.use('/api', driveDataRoute);
 
 // Routes webhook OpenAI
@@ -144,7 +240,7 @@ app.use('/test-tts', testTtsRouter);
 app.get('/', (req, res) => {
   res.json({
     message: 'Serveur K2S Innovation for IQ est opérationnel ✅',
-    version: '2.5.1',
+    version: '2.5.2',
     endpoints: {
       auth: '/api/auth/*',
       user: '/api/user/*',
@@ -169,10 +265,10 @@ app.get('/', (req, res) => {
         appointments: '/api/user/appointments',
       },
       admin: {
-        migrateSubscriptions: '/api/admin/migrate-subscriptions',
-        checkMigrations: '/api/admin/check-migrations',
-        forceCheck: '/api/admin/force-check',
-        pollingStatus: '/api/admin/polling-status',
+        migrateSubscriptions: 'POST /api/admin/migrate-subscriptions',
+        checkMigrations: 'GET /api/admin/check-migrations',
+        forceCheck: 'POST /api/admin/force-check',
+        pollingStatus: 'GET /api/admin/polling-status',
       },
       analyze: '/api/analyze',
       answer: '/api/answer',
@@ -219,104 +315,22 @@ app.post('/api/ask', async (req, res) => {
 
 // ===== ROUTES D'ADMINISTRATION =====
 
-// 🔧 MIGRATION : Convertir les anciens formats de subscription
+// 🔧 MIGRATION MANUELLE (au cas où)
 app.post('/api/admin/migrate-subscriptions', async (req, res) => {
   try {
-    console.log('🔧 [Migration] Démarrage de la migration des subscriptions...');
+    console.log('🔧 [Admin] Migration manuelle déclenchée');
+    const result = await migrateAllSubscriptions();
     
-    // Trouver tous les users à migrer
-    const usersToMigrate = await User.find({
-      $or: [
-        { subscription: { $type: 'string' } },
-        { subscription: { $exists: false } },
-        { 'subscription.plan': { $exists: false } }
-      ]
-    });
-
-    console.log(`🔍 [Migration] ${usersToMigrate.length} utilisateur(s) à migrer`);
-
-    if (usersToMigrate.length === 0) {
-      return res.json({
-        success: true,
-        message: '✅ Aucune migration nécessaire, tous les users sont au bon format',
-        migrated: 0,
-        errors: 0
-      });
-    }
-
-    const results = {
-      migrated: 0,
-      errors: 0,
-      details: []
-    };
-
-    for (const user of usersToMigrate) {
-      try {
-        const oldSubscription = user.subscription;
-        
-        // Déterminer le plan
-        let plan = 'free';
-        if (typeof oldSubscription === 'string') {
-          plan = oldSubscription;
-        } else if (oldSubscription?.plan) {
-          plan = oldSubscription.plan;
-        }
-
-        // Créer la nouvelle structure
-        user.subscription = {
-          plan: plan,
-          isActive: true,
-          startDate: user.createdAt || new Date(),
-          endDate: null,
-          customQuotas: {
-            dailyTokens: null,
-            monthlyCalls: null,
-            maxEmailsPerDay: null
-          }
-        };
-
-        await user.save();
-        results.migrated++;
-        
-        const oldValue = typeof oldSubscription === 'string' 
-          ? `"${oldSubscription}"` 
-          : oldSubscription 
-            ? JSON.stringify(oldSubscription) 
-            : 'undefined';
-        
-        console.log(`✅ [Migration] ${user.email}: ${oldValue} → { plan: "${plan}" }`);
-        
-        results.details.push({
-          email: user.email,
-          status: 'success',
-          old: oldValue,
-          new: plan
-        });
-
-      } catch (error) {
-        results.errors++;
-        console.error(`❌ [Migration] Erreur pour ${user.email}:`, error.message);
-        
-        results.details.push({
-          email: user.email,
-          status: 'error',
-          error: error.message
-        });
-      }
-    }
-
-    console.log(`✅ [Migration] Terminée: ${results.migrated} migrés, ${results.errors} erreurs`);
-
     res.json({
       success: true,
-      message: `Migration terminée: ${results.migrated} utilisateur(s) migré(s)`,
-      migrated: results.migrated,
-      errors: results.errors,
-      details: results.details
+      message: `Migration terminée: ${result.migrated} utilisateur(s) migré(s)`,
+      migrated: result.migrated,
+      skipped: result.skipped,
+      errors: result.errors
     });
 
   } catch (error) {
-    console.error('❌ [Migration] Erreur critique:', error);
+    console.error('❌ [Admin] Erreur migration:', error);
     res.status(500).json({ 
       success: false,
       error: error.message 
@@ -341,13 +355,13 @@ app.get('/api/admin/check-migrations', async (req, res) => {
       migration_complete: migrationComplete,
       stats: {
         total_users: totalUsers,
-        old_format_remaining: stringFormat,      // ✅ Doit être 0
-        new_format: objectFormat,                 // ✅ Doit être = total_users
-        no_subscription: noSubscription,          // ✅ Doit être 0
+        old_format_remaining: stringFormat,
+        new_format: objectFormat,
+        no_subscription: noSubscription,
       },
       status: migrationComplete 
         ? '✅ Migration complète - Tous les users sont au bon format'
-        : '⚠️ Migration incomplète - Lance POST /api/admin/migrate-subscriptions',
+        : '⚠️ Migration incomplète - Redémarre le serveur ou lance POST /api/admin/migrate-subscriptions',
       samples: samples.map(u => ({
         email: u.email,
         subscription: u.subscription,
@@ -397,7 +411,9 @@ app.get('/api/admin/polling-status', async (req, res) => {
       processingMessages: mailPollingService.processingMessages.size,
       processedThreads: mailPollingService.processedThreads.size,
       cooldownRemaining: Math.round(cooldownRemaining / 1000) + 's',
-      canPollNow: cooldownRemaining === 0
+      canPollNow: cooldownRemaining === 0,
+      isGlobalPollingActive: mailPollingService.isGlobalPollingActive,
+      instanceId: mailPollingService.instanceId
     };
     
     res.json(status);
@@ -436,9 +452,18 @@ mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-  .then(() => {
+  .then(async () => {
     console.log('✅ Connexion MongoDB réussie');
     
+    // 🔧 EXÉCUTER LA MIGRATION AUTOMATIQUE AVANT TOUT
+    try {
+      await migrateAllSubscriptions();
+    } catch (migrationError) {
+      console.error('❌ Migration échouée:', migrationError);
+      console.error('⚠️  Le serveur va démarrer mais risque d\'erreurs avec les quotas');
+    }
+    
+    // Démarrer le serveur HTTP
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`
 ╔════════════════════════════════════════╗
@@ -450,8 +475,8 @@ mongoose.connect(process.env.MONGO_URI, {
 ║  🤖 Mistral AI: configuré              ║
 ║  🔐 OAuth: Gmail/Outlook/WhatsApp      ║
 ║  📧 Messagerie: Gmail/Outlook/WhatsApp ║
-║  🔄 Auto-Reply: actif (20 secondes)    ║
-║  ⚡ MODE TEST: Vérif toutes les 20s    ║
+║  🔄 Auto-Reply: actif                  ║
+║  ⚡ MODE TEST: Check toutes les 20s    ║
 ╚════════════════════════════════════════╝
       `);
 
@@ -482,13 +507,15 @@ mongoose.connect(process.env.MONGO_URI, {
         console.log('   • 1 appel Mistral au lieu de 2 (-50% tokens)');
         console.log('   • Drive chargé 1 fois pour tous les messages');
         console.log('   • Cache thread anti-doublon (1h)');
+        console.log('   • Gestion quotas par plan d\'abonnement');
         console.log('   • ⚡ MODE TEST: Vérification toutes les 20 secondes');
         console.log('💡 Migrer DB: POST /api/admin/migrate-subscriptions');
         console.log('💡 Vérifier migration: GET /api/admin/check-migrations');
         console.log('💡 Forcer check: POST /api/admin/force-check');
         console.log('💡 Voir statut: GET /api/admin/polling-status');
         console.log('');
-        console.log('⚠️  ATTENTION: Pense à remettre 5 minutes en production !');
+        console.log('⚠️  ATTENTION: Pense à remettre 5 minutes (300000) en production !');
+        console.log('');
       }
     });
   })
