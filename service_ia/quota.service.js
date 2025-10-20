@@ -1,4 +1,4 @@
-const UserQuota = require('../models/UserQuota');
+const UserQuota = require('./UserQuota');
 
 class QuotaService {
   /**
