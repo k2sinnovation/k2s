@@ -11,13 +11,30 @@ class AIService {
    * 🎯 MÉTHODE PRINCIPALE
    * Analyse PUIS génère (si pertinent)
    */
-  async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
-    const userId = user._id.toString();
-    
-    console.log(`[AI:${userId}] 🔍 Étape 1/2 : Analyse du message...`);
-    
-    // 1️⃣ ANALYSE
-    const analysis = await this.analyzeMessage(message, user, conversationHistory, driveData);
+ async analyzeAndGenerateResponse(message, user, conversationHistory = [], driveData = null) {
+  const userId = user._id.toString();
+  
+  // ✅ VÉRIFICATION : L'assistant IA doit être activé
+  if (!user.aiSettings?.isEnabled || !user.aiSettings?.autoReplyEnabled) {
+    console.log(`[AI:${userId}] 🚫 Assistant IA désactivé pour cet utilisateur`);
+    return {
+      analysis: {
+        is_relevant: false,
+        confidence: 0.0,
+        intent: 'ai_disabled',
+        reason: 'Assistant IA désactivé par l\'utilisateur',
+        details: {},
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+      },
+      response: null,
+      totalUsage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+    };
+  }
+  
+  console.log(`[AI:${userId}] 🔍 Étape 1/2 : Analyse du message...`);
+  
+  // 1️⃣ ANALYSE
+  const analysis = await this.analyzeMessage(message, user, conversationHistory, driveData);
     
     console.log(`[AI:${userId}] ✅ Analyse: ${analysis.intent} - Pertinent: ${analysis.is_relevant} (${(analysis.confidence * 100).toFixed(0)}%)`);
     
