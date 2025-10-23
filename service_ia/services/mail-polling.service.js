@@ -233,27 +233,33 @@ console.log('🔄 ===== FIN POLLING =====\n');
     }
   }
 
-  async processMessage(message, user, driveData) {
-    const lockKey = `${user._id}-${message.id}`;
-    const now = Date.now();
-    
-    const existsInDb = await AutoReply.findOne({
-      userId: user._id,
-      messageId: message.id
-    });
+async processMessage(message, user, driveData) {
+  const lockKey = `${user._id}-${message.id}`;
+  const now = Date.now();
+  
+  // ✅ VÉRIFICATION SUPPLÉMENTAIRE : L'IA doit être activée
+  if (!user.aiSettings?.isEnabled || !user.aiSettings?.autoReplyEnabled) {
+    console.log(`    🚫 [${user.email}] Assistant IA désactivé, message ignoré`);
+    return { sent: false, alreadyProcessed: false, filtered: true, quotaExceeded: false };
+  }
+  
+  const existsInDb = await AutoReply.findOne({
+    userId: user._id,
+    messageId: message.id
+  });
 
-    if (existsInDb) {
-      return { sent: false, alreadyProcessed: true, filtered: false, quotaExceeded: false };
-    }
+  if (existsInDb) {
+    return { sent: false, alreadyProcessed: true, filtered: false, quotaExceeded: false };
+  }
 
-    if (this.processingMessages.has(lockKey)) {
-      return { sent: false, alreadyProcessed: true, filtered: false, quotaExceeded: false };
-    }
+  if (this.processingMessages.has(lockKey)) {
+    return { sent: false, alreadyProcessed: true, filtered: false, quotaExceeded: false };
+  }
 
-    this.processingMessages.set(lockKey, now);
+  this.processingMessages.set(lockKey, now);
 
-    try {
-      const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
+  try {
+    const fullMessage = await this.fetchFullMessage(message.id, user.emailConfig);
       
       if (!fullMessage) {
         console.log(`    ❌ Impossible de récupérer le message`);
