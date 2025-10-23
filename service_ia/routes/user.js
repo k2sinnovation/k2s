@@ -211,20 +211,33 @@ router.put('/ai-settings', protect, async (req, res) => {
       user.aiSettings = {};
     }
     
+    // 🔍 Détecter si l'état de l'IA change
+    const wasEnabled = user.aiSettings.isEnabled && user.aiSettings.autoReplyEnabled;
+    
     Object.assign(user.aiSettings, req.body);
     user.aiSettings.lastUpdated = new Date();
 
     await user.save();
+    
+    const isNowEnabled = user.aiSettings.isEnabled && user.aiSettings.autoReplyEnabled;
 
     console.log(`✅ [Sync] Paramètres IA mis à jour pour ${user.email}`);
     console.log(`   - isEnabled: ${user.aiSettings.isEnabled}`);
     console.log(`   - autoReplyEnabled: ${user.aiSettings.autoReplyEnabled}`);
     console.log(`   - salonName: ${user.aiSettings.salonName}`);
+    
+    // ✅ Log spécial si changement d'état
+    if (wasEnabled && !isNowEnabled) {
+      console.log(`   🔴 ASSISTANT IA DÉSACTIVÉ - Le backend ne traitera plus les emails`);
+    } else if (!wasEnabled && isNowEnabled) {
+      console.log(`   🟢 ASSISTANT IA ACTIVÉ - Le backend traitera les nouveaux emails`);
+    }
 
     res.json({
       success: true,
       message: 'Paramètres synchronisés',
-      settings: user.aiSettings
+      settings: user.aiSettings,
+      aiActive: isNowEnabled // ✅ Retourner l'état actif
     });
 
   } catch (error) {
