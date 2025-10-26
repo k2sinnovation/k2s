@@ -418,11 +418,11 @@ app.get('/api/admin/polling-status', async (req, res) => {
     const status = {
       lastPollingStart: mailPollingService.lastPollingStart,
       lastPollingDate: new Date(mailPollingService.lastPollingStart).toISOString(),
-      timeSinceLastPoll: Math.round(timeSinceLastPoll / 1000) + 's',
+      timeSinceLastPoll: Math.round(timeSinceLastPoll / 12000) + 's',
       processingUsers: mailPollingService.processingUsers.size,
       processingMessages: mailPollingService.processingMessages.size,
       processedThreads: mailPollingService.processedThreads.size,
-      cooldownRemaining: Math.round(cooldownRemaining / 1000) + 's',
+      cooldownRemaining: Math.round(cooldownRemaining / 12000) + 's',
       canPollNow: cooldownRemaining === 0,
       isGlobalPollingActive: mailPollingService.isGlobalPollingActive,
       instanceId: mailPollingService.instanceId
